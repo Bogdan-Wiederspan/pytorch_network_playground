@@ -1,6 +1,4 @@
 
-from src.data.utils import depthCount
-import torch
 import numpy as np
 import awkward as ak
 import uproot
@@ -10,9 +8,10 @@ from typing import Union
 from collections import defaultdict
 import torch.utils.data as t_data
 
+from src.data.utils import depthCount
 from src.utils.logger import get_logger
-logger = get_logger(__name__)
 
+logger = get_logger(__name__)
 
 def find_datasets(dataset_patterns: str, year_patterns: str, file_type: str="root"):
     """
@@ -107,51 +106,6 @@ def parquet_to_awkward(files_path: Union[list[str],str], columns: Union[list[str
     return ak.concatenate(arrays, axis=0)
 
 
-def awkward_to_torch(array, columns, dtype):
-    array = torch.from_numpy(np.stack([array[col].to_numpy() for col in columns], axis=1))
-    if dtype is not None:
-        array = array.to(dtype)
-    return array
-
-# def awkward_to_torch(array: ak.Array, columns: Union[list[str],str], dtype: torch.dtype=None, combine_datasets=False) -> torch.Tensor:
-#     """
-#     Helper function to convert an ragged awkward *array* to a regulare torch tensor of a specific *dytpe*.
-#     Important: the order of *columns* defines the order of the features in the returned tensor.
-
-#     Args:
-#         array (ak.Array): awkwary array to be converted
-#         columns (list[str]): columns within array that should be converted in the given order of columns
-#         dtype (torch.dtype, optional): dtype of the torch tensor. If None, dtype is tried to preserve. Defaults to None.
-
-#     Returns:
-#         torch.Tensor: converted torch tensor of given dtype
-#     """
-#     # loop over columns to get arrays in correct order
-#     # remove nested structure by flattening the dictionary
-#     from IPython import embed; embed(header="COMBINE - 124 in load_data.py ")
-#     if combine_datasets:
-#         # combine the different process_id or datasets
-#         data = []
-#         for era, dataset_or_process_id in array.items():
-#             for arr in dataset_or_process_id.values():
-#                 data.append(arr)
-#         data = ak.concatenate(data, axis=0)
-
-#     def replace_array(array):
-#         replace_data = {}
-#         for era, pid in array.items():
-#             for process_id, arr in pid.items():
-#                 replace_data[process_id] = torch.from_numpy(arr.to_numpy())
-
-
-    # # take only columns in specific order
-    # # stack to numpy and convert to torch tensor
-    # # preserve dtype if none
-    # data = torch.from_numpy(np.stack([data[col].to_numpy() for col in columns], axis=1))
-    # if dtype is not None:
-    #     data = data.to(dtype)
-    # return data
-
 def get_loader(file_type: str, **kwargs):
     """
     Small helper function to get the correct loader function and its configuration based on the file type.
@@ -172,6 +126,7 @@ def get_loader(file_type: str, **kwargs):
             return parquet_to_awkward, {"columns": kwargs.get("columns", None)}
         case _:
             raise ValueError(f"Unknown file type: {file_type}")
+
 
 def load_data(dataset_patter: str, year_pattern: str, file_type: str="root", columns: Union[list[str],str, None]=None):
     """
@@ -214,94 +169,14 @@ def load_data(dataset_patter: str, year_pattern: str, file_type: str="root", col
             logger.info(f"{len(events)} events for {year}/{dataset}")
     return data
 
-def filter_datasets_after_process(events):
-    """
-    Gets *events* in the structure of {year: {dataset: array}} and filters array by process_id.
-    Returns an dictionary of structure {year: {process_id: array}}
-
-    Args:
-        events (_type_): _description_
-
-    Returns:
-        _type_: _description_
-    """
-    # events of structure {year:{dataset : array}}
-    arrays_per_year_per_id = {}
-    for year, datasets in events.items():
-        arrays_per_id_collection = {}
-        arrays_per_year_per_id[year] = {}
-        for dataset, array in datasets.items():
-            # {id : array[id_mask]}
-            arrays_per_id = filter_array_after_process(array)
-            for process_id, array_per_id in arrays_per_id.items():
-                if process_id not in arrays_per_id_collection:
-                    arrays_per_id_collection[process_id] = []
-                arrays_per_id_collection[process_id].append(array_per_id)
-
-        for process_id, list_of_arrays in arrays_per_id_collection.items():
-            array = ak.concatenate(list_of_arrays)
-            logger.info(f"{year} | {process_id} | {len(array)} events")
-            arrays_per_year_per_id[year][process_id] = array
-    return arrays_per_year_per_id
-
-
-def get_sum_of_weights(array):
-    # era : {process_id : arrray}
-    weights = {}
-    for year, pid in array.items():
-        weights[year] = {}
-        for process_id, arr in pid.items():
-            weights[year][process_id] = ak.sum(arr.normalization_weight)
-    return weights
-
-def prepare_data(datasets, eras, input_columns, target_columns, dtype=torch.float32, file_type="root"):
-    events = load_data(
-        datasets,
-        eras,
-        file_type=file_type,
-        columns=input_columns,
-        )
-
-    events = filter_datasets_after_process(events)
-    from IPython import embed; embed(header="string - 265 in load_data.py ")
-    # convert to torch tensors and create EraDatasets objects
-    EraDatasetManager = EraDatasetSampler(None, batch_size=32)
-    for era, pid in events.items():
-        c = 0
-        for process_id, arr in pid.items():
-            if c == 2:
-                break
-            # from IPython import embed; embed(header="RR - 273 in load_data.py ")
-            inputs = awkward_to_torch(arr, input_columns, dtype)
-            target = awkward_to_torch(arr, target_columns, dtype)
-            weight = torch.tensor(ak.sum(arr.normalization_weight), dtype = dtype)
-            era_dataset = EraDataset(
-                inputs=inputs,
-                target=target ,
-                weight=weight ,
-                name=process_id,
-                era=era,
-            )
-            EraDatasetManager.add_dataset(era_dataset)
-            logger.info(f"Add dataset {process_id} of era {era}")
-            c +=1
-    return EraDatasetManager
-
 if __name__ == "__main__":
-    # test load_dataset
-    from datasets import EraDataset, EraDatasetSampler
-
+    # test load_data
     datasets = ["dy_m50toinf_*j_amcatnlo","tt_dl*"]
     eras = ["22pre", "23pre"]
     input_columns = ["event", "process_id"]
     target_columns = ["target"]
-    # filter process after process_id
-    from IPython import embed; embed(header="BEFORE - 288 in load_data.py ")
-    e = prepare_data(datasets, eras, input_columns, target_columns, dtype=torch.float32, file_type="root")
-    input_data = awkward_to_torch(events, ["event", "process_id"], dtype=torch.float32)
-    target_data = awkward_to_torch(events, ["target"], dtype=torch.float32)
-    # sum_of_weights = ak.full_like(array.normalization_weight, ak.sum(array.normalization_weight))
-    # weights = awkward_to_torch(events, ["sum_of_weights"], dtype=torch.float32)
-    from IPython import embed; embed(header="Debugger to test the functions - in load_data.py ")
-
-    sampler = t_data.WeightedRandomSampler(weights.flatten(), len(weights))
+    events = load_data(datasets, eras, file_type="root", columns=input_columns)
+    print(events)
+    print()
+    print(events["22pre"]["dy_m50toinf_0j_amcatnlo"].fields)
+    from IPython import embed; embed(header="Test Load Data")
