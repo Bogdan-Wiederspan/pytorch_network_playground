@@ -143,6 +143,7 @@ def load_data(dataset_patter: str, year_pattern: str, file_type: str="root", col
         _type_: _description_
     """
     target_map = {"hh" : 0, "dy": 1, "tt": 2}
+    era_map = {"22pre": 0, "22post": 1, "23pre": 2, "23post": 3}
     num_targets = len(target_map.keys())
     # add weights for resampling
     columns = set(columns)
@@ -164,6 +165,10 @@ def load_data(dataset_patter: str, year_pattern: str, file_type: str="root", col
             target_array = np.zeros((len(events), num_targets))
             target_array[:, target_value] = 1
             events = ak.with_field(events, target_array, "target")
+
+            # add era encoding:
+            era_array = np.full(len(events), era_map[year], np.int32)
+            events = ak.with_field(events, era_array, "era")
 
             data[year][dataset] = events
             logger.info(f"{len(events)} events for {year}/{dataset}")

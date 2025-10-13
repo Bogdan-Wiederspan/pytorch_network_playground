@@ -29,8 +29,9 @@ def filter_datasets(
         events (dict[dict[ak.Array]]): events of structure {year:{dataset : array}}
 
     Returns:
-        return dict[dict[ak.Array]]: events of structure {year: {feature: array}}
+        return dict[dict[ak.Array]]: events of structure {dataset_type: {(year,feature): array}}
     """
+
     # events of structure {year:{dataset : array}}
     arrays_per_year_per_feature = defaultdict(dict)
     for year, datasets in events.items():
@@ -41,12 +42,13 @@ def filter_datasets(
             for unique_feature in np.unique(array[feature].to_numpy()):
                 feature_mask = array[feature] == unique_feature
                 filtered_array = array[feature_mask]
-                array_per_feature_collection[int(unique_feature)].append(filtered_array)
+                array_per_feature_collection[(int(unique_feature), dataset[:2])].append(filtered_array)
 
-        for _feature, list_of_arrays in array_per_feature_collection.items():
+        # return array with structure {dataset_type: {(year,feature): array}}
+        for (_feature, dataset_type), list_of_arrays in array_per_feature_collection.items():
             array = ak.concatenate(list_of_arrays)
             logger.info(f"{year} | {_feature} | {len(array)} events")
-            arrays_per_year_per_feature[year][_feature] = array
+            arrays_per_year_per_feature[dataset_type][(year,_feature)] = array
     return arrays_per_year_per_feature
 
 
@@ -68,14 +70,12 @@ def prepare_data(datasets, eras, input_columns, target_columns, dtype=torch.floa
         )
 
     events = filter_datasets(events)
-    from IPython import embed; embed(header="string - 265 in load_data.py ")
     # convert to torch tensors and create EraDatasets objects
-    EraDatasetManager = EraDatasetSampler(None, batch_size=32)
-    for era, pid in events.items():
-        c = 0
-        for process_id, arr in pid.items():
-            if c == 2:
-                break
+    EraDatasetManager = EraDatasetSampler(None, batch_size=1024*4)
+    for dataset_type, (era_pid) in events.items():
+        for (era, process_id), arr in era_pid.items():
+
+
             # from IPython import embed; embed(header="RR - 273 in load_data.py ")
             inputs = awkward_to_torch(arr, input_columns, dtype)
             target = awkward_to_torch(arr, target_columns, dtype)
@@ -86,10 +86,14 @@ def prepare_data(datasets, eras, input_columns, target_columns, dtype=torch.floa
                 weight=weight ,
                 name=process_id,
                 era=era,
+                dataset_type=dataset_type,
             )
             EraDatasetManager.add_dataset(era_dataset)
             logger.info(f"Add dataset {process_id} of era {era}")
-            c +=1
+
+        EraDatasetManager.calculate_sample_size(dataset_type=dataset_type, min_size=5)
+    from IPython import embed; embed(header="string - 265 in load_data.py ")
+
     return EraDatasetManager
 
 if __name__ == "__main__":

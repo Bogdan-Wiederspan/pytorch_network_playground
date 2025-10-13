@@ -2,10 +2,19 @@ import torch
 import torch.utils.data as t_data
 from collections import defaultdict
 
-
+from src.utils.logger import get_logger
+logger = get_logger(__name__)
 
 class EraDataset(t_data.Dataset):
-    def __init__(self, inputs: torch.Tensor, target: torch.Tensor, weight: torch.Tensor=None, name: str=None, era: str=None):
+    def __init__(
+        self,
+        inputs: torch.Tensor,
+        target: torch.Tensor,
+        weight: torch.Tensor=None,
+        name: str=None,
+        era: str=None,
+        dataset_type: str=None,
+    ):
         self.inputs = inputs
         self.targets = target
         self.weight = weight
@@ -13,6 +22,7 @@ class EraDataset(t_data.Dataset):
         self.era = era
         self.size = len(self)
         self.reset()
+        self.dataset_type = dataset_type
 
     def __len__(self):
         return len(self.inputs)
@@ -42,30 +52,81 @@ class EraDataset(t_data.Dataset):
 
 
 class EraDatasetSampler(t_data.Sampler):
-    def __init__(self, datasets=None, batch_size=1):
-        self.datasets = defaultdict(dict)  # {era : {process_id : EraDataset}}
+    def __init__(self, datasets=None, batch_size=1, sample_ratio={"dy": 0.25, "tt": 0.25, "hh": 0.5}):
+        self.total_weight = {"dy":0, "tt":0, "hh":0}
+        self.datasets = defaultdict(dict)  # {dataset_type: {(era, process_id): dataset}}
+        self.weights = defaultdict(dict)
         self.batch_size = torch.Tensor([batch_size])
         if datasets is not None:
             for dataset in datasets:
                 self.add_dataset(dataset)
-        self._total_weight = None
+        self.sample_ratio = sample_ratio
 
     def add_dataset(self, dataset):
         # {era : process_id: {array}}
-        self.datasets[dataset.era][dataset.name] = dataset
+        weight = dataset.weight
+        self.total_weight[dataset.dataset_type] += weight
+        self.datasets[dataset.dataset_type][(dataset.era, dataset.name)] = dataset
 
-    @property
-    def total_weight(self):
-        if self._total_weight is None:
-            total_weight = 0
-            for era, pid in self.datasets.items():
-                for ds in pid.values():
-                    if ds.weight is not None:
-                        total_weight += ds.weight
-                    else:
-                        total_weight += 1
-            self._total_weight = total_weight
-        return self._total_weight
+    def print_sample_rate(self, batch=False):
+        logger.info(f"Sample rate for Dataset of Era")
+        batch_size = 1
+        if batch:
+            batch_size = self.batch_size
+        for era, pid in self.datasets.items():
+            for ds, weight in pid.values():
+                if weight is not None:
+                    rate = torch.ceil(self.batch_size * weight / self.total_weight).to(torch.int32)
+                    logger.info(f"{ds.name} | {ds.era} | {rate}")
+
+    def calculate_sample_size(self, dataset_type, min_size=1):
+        # setup unpack the dataset dictionary and convert to tensors
+        min_size = torch.tensor(min_size)
+        unique_identifier = self.datasets[dataset_type]
+        total_weight = self.total_weight[dataset_type]
+        sample_ratio = self.sample_ratio[dataset_type]
+        sub_batch_size = int(self.batch_size * sample_ratio)
+
+        weights = []
+        keys = []
+
+        for (era, pid), ds in unique_identifier.items():
+            weights.append(ds.weight.item())
+            keys.append((era, pid))
+        weights = torch.tensor(weights, dtype=torch.float32)
+
+        # start algorithm
+
+        # calculate batch size according to weight
+        total_weight = weights.sum()
+        ideal_sizes = sub_batch_size * weights / total_weight
+
+        # downsample calculated batch size --> reduces batchsize by length
+        # upsample below threshold --> increases batch size
+        # downsample biggest batches .--> reduces batch size
+        # sum should be exactly initial batch size
+        floored = torch.floor(ideal_sizes)
+        floored = torch.maximum(floored, min_size)
+
+        num_too_much = int(floored.sum()) - sub_batch_size
+
+        # distribute fraction then floor again and then remove from biggest the residue
+        m = floored != min_size
+
+        floored_indices = torch.arange(len(floored))
+
+        sub_set_floored = floored[m]
+        sel_floor_values, sel_floor_idx = torch.sort(sub_set_floored / sub_set_floored.sum() * num_too_much)
+
+        # floor below median
+        median = sel_floor_idx.median()
+        below_median = sel_floor_idx < median
+        above_median = sel_floor_idx >= median
+        sel_floor_values[below_median] = torch.floor(sel_floor_values[below_median])
+        sel_floor_values[above_median] = torch.ceil(sel_floor_values[above_median])
+
+        floored[floored_indices[m][sel_floor_idx]] -= sel_floor_values
+        return floored
 
     @property
     def __len__(self):
@@ -78,11 +139,10 @@ class EraDatasetSampler(t_data.Sampler):
         # Get a batch of data from each dataset
         batch_input = []
         batch_target = []
-        from IPython import embed; embed(header="GETBATCH - 66 in datasets.py ")
+        # from IPython import embed; embed(header="GETBATCH - 66 in datasets.py ")
         for era, pid in self.datasets.items():
             for ds in pid.values():
-                from IPython import embed; embed(header="LOOP - 82 in datasets.py ")
-                input, target = ds.sample(torch.ceil(self.batch_size * ds.weight * self.total_weight))
+                input, target = ds.sample(torch.ceil(self.batch_size * ds.weight / self.total_weight).to(torch.int32))
                 batch_input.append(input)
                 batch_target.append(target)
                 # batch_target.append(target)
@@ -90,13 +150,13 @@ class EraDatasetSampler(t_data.Sampler):
                 # if ds.weight is not None:
                 #
 
-
-
-        batch_data = torch.concatenate(batch_data, dim=0)
+        batch_input = torch.concatenate(batch_input, dim=0)
+        batch_target = torch.concatenate(batch_target, dim=0)
         if shuffle_batch:
-            indices = torch.randperm(len(batch_data))
-            batch_data = batch_data[indices]
-        return batch_data
+            indices = torch.randperm(len(batch_input))
+            batch_input = batch_input[indices]
+            batch_target = batch_target[indices]
+        return batch_input, batch_target
 
 
 
