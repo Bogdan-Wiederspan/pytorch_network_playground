@@ -14,7 +14,8 @@ __all__ = [
     "AggregationLayer",
     "LBN"
 ]
-from utils import EMPTY_INT, EMPTY_FLOAT
+
+from utils.utils import EMPTY_INT, EMPTY_FLOAT
 
 from typing import Sequence
 import copy
@@ -76,7 +77,7 @@ class PaddingLayer(torch.nn.Module):  # noqa: F811
 class CategoricalTokenizer(torch.nn.Module):  # noqa: F811
     def __init__(
         self,
-        categories: tuple[str | Route],
+        categories: tuple[str ],
         expected_categorical_inputs: dict[str, list[int]],
         empty: int = 15,
     ):
@@ -268,6 +269,7 @@ class CategoricalTokenizer(torch.nn.Module):  # noqa: F811
     def forward(self, x: torch.FloatTensor) -> torch.FloatTensor:
         # shift input array by their respective minimum and slice translation accordingly
         # map to int to be used as indices
+        # from IPython import embed; embed(header="CAT - 271 in layers.py ")
         shifted = (x - self.min).to(torch.int32)
         output = self.map[self.indices, shifted]
         return output
@@ -599,11 +601,13 @@ class RotatePhiLayer(torch.nn.Module):  # noqa: F811
         columns: list[str] | None,
         ref_phi_columns: list[str] | None = ("lepton1", "lepton2"),
         rotate_columns: list[str] | None = ("bjet1", "bjet2", "fatjet", "lepton1", "lepton2"),
+        separator="_",
     ):
         """
         Rotate specific *columns* given in *rotate_columns* relative to reference in *ref_phi_columns*.
         """
         super().__init__()
+        self.separator=separator
         self.ref_indices = torch.nn.Buffer(self.find_indices_of(columns, ref_phi_columns, True), persistent=True)
         self.rotate_indices = torch.nn.Buffer(self.find_indices_of(columns, rotate_columns, True), persistent=True)
 
@@ -618,18 +622,19 @@ class RotatePhiLayer(torch.nn.Module):  # noqa: F811
         search_in: list[str],
         search_for: list[str],
         _expand: bool = False,
+
     ) -> torch.FloatTensor | None:
         if search_in is None or search_for is None:
             return None
 
         if _expand:
-            search_for = self._expand(search_for)
+            search_for = self._expand(search_for, separator=self.separator)
         return torch.tensor([tuple(map(search_in.index, particle)) for particle in search_for])
 
-    def _expand(self, columns: list[str] | str) -> list[tuple[str, str]]:
+    def _expand(self, columns: list[str] | str, separator="_") -> list[tuple[str, str]]:
         # adds px, py to columns and return them as tuple
         columns = [columns] if isinstance(columns, str) else columns
-        return [tuple(f"{col}.{suffix}" for suffix in ("px", "py")) for col in columns]
+        return [tuple(f"{col}{separator}{suffix}" for suffix in ("px", "py")) for col in columns]
 
     def calc_phi(
         self,

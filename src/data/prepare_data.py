@@ -3,10 +3,9 @@ import numpy as np
 import torch
 
 from collections import defaultdict
-import torch.utils.data as t_data
-from src.data.load_data import load_data
-from src.data.datasets import EraDataset, EraDatasetSampler
-from src.utils.logger import get_logger
+from data.load_data import load_data
+from data.datasets import EraDataset, EraDatasetSampler
+from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -61,7 +60,9 @@ def get_sum_of_weights(array):
             weights[year][process_id] = ak.sum(arr.normalization_weight)
     return weights
 
-def prepare_data(datasets, eras, input_columns, target_columns, dtype=torch.float32, file_type="root"):
+def prepare_data(datasets, eras, input_columns, target_columns, dtype=torch.float32, file_type="root", split_index=None):
+
+
     events = load_data(
         datasets,
         eras,
@@ -71,7 +72,7 @@ def prepare_data(datasets, eras, input_columns, target_columns, dtype=torch.floa
 
     events = filter_datasets(events)
     # convert to torch tensors and create EraDatasets objects
-    EraDatasetManager = EraDatasetSampler(None, batch_size=1024*4)
+    EraDatasetManager = EraDatasetSampler(None, batch_size=1024*4, split_index=split_index)
     for dataset_type, (era_pid) in events.items():
         for (era, process_id), arr in era_pid.items():
 
@@ -92,8 +93,6 @@ def prepare_data(datasets, eras, input_columns, target_columns, dtype=torch.floa
             logger.info(f"Add dataset {process_id} of era {era}")
 
         EraDatasetManager.calculate_sample_size(dataset_type=dataset_type, min_size=5)
-    from IPython import embed; embed(header="string - 265 in load_data.py ")
-
     return EraDatasetManager
 
 if __name__ == "__main__":
@@ -103,13 +102,5 @@ if __name__ == "__main__":
     input_columns = ["event", "process_id"]
     target_columns = ["target"]
     # filter process after process_id
-    e = prepare_data(datasets, eras, input_columns, target_columns, dtype=torch.float32, file_type="root")
-    from IPython import embed; embed(header="BEFORE - 288 in load_data.py ")
-
-    input_data = awkward_to_torch(events, ["event", "process_id"], dtype=torch.float32)
-    target_data = awkward_to_torch(events, ["target"], dtype=torch.float32)
-    # sum_of_weights = ak.full_like(array.normalization_weight, ak.sum(array.normalization_weight))
-    # weights = awkward_to_torch(events, ["sum_of_weights"], dtype=torch.float32)
-    from IPython import embed; embed(header="Debugger to test the functions - in load_data.py ")
-
-    sampler = t_data.WeightedRandomSampler(weights.flatten(), len(weights))
+    sampler = prepare_data(datasets, eras, input_columns, target_columns, dtype=torch.float32, file_type="root")
+    from IPython import embed; embed(header="Get a sample by using sampler.get_batch() - in load_data.py ")

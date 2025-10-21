@@ -16,7 +16,7 @@ translation = {
     "bjet1.mass" : "res_dnn_pnet_bjet1_mass",
     "bjet1.px" : "res_dnn_pnet_bjet1_px",
     "bjet1.py" : "res_dnn_pnet_bjet1_py",
-    "bjet1.pz" : "res_dnn_pnet_bjet1_p",
+    "bjet1.pz" : "res_dnn_pnet_bjet1_pz",
     "bjet2.btagPNetB" :  "res_dnn_pnet_bjet2_tag_b",
     "bjet2.btagPNetCvB" : "res_dnn_pnet_bjet2_tag_cvsb",
     "bjet2.btagPNetCvL" : "res_dnn_pnet_bjet2_tag_cvsl",
@@ -25,7 +25,7 @@ translation = {
     "bjet2.mass" : "res_dnn_pnet_bjet2_mass",
     "bjet2.px" : "res_dnn_pnet_bjet2_px",
     "bjet2.py" : "res_dnn_pnet_bjet2_py",
-    "bjet2.pz" : "res_dnn_pnet_bjet2_p",
+    "bjet2.pz" : "res_dnn_pnet_bjet2_pz",
     "fatjet.energy" : "res_dnn_pnet_fatjet_e",
     "fatjet.mass" : "missing",
     "fatjet.px" : "res_dnn_pnet_fatjet_px",
@@ -42,7 +42,7 @@ translation = {
     "lepton2.py" : "res_dnn_pnet_vis_tau2_py",
     "lepton2.pz" : "res_dnn_pnet_vis_tau2_pz",
     "PuppiMET.px" : "res_dnn_pnet_met_px",
-    "PuppiMet.py" : "res_dnn_pnet_met_py",
+    "PuppiMET.py" : "res_dnn_pnet_met_py",
     "reg_dnn_nu1_px" : "reg_dnn_nu1_px",
     "reg_dnn_nu1_py" : "reg_dnn_nu1_py", # missing
     "reg_dnn_nu1_pz" : "reg_dnn_nu1_pz",
@@ -74,23 +74,67 @@ def expand(str_list):
     return cols
 
 
-continous_features = expand([
-    "bjet1.{btagPNetB,btagPNetCvB,btagPNetCvL,energy,hhbtag,mass,px,py,pz}",
-    "bjet2.{btagPNetB,btagPNetCvB,btagPNetCvL,energy,hhbtag,mass,px,py,pz}",
-    "fatjet.{energy,mass,px,py,pz}",
-    "lepton1.{energy,mass,px,py,pz}",
-    "lepton2.{energy,mass,px,py,pz}",
-    "PuppiMET.{px,py}",
-    "reg_dnn_nu{1,2}_{px,py,pz}",
-])
+# continous_features = expand([
+#     "bjet1.{btagPNetB,btagPNetCvB,btagPNetCvL,hhbtag,px,py,pz}",
+#     "bjet2.{btagPNetB,btagPNetCvB,btagPNetCvL,hhbtag,px,py,pz}",
+#     "fatjet.{px,py,pz}",
+#     "lepton1.{px,py,pz}",
+#     "lepton2.{px,py,pz}",
+#     "PuppiMET.{px,py}",
+#     # "reg_dnn_nu{1,2}_{px,pz}",
+# ])
 
-categorical_features = expand([
-"pair_type",
-"decay_mode{1,2}",
-"lepton{1,2}.charge",
-"has_fatjet",
-"has_jet_pair",
-"year_flag ",
-])
+# categorical_features = expand([
+# "pair_type",
+# "decay_mode{1,2}",
+# "lepton{1,2}.charge",
+# "has_fatjet",
+# "has_jet_pair",
+# # "year_flag ",
+# ])
 
- 
+categorical_features: list[str] = [
+    "res_dnn_pnet_pair_type",
+    "res_dnn_pnet_dm1",
+    "res_dnn_pnet_dm2",
+    "res_dnn_pnet_vis_tau1_charge",
+    "res_dnn_pnet_vis_tau2_charge",
+    "res_dnn_pnet_has_jet_pair",
+    "res_dnn_pnet_has_fatjet",
+]
+# continuous input features to the network
+continous_features: list[str] = [
+    "res_dnn_pnet_met_px", "res_dnn_pnet_met_py",
+    "res_dnn_pnet_met_cov00", "res_dnn_pnet_met_cov01", "res_dnn_pnet_met_cov11",
+    "res_dnn_pnet_vis_tau1_px", "res_dnn_pnet_vis_tau1_py", "res_dnn_pnet_vis_tau1_pz", "res_dnn_pnet_vis_tau1_e",
+    "res_dnn_pnet_vis_tau2_px", "res_dnn_pnet_vis_tau2_py", "res_dnn_pnet_vis_tau2_pz", "res_dnn_pnet_vis_tau2_e",
+    "res_dnn_pnet_bjet1_px", "res_dnn_pnet_bjet1_py", "res_dnn_pnet_bjet1_pz", "res_dnn_pnet_bjet1_e",
+    "res_dnn_pnet_bjet1_tag_b", "res_dnn_pnet_bjet1_tag_cvsb", "res_dnn_pnet_bjet1_tag_cvsl", "res_dnn_pnet_bjet1_hhbtag",
+    "res_dnn_pnet_bjet2_px", "res_dnn_pnet_bjet2_py", "res_dnn_pnet_bjet2_pz", "res_dnn_pnet_bjet2_e",
+    "res_dnn_pnet_bjet2_tag_b", "res_dnn_pnet_bjet2_tag_cvsb", "res_dnn_pnet_bjet2_tag_cvsl", "res_dnn_pnet_bjet2_hhbtag",
+    "res_dnn_pnet_fatjet_px", "res_dnn_pnet_fatjet_py", "res_dnn_pnet_fatjet_pz", "res_dnn_pnet_fatjet_e",
+    "res_dnn_pnet_htt_e", "res_dnn_pnet_htt_px", "res_dnn_pnet_htt_py", "res_dnn_pnet_htt_pz",
+    "res_dnn_pnet_hbb_e", "res_dnn_pnet_hbb_px", "res_dnn_pnet_hbb_py", "res_dnn_pnet_hbb_pz",
+    "res_dnn_pnet_htthbb_e", "res_dnn_pnet_htthbb_px", "res_dnn_pnet_htthbb_py", "res_dnn_pnet_htthbb_pz",
+    "res_dnn_pnet_httfatjet_e", "res_dnn_pnet_httfatjet_px", "res_dnn_pnet_httfatjet_py", "res_dnn_pnet_httfatjet_pz",
+]
+
+
+# continous_features = expand([
+#     "bjet1.{btagPNetB,btagPNetCvB,btagPNetCvL,energy,hhbtag,px,py,pz}",
+#     "bjet2.{btagPNetB,btagPNetCvB,btagPNetCvL,energy,hhbtag,px,py,pz}",
+#     "fatjet.{energy,px,py,pz}",
+#     "lepton1.{energy,px,py,pz}",
+#     "lepton2.{energy,px,py,pz}",
+#     "PuppiMET.{px,py}",
+#     "reg_dnn_nu{1,2}_{px,pz}",
+# ])
+
+# categorical_features = expand([
+# "pair_type",
+# "decay_mode{1,2}",
+# "lepton{1,2}.charge",
+# "has_fatjet",
+# "has_jet_pair",
+# "year_flag ",
+# ])
