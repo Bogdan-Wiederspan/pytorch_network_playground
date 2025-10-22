@@ -32,7 +32,7 @@ categorical_features: list[str] = [
 
 continous_features: list[str] = [
     "met_px", "met_py",
-    "met_cov00", "met_cov01", "met_cov11",
+    # "met_cov00", "met_cov01", "met_cov11",
     # "vis_tau1_px", "vis_tau1_py", "vis_tau1_pz", "vis_tau1_e",
     # "vis_tau2_px", "vis_tau2_py", "vis_tau2_pz", "vis_tau2_e",
     # "bjet1_px", "bjet1_py", "bjet1_pz", "bjet1_e",
