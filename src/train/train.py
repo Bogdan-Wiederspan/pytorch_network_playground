@@ -1,8 +1,8 @@
 import torch
 from utils import utils
 from models import layers, create_model
-from data import extract_features
-from data.load_data import get_data, find_datasets, create_sampler
+from data import features
+from data.load_data import get_data, find_datasets, create_sampler, get_batch_statistics
 
 # load data
 # eras = ["22pre", "22post", "23pre", "23post"] if not debugging else ["22pre"]
@@ -12,8 +12,8 @@ debugging = False
 
 dataset_config = {
     "min_events":3,
-    "continous_features" : extract_features.continous_features if not debugging else extract_features.continous_features[:2],
-    "categorical_features": extract_features.categorical_features if not debugging else extract_features.categorical_features[:2],
+    "continous_features" : features.continous_features if not debugging else features.continous_features[:2],
+    "categorical_features": features.categorical_features if not debugging else features.categorical_features[:2],
     "eras" : eras,
     "datasets" : datasets,
 }
@@ -31,18 +31,20 @@ layer_config = {
 
 config = {
 
-    "lr":1e2,
+    "lr":1e-2,
     "gamma":0.9,
     "label_smoothing":0,
 }
-from IPython import embed; embed(header="string - 39 in train.py ")
+
+# load data in format {pid : torch}
 events = get_data(dataset_config)
+staitistics = get_batch_statistics(events, padding_value=-99999)
+
 sampler = create_sampler(
     events,
-    input_columns=dataset_config["continous_features"] + dataset_config["categorical_features"],
-    dtype=torch.float32,
     min_size=3,
 )
+from IPython import embed; embed(header="string - 39 in train.py ")
 
 
 models_input_layer, model = create_model.init_layers(dataset_config["continous_features"], dataset_config["categorical_features"], config=layer_config)
@@ -105,14 +107,14 @@ from IPython import embed; embed(header="END - 89 in train.py ")
 
 def torch_export(model, dst_path, input_tensors):
     from pathlib import Path
-    model.eval()
+    model = model.eval()
 
-    cat, con = input_tensors
+    categorical_input, continous_inputs = input_tensors
 
     # HINT: input is chosen since model takes a tuple of inputs, normally name of inputs is used
     dim = torch.export.dynamic_shapes.Dim.AUTO
     dynamic_shapes = {
-        "input": ((dim, cat.shape[-1]), (dim, con[-1]))
+        "input": ((dim, categorical_input.shape[-1]), (dim, continous_inputs.shape[-1]))
     }
 
     exp = torch.export.export(
