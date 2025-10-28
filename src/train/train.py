@@ -10,8 +10,8 @@ CUDA = torch.device("cuda")
 DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 # load data
-# eras = ["22pre", "22post", "23pre", "23post"] if not debugging else ["22pre"]
-eras = ["22pre", "22post"]
+eras = ["22pre", "22post", "23pre", "23post"]
+era_map = {"22pre": 0, "22post": 1, "23pre": 2, "23post": 3}
 datasets = find_datasets(["dy_*","tt_*", "hh_ggf_hbb_htt_kl0_kt1*"], eras, "root")
 debugging = False
 
@@ -41,22 +41,18 @@ config = {
     "label_smoothing":0,
 }
 
-# load data in format {pid : torch}
-# print("LOAD CACHE")
-# p = "/data/dust/user/wiedersb/HH_DNN/cache/test_cache"
-# import pickle
-# with open(p, "rb") as file:
-#     events = pickle.load(file)
-# from IPython import embed; embed(header="AFTER - 44 in train.py ")
 
-
-events = get_data(dataset_config, cache_path=None, overwrite=True)
+events = get_data(dataset_config, overwrite=True)
 layer_config["mean"],layer_config["std"] = get_batch_statistics(events, padding_value=-99999)
+
+
 
 sampler = create_sampler(
     events,
+    target_map = {"hh" : 0, "dy": 1, "tt": 2},
     min_size=3,
 )
+from IPython import embed; embed(header="string - 50 in train.py ")
 
 
 
@@ -69,34 +65,22 @@ model = model.to(DEVICE)
 # HINT: requires only logits, no softmax at end
 loss_fn = torch.nn.CrossEntropyLoss(weight=None, size_average=None,label_smoothing=config["label_smoothing"])
 
+# loss = loss_fn(pred, target)
+# from IPython import embed; embed(header="string - 614 in bognet.py ")
+# loss.backward()
+# optimizer.first_step(zero_grad=True)
 
-    # loss = loss_fn(pred, target)
-    # from IPython import embed; embed(header="string - 614 in bognet.py ")
-    # loss.backward()
-    # optimizer.first_step(zero_grad=True)
-
-    # # second forward step with disabled bachnorm running stats in second forward step
-    # disable_running_stats(model)
-    # pred_2 = self(categorical_x, continous_x)
-    # loss_fn(pred_2, target).backward()
-    # optimizer.second_step(zero_grad=True)
+# # second forward step with disabled bachnorm running stats in second forward step
+# disable_running_stats(model)
+# pred_2 = self(categorical_x, continous_x)
+# loss_fn(pred_2, target).backward()
+# optimizer.second_step(zero_grad=True)
 max_iteration = 100
 LOG_INTERVAL = 10
 model.train()
 running_loss = 0.0
 
-#### PREPARE DATA
-
-# sampler = prepare_data.prepare_data(
-#     find_datasets(dataset_config["dataset_pattern"], dataset_config["eras"], "root"),
-#     dataset_config["continous_features"] + dataset_config["categorical_features"],
-#     dtype=torch.float32,
-#     file_type="root",
-#     min_size=dataset_config["min_events"],
-# )
-
 for iteration in range(max_iteration):
-    # from IPython import embed; embed(header="string - 65 in train.py ")
     optimizer.zero_grad()
 
     cont, cat, targets = sampler.get_batch()
