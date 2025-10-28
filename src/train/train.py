@@ -4,6 +4,11 @@ from models import layers, create_model
 from data import features
 from data.load_data import get_data, find_datasets, create_sampler, get_batch_statistics
 
+
+CPU = torch.device("cpu")
+CUDA = torch.device("cuda")
+DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+
 # load data
 # eras = ["22pre", "22post", "23pre", "23post"] if not debugging else ["22pre"]
 eras = ["22pre", "22post"]
@@ -37,30 +42,34 @@ config = {
 }
 
 # load data in format {pid : torch}
-events = get_data(dataset_config)
-staitistics = get_batch_statistics(events, padding_value=-99999)
+# print("LOAD CACHE")
+# p = "/data/dust/user/wiedersb/HH_DNN/cache/test_cache"
+# import pickle
+# with open(p, "rb") as file:
+#     events = pickle.load(file)
+# from IPython import embed; embed(header="AFTER - 44 in train.py ")
+
+
+events = get_data(dataset_config, cache_path=None, overwrite=True)
+layer_config["mean"],layer_config["std"] = get_batch_statistics(events, padding_value=-99999)
 
 sampler = create_sampler(
     events,
     min_size=3,
 )
-from IPython import embed; embed(header="string - 39 in train.py ")
 
 
-models_input_layer, model = create_model.init_layers(dataset_config["continous_features"], dataset_config["categorical_features"], config=layer_config)
-max_iteration = 10
+
 # training loop:
-model.train()
 # TODO: use split of parameters
+models_input_layer, model = create_model.init_layers(dataset_config["continous_features"], dataset_config["categorical_features"], config=layer_config)
 optimizer = torch.optim.AdamW(model.parameters(), lr=config["lr"])
 scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=config["gamma"])
-
+model = model.to(DEVICE)
 # HINT: requires only logits, no softmax at end
 loss_fn = torch.nn.CrossEntropyLoss(weight=None, size_average=None,label_smoothing=config["label_smoothing"])
 
-CPU = torch.device("cpu")
-CUDA = torch.device("cuda")
-device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+
     # loss = loss_fn(pred, target)
     # from IPython import embed; embed(header="string - 614 in bognet.py ")
     # loss.backward()
@@ -71,6 +80,7 @@ device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cp
     # pred_2 = self(categorical_x, continous_x)
     # loss_fn(pred_2, target).backward()
     # optimizer.second_step(zero_grad=True)
+max_iteration = 100
 LOG_INTERVAL = 10
 model.train()
 running_loss = 0.0
@@ -85,15 +95,13 @@ running_loss = 0.0
 #     min_size=dataset_config["min_events"],
 # )
 
-from IPython import embed; embed(header="Before Training")
 for iteration in range(max_iteration):
     # from IPython import embed; embed(header="string - 65 in train.py ")
     optimizer.zero_grad()
 
-    inputs, targets = sampler.get_batch()
-    inputs, targets = inputs.to(device), targets.to(device)
-    continous_inputs, categorical_input = inputs[:, :len(dataset_config["continous_features"])], inputs[:, len(dataset_config["continous_features"]):]
-    pred = model((categorical_input,continous_inputs))
+    cont, cat, targets = sampler.get_batch()
+    cont, cat, targets = cont.to(DEVICE), cat.to(DEVICE), targets.to(DEVICE)
+    pred = model((cat,cont))
 
     loss = loss_fn(pred, targets.reshape(-1,3))
     loss.backward()

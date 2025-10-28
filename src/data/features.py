@@ -22,6 +22,7 @@ data_prefix = "res_dnn_pnet_"
 
 categorical_features: list[str] = [
     "pair_type",
+    # "channel_id",
     "dm1",
     "dm2",
     "vis_tau1_charge",
@@ -32,18 +33,18 @@ categorical_features: list[str] = [
 
 continous_features: list[str] = [
     "met_px", "met_py",
-    # "met_cov00", "met_cov01", "met_cov11",
-    # "vis_tau1_px", "vis_tau1_py", "vis_tau1_pz", "vis_tau1_e",
-    # "vis_tau2_px", "vis_tau2_py", "vis_tau2_pz", "vis_tau2_e",
-    # "bjet1_px", "bjet1_py", "bjet1_pz", "bjet1_e",
-    # "bjet1_tag_b", "bjet1_tag_cvsb", "bjet1_tag_cvsl", "bjet1_hhbtag",
-    # "bjet2_px", "bjet2_py", "bjet2_pz", "bjet2_e",
-    # "bjet2_tag_b", "bjet2_tag_cvsb", "bjet2_tag_cvsl", "bjet2_hhbtag",
-    # "fatjet_px", "fatjet_py", "fatjet_pz", "fatjet_e",
-    # "htt_e", "htt_px", "htt_py", "htt_pz",
-    # "hbb_e", "hbb_px", "hbb_py", "hbb_pz",
-    # "htthbb_e", "htthbb_px", "htthbb_py", "htthbb_pz",
-    # "httfatjet_e", "httfatjet_px", "httfatjet_py", "httfatjet_pz",
+    "met_cov00", "met_cov01", "met_cov11",
+    "vis_tau1_px", "vis_tau1_py", "vis_tau1_pz", "vis_tau1_e",
+    "vis_tau2_px", "vis_tau2_py", "vis_tau2_pz", "vis_tau2_e",
+    "bjet1_px", "bjet1_py", "bjet1_pz", "bjet1_e",
+    "bjet1_tag_b", "bjet1_tag_cvsb", "bjet1_tag_cvsl", "bjet1_hhbtag",
+    "bjet2_px", "bjet2_py", "bjet2_pz", "bjet2_e",
+    "bjet2_tag_b", "bjet2_tag_cvsb", "bjet2_tag_cvsl", "bjet2_hhbtag",
+    "fatjet_px", "fatjet_py", "fatjet_pz", "fatjet_e",
+    "htt_e", "htt_px", "htt_py", "htt_pz",
+    "hbb_e", "hbb_px", "hbb_py", "hbb_pz",
+    "htthbb_e", "htthbb_px", "htthbb_py", "htthbb_pz",
+    "httfatjet_e", "httfatjet_px", "httfatjet_py", "httfatjet_pz",
 ]
 
 continous_features =  [data_prefix + f for f in continous_features]

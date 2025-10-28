@@ -49,9 +49,12 @@ class EraDataset(t_data.Dataset):
 
         idx = self.indices[start_idx:next_idx]
         # reset if we reached the end of the dataset and drop last incomplete batch
-        data = self.continous_input[idx], self.categorical_input[idx],self.targets[idx]
+        try:
+            data = self.continous_input[idx], self.categorical_input[idx],self.targets[idx]
+        except:
+            from IPython import embed; embed(header="string - 55 in datasets.py ")
         self.current_idx = next_idx
-        if self.current_idx == len(self):
+        if self.current_idx >= len(self):
             self.reset()
         return data
 
@@ -215,7 +218,8 @@ class EraDatasetSampler(t_data.Sampler):
         batch_target = torch.concatenate(batch_target, dim=0)
 
         if shuffle_batch:
-            indices = torch.randperm(int(self.batch_size))
+            # needs to be depending on data due to last incomplete batch
+            indices = torch.randperm(batch_cont.shape[0])
             batch_cont = batch_cont[indices]
             batch_cat = batch_cat[indices]
             batch_target = batch_target[indices]
