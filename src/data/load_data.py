@@ -328,8 +328,8 @@ def create_sampler(events, target_map, min_size=1):
         # create target tensor from uid
         num_events = len(arrays["continous"])
         target_value = target_map[dataset_type]
-        target = torch.zeros(size=(num_events,3), dtype=torch.int32)
-        target[:, target_value] = 1
+        target = torch.zeros(size=(num_events,3), dtype=torch.float32)
+        target[:, target_value] = 1.
 
         era_dataset = EraDataset(
             continous_tensor=arrays["continous"],

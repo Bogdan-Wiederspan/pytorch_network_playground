@@ -180,10 +180,10 @@ class EraDatasetSampler(t_data.Sampler):
         # if one still mismatch add it on lowest or remove from highest
         very_last_remaining = int(floored_sizes.sum()) - sub_batch_size
         # from IPython import embed; embed(header="string - 144 in datasets.py ")
-        if very_last_remaining == -1:
-            floored_sizes[indices_above_threshold[0]] += 1
-        elif very_last_remaining == 1:
-            floored_sizes[indices_above_threshold[-1]] -= 1
+        if very_last_remaining <= -1:
+            floored_sizes[indices_above_threshold[0]] += very_last_remaining
+        elif very_last_remaining >= 1:
+            floored_sizes[indices_above_threshold[-1]] -= very_last_remaining
         elif very_last_remaining != 0:
             from IPython import embed; embed(header=f"{floored_sizes.sum()} but should be {sub_batch_size}")
             raise ValueError(f"Resampling failed: Created batch size of size: {floored_sizes.sum()} but should be {sub_batch_size}")

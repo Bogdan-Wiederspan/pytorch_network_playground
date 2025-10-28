@@ -42,7 +42,7 @@ config = {
 }
 
 
-events = get_data(dataset_config, overwrite=True)
+events = get_data(dataset_config, overwrite=False)
 layer_config["mean"],layer_config["std"] = get_batch_statistics(events, padding_value=-99999)
 
 
@@ -84,7 +84,9 @@ for iteration in range(max_iteration):
     optimizer.zero_grad()
 
     cont, cat, targets = sampler.get_batch()
+    targets = targets.to(torch.float32)
     cont, cat, targets = cont.to(DEVICE), cat.to(DEVICE), targets.to(DEVICE)
+
     pred = model((cat,cont))
 
     loss = loss_fn(pred, targets.reshape(-1,3))
@@ -96,30 +98,3 @@ for iteration in range(max_iteration):
         print(f"Step {iteration} Loss: {loss.item():.4f}")
 
 from IPython import embed; embed(header="END - 89 in train.py ")
-
-def torch_export(model, dst_path, input_tensors):
-    from pathlib import Path
-    model = model.eval()
-
-    categorical_input, continous_inputs = input_tensors
-
-    # HINT: input is chosen since model takes a tuple of inputs, normally name of inputs is used
-    dim = torch.export.dynamic_shapes.Dim.AUTO
-    dynamic_shapes = {
-        "input": ((dim, categorical_input.shape[-1]), (dim, continous_inputs.shape[-1]))
-    }
-
-    exp = torch.export.export(
-        model,
-        args=((categorical_input, continous_inputs),),
-        dynamic_shapes=dynamic_shapes,
-    )
-
-    p = Path(f"{dst_path}").with_suffix(".pt2")
-    torch.export.save(exp, p)
-
-
-def run_exported_tensor_model(pt2_path, input_tensors):
-    exp = torch.export.load(pt2_path)
-    scores = exp.module()(input_tensors)
-    return scores
