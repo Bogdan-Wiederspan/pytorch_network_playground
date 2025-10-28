@@ -12,6 +12,7 @@ from collections import defaultdict
 from data.utils import depthCount
 from utils.logger import get_logger
 from data.datasets import EraDataset, EraDatasetSampler
+from data.cache import DataCacher
 
 logger = get_logger(__name__)
 
@@ -134,23 +135,6 @@ def get_loader(file_type: str, **kwargs):
         case _:
             raise ValueError(f"Unknown file type: {file_type}")
 
-def get_cache_path(config=None):
-    import hashlib
-    import os
-    import pathlib
-    h = tuple(config.items())
-    h = hashlib.sha256(str(h).encode("utf-8")).hexdigest()[:10]
-    cache_dir = pathlib.Path(os.environ["CACHE_DIR"]).with_name(h)
-    return cache_dir
-
-def save_cache(data, path):
-    if not path.parent.exists():
-        raise FileExistsError(f"Cache path is not given and is not derivable or exist")
-    logger.info(f"Saving cache at {path}:")
-    with open(f"{path}", "wb") as file:
-        pickle.dump(data, file, protocol=pickle.HIGHEST_PROTOCOL)
-    logger.info(f"Done saving cache in {path}")
-
 
 def load_data(datasets, file_type: str="root", columns: Union[list[str],str, None]=None):
     """
@@ -185,13 +169,13 @@ def load_data(datasets, file_type: str="root", columns: Union[list[str],str, Non
                 events = loader(files, **config)
 
                 # add target value dictated by datasets first 2 letters
-                target_value = target_map[dataset[:2]]
-                target_array = np.full(len(events), target_value, dtype=np.float32)
-                events = ak.with_field(events, target_array, "target")
+                # target_value = target_map[dataset[:2]]
+                # target_array = np.full(len(events), target_value, dtype=np.float32)
+                # events = ak.with_field(events, target_array, "target")
 
                 # add era encoding:
-                era_array = np.full(len(events), era_map[year], np.float32)
-                events = ak.with_field(events, era_array, "era")
+                # era_array = np.full(len(events), era_map[year], np.float32)
+                # events = ak.with_field(events, era_array, "era")
 
                 # filter by process_id if necessary and save, otherwise save by dataset
                 p_arrays = filter_by_process_id(events)
@@ -235,9 +219,10 @@ def load_data(datasets, file_type: str="root", columns: Union[list[str],str, Non
 
             # Convert layout -> buffers (this serializes the layout to plain buffers)
             layout = ak.to_layout(concatenated)
+            form, lenght, container = ak.to_buffers(layout)
             rebuilt = ak.from_buffers(form, lenght, container)
 
-            form, lenght, container = ak.to_buffers(layout)
+
             logger.info(f"Delete {pid}")
             # Drop everything that might reference the old buffers, force GC
             del concatenated
@@ -250,6 +235,7 @@ def load_data(datasets, file_type: str="root", columns: Union[list[str],str, Non
 
             del rebuilt
             gc.collect()
+        return new_data
 
 
     target_map = {"hh" : 0, "dy": 1, "tt": 2}
@@ -265,20 +251,15 @@ def load_data(datasets, file_type: str="root", columns: Union[list[str],str, Non
     data = replace_with_concatenated_from_buffers(data)
     return data
 
-
-
-
-def get_data(config, cache_path = None, _save_cache = True, overwrite=False):
-    import pickle
+def get_data(config, _save_cache = True, overwrite=False):
     # find cache if exists and recreate sample with this
     # else prepare data if not cache exist
-    if cache_path is None:
-        cache_path = get_cache_path(config=config)
+
+    cacher = DataCacher(config=config)
+
     # when cache exist load it and return the data
-    if cache_path.exists() and not overwrite:
-        logger.info("Loading cache")
-        with open(cache_path, "rb") as file:
-            events = pickle.load(file)
+    if not overwrite:
+        events = cacher.load_cache()
     else:
         logger.info("Prepare Loading of data:")
         cont_feat, cat_feat = config["continous_features"], config["categorical_features"]
@@ -288,7 +269,6 @@ def get_data(config, cache_path = None, _save_cache = True, overwrite=False):
             file_type = "root",
             columns = cont_feat + cat_feat
         )
-
         # conver data in {pid : {cont:arr, cat: arr, weight: arr, target: arr}}
         events = convert_awkwards_to_torch(
             events=events,
@@ -299,9 +279,9 @@ def get_data(config, cache_path = None, _save_cache = True, overwrite=False):
         # save events in cache
         if _save_cache:
             try:
-                save_cache(events, cache_path)
+                cacher.save_cache(events)
             except:
-                return events
+                from IPython import embed; embed(header="Saving Cache did not work out - going debugging to manually save \'events\' with \'cacher.save_cache\'")
     return events
 
 def convert_awkwards_to_torch(events, continous_features, categorical_features, dtype=None):
@@ -343,12 +323,12 @@ def convert_awkwards_to_torch(events, continous_features, categorical_features, 
             dtype
         )
 
-        target = awkward_to_torch(arr, ["target"], dtype)
+        # target = awkward_to_torch(arr, ["target"], dtype)
         weight = torch.tensor(ak.sum(arr.normalization_weight), dtype = dtype)
         events[uid] = {
             "continous": continous_tensor,
             "categorical": categorical_tensor,
-            "target": target,
+            # "target": target,
             "weight": weight
         }
     return events
