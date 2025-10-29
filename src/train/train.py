@@ -2,7 +2,7 @@ import torch
 from utils import utils
 from models import layers, create_model
 from data import features
-from data.load_data import get_data, find_datasets, create_sampler, get_batch_statistics
+from data.load_data import get_data, find_datasets, create_sampler, get_batch_statistics, filter_fold
 
 
 CPU = torch.device("cpu")
@@ -39,11 +39,25 @@ config = {
     "lr":1e-2,
     "gamma":0.9,
     "label_smoothing":0,
+    "current_fold" : 0,
+    "k_fold" : 5,
+    "seed" : 1,
+    "train_ratio" : 0.75
 }
 
 
 events = get_data(dataset_config, overwrite=False)
+train_data, validation_data = filter_fold(
+    events,
+    c_folg=config["c_fold"],
+    k_fold=config["k_fold"],
+    seed=config["seed"],
+    train_ratio=config["train_ratio"]
+)
+from IPython import embed; embed(header="string - 45 in train.py ")
 layer_config["mean"],layer_config["std"] = get_batch_statistics(events, padding_value=-99999)
+
+# fold data
 
 
 
