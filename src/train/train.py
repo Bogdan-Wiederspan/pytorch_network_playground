@@ -21,6 +21,7 @@ dataset_config = {
     "categorical_features": features.categorical_features if not debugging else features.categorical_features[:2],
     "eras" : eras,
     "datasets" : datasets,
+    "folds" : 3,
 }
 
 # config of network
@@ -35,7 +36,6 @@ layer_config = {
 }
 
 config = {
-
     "lr":1e-2,
     "gamma":0.9,
     "label_smoothing":0,
@@ -52,16 +52,14 @@ sampler = create_sampler(
     target_map = {"hh" : 0, "dy": 1, "tt": 2},
     min_size=3,
 )
-from IPython import embed; embed(header="string - 50 in train.py ")
 
 
-
-# training loop:
 # TODO: use split of parameters
 models_input_layer, model = create_model.init_layers(dataset_config["continous_features"], dataset_config["categorical_features"], config=layer_config)
+model = model.to(DEVICE)
 optimizer = torch.optim.AdamW(model.parameters(), lr=config["lr"])
 scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=config["gamma"])
-model = model.to(DEVICE)
+
 # HINT: requires only logits, no softmax at end
 loss_fn = torch.nn.CrossEntropyLoss(weight=None, size_average=None,label_smoothing=config["label_smoothing"])
 
@@ -75,17 +73,19 @@ loss_fn = torch.nn.CrossEntropyLoss(weight=None, size_average=None,label_smoothi
 # pred_2 = self(categorical_x, continous_x)
 # loss_fn(pred_2, target).backward()
 # optimizer.second_step(zero_grad=True)
-max_iteration = 100
+max_iteration = 1000
 LOG_INTERVAL = 10
 model.train()
 running_loss = 0.0
+from IPython import embed; embed(header="BEFORE trainig - 81 in train.py ")
+# training loop:
 
 for iteration in range(max_iteration):
     optimizer.zero_grad()
 
-    cont, cat, targets = sampler.get_batch()
+    cont, cat, targets = sampler.get_batch(device=DEVICE)
     targets = targets.to(torch.float32)
-    cont, cat, targets = cont.to(DEVICE), cat.to(DEVICE), targets.to(DEVICE)
+
 
     pred = model((cat,cont))
 
