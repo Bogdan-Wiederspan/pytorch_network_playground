@@ -203,7 +203,7 @@ def get_data(config, _save_cache = True, overwrite=False):
     cacher = DataCacher(config=config)
 
     # when cache exist load it and return the data
-    if not overwrite:
+    if not overwrite and cacher.path:
         events = cacher.load_cache()
     else:
         logger.info("Prepare Loading of data:")
