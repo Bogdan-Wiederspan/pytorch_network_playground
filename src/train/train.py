@@ -2,7 +2,39 @@ import torch
 from utils import utils
 from models import layers, create_model
 from data.features import input_features
-from data.load_data import get_data, find_datasets, create_sampler, get_batch_statistics, filter_fold
+from data.load_data import get_data, find_datasets, create_train_or_validation_sampler, get_batch_statistics, filter_fold
+
+def validation(model, sampler):
+    model.eval()
+    with torch.no_grad():
+        print("Starting Validation:")
+        # run validation every x steps
+        val_loss = []
+        model.eval()
+        val_batch_size = 2048 * 8
+        for uid, validation_batch_generator in sampler.get_dataset_batch_generators(
+            batch_size=val_batch_size,
+            reset=True,
+            device=DEVICE
+            ).items():
+            print(f"doing {uid}")
+            dataset_losses = []
+
+            for cont, cat, tar in validation_batch_generator:
+                cat, cont, tar = cat.to(DEVICE), cont.to(DEVICE), tar.to(DEVICE)
+                val_pred = model((cat, cont))
+                # TODO weighting needs to be done
+                dataset_losses.append(loss_fn(val_pred, tar))
+
+            average_val = sum(dataset_losses) / len(dataset_losses)
+            val_loss.append(average_val)
+
+            print(f"dataset: {uid}, val_loss contribution {average_val:.4f}")
+        final_validation_loss = sum(val_loss) / len(val_loss)
+        print(f"Step {iteration} Validation Loss: {final_validation_loss:.4f}")
+    model.train()
+    return final_validation_loss
+
 
 
 CPU = torch.device("cpu")
@@ -46,7 +78,7 @@ config = {
     "train_ratio" : 0.75
 }
 
-
+### data preparation ORDER MATTERS SINCE DATA IS NEVER COPIED AND VIEWS ARE MOVED
 # load data from cache or root files
 events = get_data(dataset_config, overwrite=False)
 # create k-folds from data, where seed is left out
@@ -57,27 +89,29 @@ train_data, validation_data = filter_fold(
     seed=config["seed"],
     train_ratio=config["train_ratio"]
 )
+
+layer_config["mean"],layer_config["std"] = get_batch_statistics(train_data, padding_value=-99999)
+
 # create train and validation sampler from k-1 folds
-sampler = create_sampler(
+training_sampler = create_train_or_validation_sampler(
     train_data,
     target_map = {"hh" : 0, "dy": 1, "tt": 2},
     min_size=3,
+    batch_size=4096,
+    train=True
+)
+
+validation_sampler = create_train_or_validation_sampler(
+    validation_data,
+    target_map = {"hh" : 0, "dy": 1, "tt": 2},
+    min_size=0,
+    batch_size=500,
+    train=False,
 )
 
 
-from IPython import embed; embed(header="string - 45 in train.py ")
-layer_config["mean"],layer_config["std"] = get_batch_statistics(events, padding_value=-99999)
 
 # fold data
-
-
-
-sampler = create_sampler(
-    events,
-    target_map = {"hh" : 0, "dy": 1, "tt": 2},
-    min_size=3,
-)
-
 
 # TODO: use split of parameters
 models_input_layer, model = create_model.init_layers(dataset_config["continous_features"], dataset_config["categorical_features"], config=layer_config)
@@ -100,15 +134,16 @@ loss_fn = torch.nn.CrossEntropyLoss(weight=None, size_average=None,label_smoothi
 # optimizer.second_step(zero_grad=True)
 max_iteration = 1000
 LOG_INTERVAL = 10
+validation_interval = 200
 model.train()
 running_loss = 0.0
-from IPython import embed; embed(header="BEFORE trainig - 81 in train.py ")
+
 # training loop:
 
 for iteration in range(max_iteration):
     optimizer.zero_grad()
 
-    cont, cat, targets = sampler.get_batch(device=DEVICE)
+    cont, cat, targets = training_sampler.sample_batch(device=DEVICE)
     targets = targets.to(torch.float32)
 
 
@@ -122,4 +157,6 @@ for iteration in range(max_iteration):
     if iteration % LOG_INTERVAL == 0:
         print(f"Step {iteration} Loss: {loss.item():.4f}")
 
+    if iteration % validation_interval == 0:
+        val_loss = validation(model, validation_sampler)
 from IPython import embed; embed(header="END - 89 in train.py ")

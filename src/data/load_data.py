@@ -333,9 +333,9 @@ def get_sum_of_weights(array):
             weights[year][process_id] = ak.sum(arr.normalization_weight)
     return weights
 
-def create_sampler(events, target_map, min_size=1):
+def create_train_or_validation_sampler(events, target_map, batch_size, min_size=1, train=True):
     # extract data from events and wrap into Datasets
-    EraDatasetManager = EraDatasetSampler(None, batch_size=1024*4, min_size=min_size)
+    EraDatasetManager = EraDatasetSampler(None, batch_size=batch_size, min_size=min_size)
     for uid in list(events.keys()):
         (era, dataset_type, process_id) = uid
         arrays = events.pop(uid)
@@ -343,7 +343,7 @@ def create_sampler(events, target_map, min_size=1):
         # create target tensor from uid
         num_events = len(arrays["continous"])
         target_value = target_map[dataset_type]
-        target = torch.zeros(size=(num_events,3), dtype=torch.float32)
+        target = torch.zeros(size=(num_events, len(target_map)), dtype=torch.float32)
         target[:, target_value] = 1.
 
         era_dataset = EraDataset(
@@ -358,8 +358,9 @@ def create_sampler(events, target_map, min_size=1):
         EraDatasetManager.add_dataset(era_dataset)
         logger.info(f"Add {dataset_type} pid: {process_id} of era: {era}")
 
-    for ds_type in EraDatasetManager.keys:
-        EraDatasetManager.calculate_sample_size(dataset_type=ds_type)
+    if train:
+        for ds_type in EraDatasetManager.keys:
+            EraDatasetManager.calculate_sample_size(dataset_type=ds_type)
     return EraDatasetManager
 
 def get_batch_statistics(events, padding_value=0):
@@ -452,10 +453,6 @@ def k_fold_indices(num_events, c_fold, k_fold, seed, train_ratio=0.75):
     t_idx = tv_indices[:train_length]
     v_idx = tv_indices[train_length:]
     return t_idx, v_idx
-
-
-
-
 
 
 def get_batch_statistics_per_dataset(events, padding_value=0):
