@@ -105,9 +105,16 @@ class EraDatasetSampler(t_data.Sampler):
             datasets.update(uid_ds)
             return datasets
 
-    def events_per_dataset(self):
-        return {uid: len(ds) for uid,ds in self.flat_datasets().items()}
+    def apply_func_on_datasets(self, func):
+        # small helper to apply function of managet datasets
+        return {uid: func(ds) for uid,ds in self.flat_datasets().items()}
 
+    def get_attribute_of_datasets(self, attr):
+        # small helper to getattributes from managet datasets
+        return {uid: getattr(ds, attr) for uid,ds in self.flat_datasets().items()}
+
+    def events_per_dataset(self):
+        return self.apply_func_on_datasets(len)
 
     def __len__(self):
         return sum(list(self.events_per_dataset()).values())
@@ -222,7 +229,6 @@ class EraDatasetSampler(t_data.Sampler):
                 self.era_dataset_inst[dataset_type][k].sample_size = w.item()
         else:
             logger.info({k:w.item() for k,w in zip(keys, floored_sizes)})
-
 
     def get_batch(self, device=torch.device("cpu"), shuffle_batch=True):
         # loop over dataset classes and ask them to generate a certain number of samples

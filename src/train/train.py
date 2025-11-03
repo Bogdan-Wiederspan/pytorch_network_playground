@@ -19,8 +19,8 @@ continous_features, categorical_features = input_features(debug=debugging, debug
 
 dataset_config = {
     "min_events":3,
-    "continous_features" : continous_features if not debugging else continous_features[:2],
-    "categorical_features": categorical_features if not debugging else categorical_features[:2],
+    "continous_features" : continous_features,
+    "categorical_features": categorical_features,
     "eras" : eras,
     "datasets" : datasets,
 }
@@ -47,7 +47,9 @@ config = {
 }
 
 
+# load data from cache or root files
 events = get_data(dataset_config, overwrite=False)
+# create k-folds from data, where seed is left out
 train_data, validation_data = filter_fold(
     events,
     c_fold=config["current_fold"],
@@ -55,7 +57,7 @@ train_data, validation_data = filter_fold(
     seed=config["seed"],
     train_ratio=config["train_ratio"]
 )
-
+# create train and validation sampler from k-1 folds
 sampler = create_sampler(
     train_data,
     target_map = {"hh" : 0, "dy": 1, "tt": 2},
