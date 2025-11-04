@@ -1,8 +1,17 @@
 import torch
-from utils import utils
-from models import layers, create_model
+from models import create_model
 from data.features import input_features
-from data.load_data import get_data, find_datasets, create_train_or_validation_sampler, get_batch_statistics, filter_fold
+from data.load_data import get_data, find_datasets
+from data.preprocessing import (
+    create_train_or_validation_sampler, get_batch_statistics, split_k_fold_into_training_and_validation
+    )
+from utils.logger import get_logger
+
+CPU = torch.device("cpu")
+CUDA = torch.device("cuda")
+DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+
+logger = get_logger(__name__)
 
 def validation(model, sampler):
     model.eval()
@@ -17,7 +26,6 @@ def validation(model, sampler):
             reset=True,
             device=DEVICE
             ).items():
-            print(f"doing {uid}")
             dataset_losses = []
 
             for cont, cat, tar in validation_batch_generator:
@@ -29,28 +37,23 @@ def validation(model, sampler):
             average_val = sum(dataset_losses) / len(dataset_losses)
             val_loss.append(average_val)
 
-            print(f"dataset: {uid}, val_loss contribution {average_val:.4f}")
+            # print(f"dataset: {uid}, val_loss contribution {average_val:.4f}")
         final_validation_loss = sum(val_loss) / len(val_loss)
         print(f"Step {iteration} Validation Loss: {final_validation_loss:.4f}")
     model.train()
     return final_validation_loss
 
 
-
-CPU = torch.device("cpu")
-CUDA = torch.device("cuda")
-DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-
 # load data
 eras = ["22pre", "22post", "23pre", "23post"]
 era_map = {"22pre": 0, "22post": 1, "23pre": 2, "23post": 3}
-datasets = find_datasets(["dy_*","tt_*", "hh_ggf_hbb_htt_kl0_kt1*"], eras, "root")
+datasets =  find_datasets(["dy_*","tt_*", "hh_ggf_hbb_htt_kl0_kt1*"], eras, "root")
 debugging = False
 continous_features, categorical_features = input_features(debug=debugging, debug_length=3)
 
 
 dataset_config = {
-    "min_events":3,
+    "min_events": 3,
     "continous_features" : continous_features,
     "categorical_features": categorical_features,
     "eras" : eras,
@@ -72,91 +75,106 @@ config = {
     "lr":1e-2,
     "gamma":0.9,
     "label_smoothing":0,
-    "current_fold" : 0,
+    "train_folds" : (0,),
     "k_fold" : 5,
     "seed" : 1,
     "train_ratio" : 0.75
 }
 
-### data preparation ORDER MATTERS SINCE DATA IS NEVER COPIED AND VIEWS ARE MOVED
-# load data from cache or root files
-events = get_data(dataset_config, overwrite=False)
-# create k-folds from data, where seed is left out
-train_data, validation_data = filter_fold(
-    events,
-    c_fold=config["current_fold"],
-    k_fold=config["k_fold"],
-    seed=config["seed"],
-    train_ratio=config["train_ratio"]
-)
 
-layer_config["mean"],layer_config["std"] = get_batch_statistics(train_data, padding_value=-99999)
+for current_fold in (config["train_folds"]):
+    logger.info(f"Start Training of fold {current_fold} from {config["k_fold"] - 1}")
 
-# create train and validation sampler from k-1 folds
-training_sampler = create_train_or_validation_sampler(
-    train_data,
-    target_map = {"hh" : 0, "dy": 1, "tt": 2},
-    min_size=3,
-    batch_size=4096,
-    train=True
-)
+    ### data preparation
+    # Hint: order matters, due to memory constraints views are moved in and out of dictionaries
 
-validation_sampler = create_train_or_validation_sampler(
-    validation_data,
-    target_map = {"hh" : 0, "dy": 1, "tt": 2},
-    min_size=0,
-    batch_size=500,
-    train=False,
-)
+    # load data from cache is necessary or from root files
+    # events is of form : {uid : {"continous","categorical","weight": torch tensor}
+    events = get_data(dataset_config, overwrite=False)
+
+    # create k-folds, whe current fold is test fold and leave out
+    train_data, validation_data = split_k_fold_into_training_and_validation(
+        events,
+        c_fold=current_fold,
+        k_fold=config["k_fold"],
+        seed=config["seed"],
+        train_ratio=config["train_ratio"],
+        test=False,
+    )
+
+    # get weighted mean and std of expected batch composition
+    layer_config["mean"],layer_config["std"] = get_batch_statistics(train_data, padding_value=-99999)
+
+    # create train and validation sampler from k-1 folds
+    # trainings_sampler create a composition of all subphasespaces in a batch
+
+    training_sampler = create_train_or_validation_sampler(
+        train_data,
+        target_map = {"hh" : 0, "dy": 1, "tt": 2},
+        min_size=3,
+        batch_size=4096,
+        train=True
+    )
+    # validation_sampler just loop over all datasets
+    validation_sampler = create_train_or_validation_sampler(
+        validation_data,
+        target_map = {"hh" : 0, "dy": 1, "tt": 2},
+        min_size=0,
+        batch_size=4096 * 8, # since no gradient is required, higher batch sizes are possible
+        train=False,
+    )
+
+    ### Model setup
+    models_input_layer, model = create_model.init_layers(dataset_config["continous_features"], dataset_config["categorical_features"], config=layer_config)
+    model = model.to(DEVICE)
+
+    # TODO: only linear models should contribute to weight decay
+    # TODO : SAMW Optimizer
+    optimizer = torch.optim.AdamW(model.parameters(), lr=config["lr"])
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=config["gamma"])
+
+    # HINT: requires only logits, no softmax at end
+    loss_fn = torch.nn.CrossEntropyLoss(weight=None, size_average=None,label_smoothing=config["label_smoothing"])
+
+    # loss = loss_fn(pred, target)
+    # from IPython import embed; embed(header="string - 614 in bognet.py ")
+    # loss.backward()
+    # optimizer.first_step(zero_grad=True)
+
+    # # second forward step with disabled bachnorm running stats in second forward step
+    # disable_running_stats(model)
+    # pred_2 = self(categorical_x, continous_x)
+    # loss_fn(pred_2, target).backward()
+    # optimizer.second_step(zero_grad=True)
+    max_iteration = 1000
+    LOG_INTERVAL = 10
+    validation_interval = 200
+    model.train()
+    running_loss = 0.0
+
+    # training loop:
+
+    for iteration in range(max_iteration):
+        optimizer.zero_grad()
+
+        cont, cat, targets = training_sampler.sample_batch(device=DEVICE)
+        targets = targets.to(torch.float32)
 
 
+        pred = model((cat,cont))
 
-# fold data
+        loss = loss_fn(pred, targets.reshape(-1,3))
+        loss.backward()
+        optimizer.step()
 
-# TODO: use split of parameters
-models_input_layer, model = create_model.init_layers(dataset_config["continous_features"], dataset_config["categorical_features"], config=layer_config)
-model = model.to(DEVICE)
-optimizer = torch.optim.AdamW(model.parameters(), lr=config["lr"])
-scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=config["gamma"])
+        running_loss += loss.item()
+        if iteration % LOG_INTERVAL == 0:
+            print(f"Step {iteration} Loss: {loss.item():.4f}")
 
-# HINT: requires only logits, no softmax at end
-loss_fn = torch.nn.CrossEntropyLoss(weight=None, size_average=None,label_smoothing=config["label_smoothing"])
+        if iteration % validation_interval == 0:
+            val_loss = validation(model, validation_sampler)
 
-# loss = loss_fn(pred, target)
-# from IPython import embed; embed(header="string - 614 in bognet.py ")
-# loss.backward()
-# optimizer.first_step(zero_grad=True)
+    # TODO release DATA from previous RUN
 
-# # second forward step with disabled bachnorm running stats in second forward step
-# disable_running_stats(model)
-# pred_2 = self(categorical_x, continous_x)
-# loss_fn(pred_2, target).backward()
-# optimizer.second_step(zero_grad=True)
-max_iteration = 1000
-LOG_INTERVAL = 10
-validation_interval = 200
-model.train()
-running_loss = 0.0
-
-# training loop:
-
-for iteration in range(max_iteration):
-    optimizer.zero_grad()
-
-    cont, cat, targets = training_sampler.sample_batch(device=DEVICE)
-    targets = targets.to(torch.float32)
-
-
-    pred = model((cat,cont))
-
-    loss = loss_fn(pred, targets.reshape(-1,3))
-    loss.backward()
-    optimizer.step()
-
-    running_loss += loss.item()
-    if iteration % LOG_INTERVAL == 0:
-        print(f"Step {iteration} Loss: {loss.item():.4f}")
-
-    if iteration % validation_interval == 0:
-        val_loss = validation(model, validation_sampler)
-from IPython import embed; embed(header="END - 89 in train.py ")
+    from IPython import embed; embed(header="END - 89 in train.py ")
+from IPython import embed; embed(header="FINAL - 89 in train.py ")
