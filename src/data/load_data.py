@@ -264,6 +264,11 @@ def convert_numpy_to_torch(events, continous_features, categorical_features, dty
         event_mask = filter_nan_mask(arr, continous_features + categorical_features, uid),
         arr = arr[event_mask]
 
+        # if resulting tensor is empty just skip
+        if arr.numel() == 0:
+            logger.info(f"Skipping {uid} due to zero elements")
+            continue
+
         continous_tensor, categorical_tensor = [
             numpy_to_torch(arr, feature, dtype)
             for feature in (continous_features,categorical_features)
