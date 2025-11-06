@@ -82,13 +82,19 @@ def root_to_numpy(files_path: Union[list[str],str], branches: Union[list[str], s
     meta_fields = {"process_id", "normalization_weight", "tau2_isolated", "leptons_os", "channel_id"}
     branches = set(branches).union(meta_fields)
 
+    baseline_cuts = (
+        "(tau2_isolated == 1)",
+        "(leptons_os == 1)",
+        "((channel_id == 1) | (channel_id == 2) | (channel_id == 3))",
+    )
+
     if isinstance(files_path, str):
         files_path = [files_path]
     arrays = []
     for file_path in files_path:
         with uproot.open(file_path, object_cache=None, array_cache=None) as file:
             tree = file["events"]
-            arrays.append(tree.arrays(branches, library="ak").to_numpy())
+            arrays.append(tree.arrays(branches, library="ak", cut="&".join(baseline_cuts)).to_numpy())
     return np.concatenate(arrays, axis=0)
 
 def parquet_to_awkward(files_path: Union[list[str],str], columns: Union[list[str], str, None]=None) -> ak.Array:
@@ -146,7 +152,6 @@ def load_data(datasets, file_type: str="root", columns: Union[list[str],str, Non
     Returns:
         dict: {year:{pid: List(Ids)}}
     """
-
     def sort_by_process_id(array):
         # helper to sort data by process id and not datasets,
         # results in array of structure {year:{dataset : array}}
