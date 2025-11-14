@@ -269,7 +269,6 @@ class CategoricalTokenizer(torch.nn.Module):  # noqa: F811
     def forward(self, x: torch.FloatTensor) -> torch.FloatTensor:
         # shift input array by their respective minimum and slice translation accordingly
         # map to int to be used as indices
-        # from IPython import embed; embed(header="CAT - 271 in layers.py ")
         shifted = (x - self.min).to(torch.int32)
         output = self.map[self.indices, shifted]
         return output
@@ -398,8 +397,7 @@ class InputLayer(torch.nn.Module):  # noqa: F811
         x = self.std_layer(x)
         return x
 
-    def forward(self, args):
-        categorical_inputs, continuous_inputs = args
+    def forward(self, categorical_inputs, continuous_inputs):
         x = torch.cat(
             [
                 self.continous_preprocessing_pipeline(continuous_inputs),
@@ -442,11 +440,11 @@ class ResNetBlock(torch.nn.Module):  # noqa: F811
         self.skip_connection_amplifier = torch.nn.Parameter(torch.ones(1) * skip_connection_init)
         if freeze_skip_connection:
             self.skip_connection_amplifier.requires_grad = False
-        self.layers = torch.nn.Sequential(
-            WeightNormalizedLinear(self.nodes, self.nodes, bias=False, normalize=normalize),
-            torch.nn.BatchNorm1d(self.nodes, eps=eps),
-            self.act_func,
-        )
+
+        self.linear = WeightNormalizedLinear(self.nodes, self.nodes, bias=False, normalize=normalize)
+        self.bn = torch.nn.BatchNorm1d(self.nodes, eps=eps)
+        self.act_fn = self.act_func
+
 
     def _get_attr(self, obj, attr):
         for o in dir(obj):
@@ -457,7 +455,9 @@ class ResNetBlock(torch.nn.Module):  # noqa: F811
 
     def forward(self, x: torch.FloatTensor) -> torch.FloatTensor:
         skip_connection = self.skip_connection_amplifier * x
-        x = self.layers(x)
+        x = self.linear(x)
+        x = self.bn(x)
+        x = self.act_fn(x)
         x = x + skip_connection
         return x
 
@@ -482,11 +482,9 @@ class DenseBlock(torch.nn.Module):  # noqa: F811
         self.input_nodes = input_nodes
         self.output_nodes = output_nodes
 
-        self.layers = torch.nn.Sequential(
-            WeightNormalizedLinear(self.input_nodes, self.output_nodes, bias=False, normalize=normalize),
-            torch.nn.BatchNorm1d(self.output_nodes, eps=eps),
-            self._get_attr(torch.nn.modules.activation, activation_functions)(),
-        )
+        self.linear = WeightNormalizedLinear(self.input_nodes, self.output_nodes, bias=False, normalize=normalize)
+        self.bn = torch.nn.BatchNorm1d(self.output_nodes, eps=eps)
+        self.act_fn = self._get_attr(torch.nn.modules.activation, activation_functions)()
 
     def _get_attr(self, obj, attr):
         for o in dir(obj):
@@ -496,7 +494,10 @@ class DenseBlock(torch.nn.Module):  # noqa: F811
             raise AttributeError(f"Object has no attribute '{attr}'")
 
     def forward(self, x):
-        return self.layers(x)
+        x = self.linear(x)
+        x = self.bn(x)
+        x = self.act_fn(x)
+        return x
 
 class ResNetPreactivationBlock(torch.nn.Module):  # noqa: F811
     def __init__(
@@ -533,15 +534,12 @@ class ResNetPreactivationBlock(torch.nn.Module):  # noqa: F811
         if freeze_skip_connection:
             self.skip_connection_amplifier.requires_grad = False
 
-
-        self.layers = torch.nn.Sequential(
-            WeightNormalizedLinear(self.nodes, self.nodes, bias=False, normalize=normalize),
-            torch.nn.BatchNorm1d(self.nodes, eps=eps),
-            self.act_func,
-            WeightNormalizedLinear(self.nodes, self.nodes, bias=False, normalize=normalize),
-            torch.nn.BatchNorm1d(self.nodes, eps=eps),
-        )
-        self.last_activation = self.act_func
+        self.linear_1 = WeightNormalizedLinear(self.nodes, self.nodes, bias=False, normalize=normalize)
+        self.bn_1 = torch.nn.BatchNorm1d(self.nodes, eps=eps)
+        self.act_fn_1 = self.act_func
+        self.linear_2 = WeightNormalizedLinear(self.nodes, self.nodes, bias=False, normalize=normalize)
+        self.bn_2 = torch.nn.BatchNorm1d(self.nodes, eps=eps)
+        self.act_fn2 = self.act_func
 
     def _get_attr(self, obj, attr):
         for o in dir(obj):
@@ -552,9 +550,13 @@ class ResNetPreactivationBlock(torch.nn.Module):  # noqa: F811
 
     def forward(self, x: torch.FloatTensor) -> torch.FloatTensor:
         skip_connection = self.skip_connection_amplifier * x
-        x = self.layers(x)
+        x = self.linear_1(x)
+        x = self.bn_1(x)
+        x = self.act_fn_1(x)
+        x = self.linear_2(x)
+        x = self.bn_2(x)
         x = x + skip_connection
-        return self.last_activation(x)
+        return self.act_fn2(x)
 
 class StandardizeLayer(torch.nn.Module):  # noqa: F811
     def __init__(
