@@ -225,7 +225,12 @@ def k_fold_indices(num_events, c_fold, k_fold, seed, test=False):
     indices = torch.arange(num_events)
 
     # true => test folds, false => train and validation folds
-    test_fold_mask = indices % k_fold == c_fold
+    # if no kfold is wished than set test to 0 and return everyrthing
+    if k_fold == 0:
+        raise(f"Can't do k-fold with desired k_fold of {k_fold}, needs to be > 0")
+    else:
+        test_fold_mask = indices % k_fold == c_fold
+
     if test:
         sub_indices = indices[test_fold_mask]
     else:
@@ -245,6 +250,8 @@ def split_array_to_train_and_validation(array, trainings_proportion=0.75):
     Returns:
         tuple (torch.Tensor, numpy.Array): Tuple of trainings and validation array
     """
+    if (trainings_proportion > 1) or (trainings_proportion < 0):
+        raise ValueError(f"Split fraction is {trainings_proportion} but needs to be in range of 0 and 1")
     train_length = round((len(array) * trainings_proportion))
     t_idx = array[:train_length]
     v_idx = array[train_length:]
@@ -297,6 +304,10 @@ def split_k_fold_into_training_and_validation(events_dict, c_fold, k_fold, seed,
 
 def create_train_or_validation_sampler(events, target_map, batch_size, min_size=1, train=True, sample_ratio={"dy": 0.25, "tt": 0.25, "hh": 0.5}):
     # extract data from events and wrap into Datasets
+    if not events:
+        logger.warning(f"Sampler is not created due to feeding empty events")
+        return None
+
     DatasetManager = DatasetSampler(None, batch_size=batch_size, min_size=min_size, sample_ratio=sample_ratio)
     for uid in list(events.keys()):
         (dataset_type, process_id) = uid
