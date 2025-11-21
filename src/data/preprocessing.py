@@ -335,32 +335,6 @@ def create_train_or_validation_sampler(events, target_map, batch_size, min_size=
             DatasetManager.calculate_sample_size(dataset_type=ds_type)
     return DatasetManager
 
-def create_train_and_validation_sampler(t_data, v_data, t_batch_size, v_batch_size, target_map={"hh" : 0, "dy": 1, "tt": 2}, min_size=1, sample_ratio={"dy": 0.25, "tt": 0.25, "hh": 0.5}):
-    train_sampler = create_train_or_validation_sampler(
-        t_data,
-        target_map = target_map,
-        min_size=min_size,
-        batch_size=t_batch_size,
-        train=True,
-        sample_ratio=sample_ratio,
-    )
-    validation_sampler = create_train_or_validation_sampler(
-        v_data,
-        target_map = target_map,
-        min_size=min_size,
-        batch_size=v_batch_size,
-        train=False,
-        sample_ratio=sample_ratio,
-    )
-
-    # share relative weight between training and validation sampler
-    for dataset_type, datasets in train_sampler.dataset_inst.items():
-        for uid, ds in datasets.items():
-            v_ds = validation_sampler.dataset_inst[dataset_type][uid]
-            v_ds.relative_weight = ds.relative_weight
-    return train_sampler, validation_sampler
-
-
 def test_sampler(events, target_map, batch_size, min_size=1, train=True):
     # FIXME: Test sampler does not work currently due to the fact that a
     # accumulation across eras is done.

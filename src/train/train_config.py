@@ -9,7 +9,7 @@ era_map = {"22pre": 0, "22post": 1, "23pre": 2, "23post": 3}
 datasets =  find_datasets(dataset_pattern, list(era_map.keys()), "root")
 
 dataset_config = {
-    "min_events": 3,
+    "min_events": 3, # TODO REMOVE since this should not affect cache
     "continous_features" : continous_features,
     "categorical_features": categorical_features,
     "eras" : list(era_map.keys()),
@@ -37,7 +37,8 @@ config = {
     "train_ratio" : 0.75,
     "v_batch_size" : 4096 * 8,
     "t_batch_size" : 4096,
-    "sample_ratio" : {"dy": 0.33, "tt": 0.33, "hh": 0.33},
+    "sample_ratio" : {"dy": 1/3, "tt": 1/3, "hh": 1/3},
+    "min_events_in_batch": 3,
 }
 
 optimizer_config = {

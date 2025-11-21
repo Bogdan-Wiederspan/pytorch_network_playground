@@ -5,7 +5,7 @@ import torch
 from models import create_model
 from data.load_data import get_data
 from data.preprocessing import (
-    create_train_and_validation_sampler, get_batch_statistics, get_batch_statistics_from_sampler, split_k_fold_into_training_and_validation, test_sampler
+    create_train_or_validation_sampler, get_batch_statistics_from_sampler, split_k_fold_into_training_and_validation,
     )
 from utils.logger import get_logger, TensorboardLogger
 from data.cache import hash_config
@@ -30,10 +30,10 @@ for current_fold in (config["train_folds"]):
 
 
     ### data preparation
-    # Hint: order matters, due to memory constraints views are moved in and out of dictionaries
+    # HINT: order matters, due to memory constraints views are moved in and out of dictionaries
 
     # load data from cache is necessary or from root files
-    # events is of form : {uid : {"continous","categorical","weight": torch tensor}
+    # events is of form : {uid : {"continous","categorical", "weight": torch tensor}
     events = get_data(dataset_config, overwrite=False, _save_cache=True)
     # create k-folds, whe current fold is test fold and leave out
     train_data, validation_data = split_k_fold_into_training_and_validation(
@@ -44,24 +44,37 @@ for current_fold in (config["train_folds"]):
         train_ratio=config["train_ratio"],
     )
 
-    # get weighted mean and std of expected batch composition
-    # model_building_config["mean"], model_building_config["std"] = get_batch_statistics(train_data, padding_value=-99999)
-
-    training_sampler, validation_sampler = create_train_and_validation_sampler(
-        t_data = train_data,
-        v_data = validation_data,
-        t_batch_size = config["t_batch_size"],
-        v_batch_size = config["v_batch_size"],
-        target_map=target_map,
-        min_size=1,
-        sample_ratio=config["sample_ratio"]
-
+    training_sampler = create_train_or_validation_sampler(
+        train_data,
+        target_map = target_map,
+        min_size=config["min_events_in_batch"],
+        batch_size=config["t_batch_size"],
+        train=True,
+        sample_ratio=config["sample_ratio"],
     )
-    model_building_config["mean"], model_building_config["std"] = get_batch_statistics_from_sampler(training_sampler, padding_values=-99999, features=dataset_config["continous_features"])
+    validation_sampler = create_train_or_validation_sampler(
+        validation_data,
+        target_map = target_map,
+        min_size=config["min_events_in_batch"],
+        batch_size=config["v_batch_size"],
+        train=False,
+        sample_ratio=config["sample_ratio"],
+    )
+
+    # share relative weight from training batch statistic to validation sampler
+    training_sampler.share_weights_between_sampler(validation_sampler)
+
+    # get weighted mean and std of expected batch composition
+    model_building_config["mean"], model_building_config["std"] = get_batch_statistics_from_sampler(
+        training_sampler,
+        padding_values=-99999,
+        features=dataset_config["continous_features"]
+    )
 
     ### Model setup
     model = create_model.BNetDenseNet(dataset_config["continous_features"], dataset_config["categorical_features"], config=model_building_config)
     model = model.to(DEVICE)
+
     # TODO: only linear models should contribute to weight decay
     # TODO : SAMW Optimizer
     weight_decay_parameters = optimizer.prepare_weight_decay(model, optimizer_config)
