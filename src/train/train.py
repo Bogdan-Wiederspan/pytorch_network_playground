@@ -15,13 +15,14 @@ from train_config import (
 )
 from train_utils import training, validation, log_metrics
 
+logger = get_logger(__name__)
+
 CPU = torch.device("cpu")
 CUDA = torch.device("cuda")
 DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 VERBOSE = False
 
-logger = get_logger(__name__)
-
+logger.info(f"Running DEVICE is {DEVICE}")
 # load data
 tboard_writer = TensorboardLogger(name=hash_config(config))
 logger.warning(f"Tensorboard logs are stored in {tboard_writer.path}")
@@ -34,14 +35,16 @@ for current_fold in (config["train_folds"]):
 
     # load data from cache is necessary or from root files
     # events is of form : {uid : {"continous","categorical", "weight": torch tensor}
-    events = get_data(dataset_config, overwrite=False, _save_cache=True)
+    # events = get_data(dataset_config, overwrite=False, _save_cache=True)
     # create k-folds, whe current fold is test fold and leave out
+    events = get_data(dataset_config, overwrite=False, _save_cache=True)
+
     train_data, validation_data = split_k_fold_into_training_and_validation(
         events,
         c_fold=current_fold,
         k_fold=config["k_fold"],
         seed=config["seed"],
-        train_ratio=config["train_ratio"],
+        train_ratio=0.75,
     )
 
     training_sampler = create_train_or_validation_sampler(
@@ -65,6 +68,7 @@ for current_fold in (config["train_folds"]):
     training_sampler.share_weights_between_sampler(validation_sampler)
 
     # get weighted mean and std of expected batch composition
+
     model_building_config["mean"], model_building_config["std"] = get_batch_statistics_from_sampler(
         training_sampler,
         padding_values=-99999,
@@ -74,6 +78,11 @@ for current_fold in (config["train_folds"]):
     ### Model setup
     model = create_model.BNetDenseNet(dataset_config["continous_features"], dataset_config["categorical_features"], config=model_building_config)
     model = model.to(DEVICE)
+
+    # ## load mean from marcel
+    # import marcel_weight_translation as mwt
+    # model = mwt.load_marcels_weights(model, continous_features=dataset_config["continous_features"])
+
 
     # TODO: only linear models should contribute to weight decay
     # TODO : SAMW Optimizer

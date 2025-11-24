@@ -61,7 +61,7 @@ def get_batch_statistics_from_sampler(sampler, padding_values=None, features=Non
     logger.info("Calculate mean and std over all subphase spaces")
     # filter keys after processes
     weighted_means = []
-    weighted_stds = []
+    weighted_vars = []
     features_dict = sampler.get_attribute_of_datasets("continous_input")
     weights_dict = sampler.get_attribute_of_datasets("relative_weight")
     sum_of_weights = sum(list(weights_dict.values()))
@@ -70,7 +70,7 @@ def get_batch_statistics_from_sampler(sampler, padding_values=None, features=Non
     # do weighted mean,std over all uid with weight
     for current_pid_idx, pid in enumerate(features_dict.keys(), start = 1):
         # go throught each feature axis and calculate statitic per feature
-        f_means, f_stds = [], []
+        f_means, f_vars = [], []
         array = features_dict[pid]
         num_f = array.shape[-1]
         print(f"calculating stats for {pid} status:{current_pid_idx}/{len(features_dict)}\t\t\r",end=" ", flush=True)
@@ -90,30 +90,30 @@ def get_batch_statistics_from_sampler(sampler, padding_values=None, features=Non
             masked_array = feature_array[~padding_mask]
 
             masked_mean = masked_array.mean(axis=0)
-            masked_std = masked_array.std(axis=0)
+            masked_var = masked_array.var(axis=0)
             # if anything got a nan go into debug mode to investigate
             if torch.isnan(masked_mean):
                 from IPython import embed; embed(header=f"{pid} is nan check feature_array and sampler")
 
             f_means.append(masked_mean)
-            f_stds.append(masked_std)
+            f_vars.append(masked_var)
 
         # weight mean and add to collection
         pid_weight = weights_dict[pid]
         weighted_means.append(torch.tensor(f_means) * pid_weight)
-        weighted_stds.append(torch.tensor(f_stds) * pid_weight)
+        weighted_vars.append(torch.tensor(f_vars) * pid_weight)
 
-    # calculate weighted average over uid means and std
+    # calculate weighted average over uid means and var
     w_avg_mean  = torch.sum(torch.stack(weighted_means, axis=0), axis = 0) / sum_of_weights
-    w_avg_std = torch.sum(torch.stack(weighted_stds, axis=0), axis = 0) / sum_of_weights
+    w_avg_var = torch.sum(torch.stack(weighted_vars, axis=0), axis = 0) / sum_of_weights
     if features:
         print("Statistics")
-        for f_name, f_mean, f_std in zip(features, w_avg_mean, w_avg_std):
-            print(f"{f_name:<30}: mean:{f_mean:>10.4} std:{f_std:>10.4}")
-    return w_avg_mean, w_avg_std
+        for f_name, f_mean, f_var in zip(features, w_avg_mean, w_avg_var):
+            print(f"{f_name:<30}: mean:{f_mean:>10.4} var:{f_var:>10.4}")
+    return w_avg_mean, w_avg_var.sqrt()
 
 
-def get_batch_statistics(events, padding_value=0):
+def get_batch_statistics(events=None, padding_value=0):
     """
     Calculates the weighted mean and standard deviation over all subphase spaces of a process in *events*.
     The data is expected to be of form : {"unique_identifier_tuple": {continous: arr}, {weight}: arr}.
@@ -211,7 +211,7 @@ def get_batch_statistics_per_dataset(events, padding_value=0):
         stats[process_type] = nom / denom
     return stats
 
-def k_fold_indices(num_events, c_fold, k_fold, seed, test=False):
+def k_fold_indices(event_id, c_fold, k_fold, seed, test=False):
     """
     Creates idicies for training and validation from *k_fold*, where *c_fold* is the test fold.
     The indicies are permutated using *seed*. If *test* is True, the test set is returned if False the k-1 folds are returned.
@@ -222,22 +222,21 @@ def k_fold_indices(num_events, c_fold, k_fold, seed, test=False):
         k_fold (int): Number of folds
         seed (int): Seeds used for random permutation
     """
-    indices = torch.arange(num_events)
-
     # true => test folds, false => train and validation folds
     # if no kfold is wished than set test to 0 and return everyrthing
     if k_fold == 0:
-        raise(f"Can't do k-fold with desired k_fold of {k_fold}, needs to be > 0")
-    else:
-        test_fold_mask = indices % k_fold == c_fold
+        raise ValueError(f"Can't do k-fold with desired k_fold of {k_fold}, needs to be > 0")
+
+    test_fold_mask = event_id % k_fold == c_fold
+    indices = torch.arange(len(event_id))
 
     if test:
-        sub_indices = indices[test_fold_mask]
+        sub_event_id = indices[test_fold_mask]
     else:
-        sub_indices = indices[~test_fold_mask]
+        sub_event_id = indices[~test_fold_mask]
     # apply mask and randomize according to given seed
-    sub_indices = torch.randperm(len(sub_indices), generator=torch.Generator().manual_seed(seed))
-    return sub_indices[sub_indices]
+    randomized = torch.randperm(len(sub_event_id), generator=torch.Generator().manual_seed(seed))
+    return sub_event_id[randomized]
 
 def split_array_to_train_and_validation(array, trainings_proportion=0.75):
     """
@@ -252,13 +251,13 @@ def split_array_to_train_and_validation(array, trainings_proportion=0.75):
     """
     if (trainings_proportion > 1) or (trainings_proportion < 0):
         raise ValueError(f"Split fraction is {trainings_proportion} but needs to be in range of 0 and 1")
-    train_length = round((len(array) * trainings_proportion))
+    train_length = int(round((len(array) * trainings_proportion)))
     t_idx = array[:train_length]
     v_idx = array[train_length:]
     return t_idx, v_idx
 
 
-def split_k_fold_into_training_and_validation(events_dict, c_fold, k_fold, seed, train_ratio=0.75):
+def split_k_fold_into_training_and_validation(events_dict, c_fold, k_fold, seed, train_ratio=0.75, return_test=False):
     """
     Takes *events_dict* where continous and categorical data and split these into *k_fold* where *c_fold* is the holdout test seed.
     A random permutation happens using *seed* and in the end the k-1 folds are split into training
@@ -279,19 +278,16 @@ def split_k_fold_into_training_and_validation(events_dict, c_fold, k_fold, seed,
         array = events_dict.pop(uid)
         train[uid] = {"weight" : array["weight"]}
         valid[uid] = {"weight" : array["weight"]}
+        tv_indices = k_fold_indices(array["event_id"], c_fold, k_fold, seed, test=return_test)
+        t_idx, v_idx = split_array_to_train_and_validation(tv_indices, train_ratio)
 
-        for key in ("continous", "categorical"):
+        for key in ("continous", "categorical", "event_id"):
             arr = array.pop(key)
-            num_events = len(arr)
-            tv_indices = k_fold_indices(num_events, c_fold, k_fold, seed, test=False)
-            t_idx, v_idx = split_array_to_train_and_validation(tv_indices, train_ratio)
-
             t_arr = arr[t_idx]
             v_arr = arr[v_idx]
 
             train[uid][key] = t_arr
             valid[uid][key] = v_arr
-
     # edge case split results in empty tensors (due to very low event count) remove these
     # if empty do not save
     for uid in list(train.keys()):
