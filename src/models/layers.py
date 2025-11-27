@@ -381,7 +381,6 @@ class InputLayer(torch.nn.Module):  # noqa: F811
 
     def continous_preprocessing_pipeline(self, x: torch.FloatTensor) -> torch.FloatTensor:
         # preprocessing
-        x = x.to(torch.float32)
         x = self.padding_continous_layer(x)
         x = self.rotation_layer(x)
         x = self.std_layer(x)
@@ -395,7 +394,7 @@ class InputLayer(torch.nn.Module):  # noqa: F811
                 self.cateogrical_preprocessing_pipeline(categorical_inputs),
             ],
             dim=1,
-        ).to(torch.float32)
+        )
         return x
 
 class DenseNetBlock(torch.nn.Module):
