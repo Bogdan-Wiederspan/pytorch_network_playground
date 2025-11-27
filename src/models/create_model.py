@@ -110,6 +110,8 @@ class BNetDenseNet(torch.nn.Module):
     def __init__(self, continous_features, categorical_features, config, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.init_layers(config=config, continous_features=continous_features, categorical_features=categorical_features)
+        self.categorical_features = categorical_features
+        self.continous_features = continous_features
 
     def init_layers(self, continous_features, categorical_features, config):
         # increasing eps helps to stabilize training to counter batch norm and L2 reg counterplay when used together.
@@ -190,6 +192,9 @@ class AddActFnToModel(torch.nn.Module):
     def __init__(self, model, act_fn, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.model = model
+        self.categorical_features = model.categorical_features
+        self.continous_features = model.continous_features
+
         self.act_func = self._get_attr(torch.nn.modules.activation, act_fn)(dim=1)
 
     def _get_attr(self, obj, attr):
