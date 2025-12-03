@@ -1101,3 +1101,12 @@ class LBN_DNN(torch.nn.Module):
         x = self.lbn(x, debug)
         x = self.lbn_batch_norm(x)
         return x
+
+class TemperaturCalibrationLayer(torch.nn.Module):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.temperature = torch.nn.Parameter(torch.ones(1))
+        self.activation = torch.nn.Softmax(dim=1)
+
+    def __call__(self, x):
+        return self.activation(x / self.temperature)
