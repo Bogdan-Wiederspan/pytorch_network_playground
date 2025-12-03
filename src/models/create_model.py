@@ -1,6 +1,6 @@
 from models.layers import (
     InputLayer, StandardizeLayer, ResNetPreactivationBlock, DenseBlock, PaddingLayer, RotatePhiLayer,
-    DenseNetBlock, LBN_DNN,
+    DenseNetBlock, LBN_DNN, TemperaturCalibrationLayer
 )
 
 from utils.utils import EMPTY_INT, EMPTY_FLOAT, embedding_expected_inputs
@@ -302,6 +302,38 @@ class AddActFnToModel(torch.nn.Module):
                 return getattr(obj, o)
         else:
             raise AttributeError(f"Object has no attribute '{attr}'")
+
+    def forward(self, categorical_inputs, continuous_inputs):
+        x = self.model(categorical_inputs, continuous_inputs)
+        x = self.act_func(x)
+        return x
+
+# TODO finished calib layer
+class AddCalibrationToModel(torch.nn.Module):
+    def __init__(self, model, act_fn, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.model = model
+        self.categorical_features = model.categorical_features
+        self.continous_features = model.continous_features
+        self.calibration_layer = TemperaturCalibrationLayer()
+
+
+    def calibrate(self, sampler, num_samples):
+        criterion = torch.nn.CrossEntropyLoss()
+        optimizer = torch.optim.LBFGS([self.calibration_layer.temperature], lr=0.001, max_iter=10000, line_search_fn='strong_wolfe')
+
+        # for i in range(num_samples):
+        #     sampler.get
+        # # Create tensors
+        # logits_list = torch.cat(logits_list).to(device)
+        # labels_list = torch.cat(labels_list).to(device)
+
+        # def _eval():
+        # loss = criterion(T_scaling(logits_list, temperature), labels_list)
+        # loss.backward()
+        # return loss
+
+        # optimizer.step(_eval)
 
     def forward(self, categorical_inputs, continuous_inputs):
         x = self.model(categorical_inputs, continuous_inputs)

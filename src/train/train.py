@@ -78,21 +78,22 @@ for current_fold in (config["train_folds"]):
         return_dummy=config["get_batch_statistic_return_dummy"],
     )
 
-    ### Model setup
+    ### model setup
     # model = create_model.BNetDenseNet(dataset_config["continous_features"], dataset_config["categorical_features"], config=model_building_config)
     model = create_model.BNetLBNDenseNet(
         dataset_config["continous_features"], dataset_config["categorical_features"], config=model_building_config
         )
-    model = model.to(DEVICE)
-    # from IPython import embed; embed(header="string - 86 in train.py ")
+    model = model.to(DEVICE).train()
     # ## load mean from marcel if activated
     model = mwt.load_marcels_weights(model, continous_features=dataset_config["continous_features"], with_std=config["load_marcel_stats"], with_weights=config["load_marcel_weights"])
 
-    # TODO: only linear models should contribute to weight decay
-    # TODO : SAMW Optimizer
+    # only linear layers contribute to weight decay
     weight_decay_parameters = optimizer.prepare_weight_decay(model, optimizer_config)
-    optimizer_inst = torch.optim.AdamW(list(weight_decay_parameters.values()), lr=optimizer_config["lr"])
-    # optimizer_inst = optimizer.SAM(list(weight_decay_parameters.values()), torch.optim.AdamW, lr=optimizer_config["lr"], rho = 2.0, adaptive=True)
+
+    if config["training_fn"] == "default":
+        optimizer_inst = torch.optim.AdamW(list(weight_decay_parameters.values()), lr=optimizer_config["lr"])
+    elif config["training_fn"] == "sam":
+        optimizer_inst = optimizer.SAM(list(weight_decay_parameters.values()), torch.optim.AdamW, lr=optimizer_config["lr"], rho = 2.0, adaptive=True)
 
     scheduler_inst = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer=optimizer_inst,
@@ -107,11 +108,9 @@ for current_fold in (config["train_folds"]):
     )
 
     early_stopper_inst = EarlyStopOnPlateau()
-    # HINT: requires only logits, no softmax at end
     loss_fn = torch.nn.CrossEntropyLoss(weight=None, size_average=None,label_smoothing=config["label_smoothing"])
 
-    model.train()
-    ### training loop:
+    ### training loop
     for current_iteration in range(1_000_000):
         t_loss, (t_pred, t_targets) = training_fn(
             model = model,
@@ -121,8 +120,6 @@ for current_fold in (config["train_folds"]):
             device=DEVICE
         )
 
-
-        # VERBOSITY
         if current_iteration % config["verbose_interval"] == 0:
             tboard_writer.log_loss({"batch_loss": t_loss.item()}, step=current_iteration)
             print(f"Training: {current_iteration} - batch loss: {t_loss.item():.4f}")
@@ -158,13 +155,11 @@ for current_fold in (config["train_folds"]):
             scheduler_inst.step(eval_v_loss)
             logger.info(f"{previous_lr} -> { optimizer_inst.param_groups[0]["lr"]}")
 
-
             ### early stopping
             # when val loss is lowest over a period of patience
             if early_stopper_inst(eval_v_loss, model):
                 logger.info(f"saving current best model at iteration {current_iteration} with loss {eval_v_loss:.5f}")
                 torch_save(model, config["save_model_name"], current_fold)
-                # torch_export_v2(model, config["save_model_name"], current_fold)
 
             # TODO release DATA from previous RUN
             if (current_iteration % config["max_train_iteration"] == 0) & (current_iteration > 0):

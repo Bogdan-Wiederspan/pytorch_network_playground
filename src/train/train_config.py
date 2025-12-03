@@ -19,16 +19,16 @@ dataset_config = {
 
 # config of network
 model_building_config = {
-    "ref_phi_columns": ("res_dnn_pnet_vis_tau1", "res_dnn_pnet_vis_tau2"),
-    "rotate_columns": ("res_dnn_pnet_bjet1", "res_dnn_pnet_bjet2", "res_dnn_pnet_fatjet", "res_dnn_pnet_vis_tau1", "res_dnn_pnet_vis_tau2"),
-    "categorical_padding_value": None,
-    "continous_padding_value": None,
-    "nodes": 128,
+    "ref_phi_columns": None, # ("res_dnn_pnet_vis_tau1", "res_dnn_pnet_vis_tau2"), # which columsn should be used to get rotation angle
+    "rotate_columns": None, # ("res_dnn_pnet_bjet1", "res_dnn_pnet_bjet2", "res_dnn_pnet_fatjet", "res_dnn_pnet_vis_tau1", "res_dnn_pnet_vis_tau2"), # which columns should be rotated
+    "categorical_padding_value": None, # missing values in categorical inputs are replaced by this
+    "continous_padding_value": None, # missing values in continous inputs are replaced by this
+    "nodes": 128, # number of nodes in each linear layer of the dense blocks
     "activation_functions": "elu",
-    "skip_connection_init": 1,
-    "freeze_skip_connection": True,
+    "skip_connection_init": 1, # init value of the skip connection, 1 = exact copy
+    "freeze_skip_connection": True, # make skip connections static, non-learnable
     "batch_norm_eps" : 0.001, # marcel : 0.001
-    "LBN_M" : 10,
+    "LBN_M" : 10, # number of particles of the lbn network
 
 }
 
@@ -48,8 +48,6 @@ config = {
     "min_events_in_batch": 1,
 
     "save_model_name" : "model_nr5_lbn_asam",
-    "early_stopping_patience" : 10, # marcel : 10
-    "early_stopping_min_delta" : 0, # marcel : 0
     "get_batch_statistic_return_dummy" : False,
     "load_marcel_stats" : False,
     "load_marcel_weights" : False,
@@ -69,5 +67,4 @@ optimizer_config = {
     "decay_factor": 500,
     "normalize": True,
     "lr":1e-3,
-    # "lr":1e-6,
 }
