@@ -88,6 +88,7 @@ def run_exported_tensor_model(pt2_path, cat, cont):
 if __name__ == "__main__":
     import pathlib
     import argparse
+    import os
 
     p = argparse.ArgumentParser(description="Export model to torch-export (.pt2) with dynamic batch dim")
     p.add_argument("--model_path", "-m", required=True, help="Path to the model file (file or checkpoint) to load")
@@ -95,8 +96,12 @@ if __name__ == "__main__":
 
     args = p.parse_args()
 
+    model_path = pathlib.Path(args.model_path)
+    # if given path is a only a name search for name in enviroment dir
+    if len(model_path.parts()) == 1:
+        model_path = pathlib.Path(os.environ["MODELS_DIR"]).with_stem(args.model_path).with_suffix(".pt2")
+
     model = torch.load(args.model_path, weights_only=False)
     model.eval()
-    torch_export_v2(model, name=pathlib.Path(args.model_path).stem, fold=args.fold)
-
-    from IPython import embed; embed(header="string - 94 in export.py ")
+    torch_export_v2(model, name=str(model_path), fold=args.fold)
+    print("Done exporting")
