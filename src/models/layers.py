@@ -1076,8 +1076,6 @@ class LBNFeaturerExtractor(torch.nn.Module):
         return self.slice_particles_from_tensor(x)
         # return the indices of all particle features so the layer can slice them from tensors
 
-
-
 class LBN_DNN(torch.nn.Module):
     def __init__(
         self,

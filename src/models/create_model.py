@@ -6,54 +6,6 @@ from models.layers import (
 from utils.utils import EMPTY_INT, EMPTY_FLOAT, embedding_expected_inputs
 import torch
 
-def init_weights(model):
-    if isinstance(model, torch.nn.Linear):
-        torch.nn.init.kaiming_normal(model.weight)
-
-
-def init_layers(continous_features, categorical_features, config):
-    # increasing eps helps to stabilize training to counter batch norm and L2 reg counterplay when used together.
-    eps = 0.5e-5
-    # activate weight normalization on linear layer weights
-    normalize = False
-
-    # helper where all layers are defined
-    # std layers are filled when statitics are known
-    std_layer = StandardizeLayer(mean=config["mean"], std=config["std"])
-
-    continuous_padding = PaddingLayer(padding_value=0, mask_value=EMPTY_FLOAT)
-    categorical_padding = PaddingLayer(padding_value=config["empty_value"], mask_value=EMPTY_INT)
-    # rotation_layer = RotatePhiLayer(
-    #     columns=list(map(str, continous_features)),
-    #     ref_phi_columns=config["ref_phi_columns"],
-    #     rotate_columns=config["rotate_columns"],
-    # )
-    input_layer = InputLayer(
-        continuous_inputs=continous_features,
-        categorical_inputs=categorical_features,
-        embedding_dim=4,
-        expected_categorical_inputs=embedding_expected_inputs,
-        empty=config["empty_value"],
-        std_layer=std_layer,
-        # rotation_layer=rotation_layer,
-        rotation_layer=None,
-        padding_categorical_layer=categorical_padding,
-        padding_continous_layer=continuous_padding,
-    )
-
-    resnet_blocks = [
-        ResNetPreactivationBlock(config["nodes"], config["activation_functions"], config["skip_connection_init"], config["freeze_skip_connection"], eps=eps, normalize=normalize)
-        for num_blocks in range(4)
-        ]
-
-    model = torch.nn.Sequential(
-        input_layer,
-        DenseBlock(input_nodes = input_layer.ndim, output_nodes = config["nodes"], activation_functions=config["activation_functions"], eps=eps, normalize=normalize), # noqa
-        *resnet_blocks,
-        torch.nn.Linear(config["nodes"], 3),
-        # no softmax since this is already part of loss
-    )
-    return input_layer, model
 
 class BNet(torch.nn.Module):
     def __init__(self, continous_features, categorical_features, config, *args, **kwargs):
@@ -69,26 +21,30 @@ class BNet(torch.nn.Module):
 
         # helper where all layers are defined
         # std layers are filled when statitics are known
-        self.std_layer = StandardizeLayer(mean=config["mean"], std=config["std"])
+        std_layer = StandardizeLayer(mean=config["mean"], std=config["std"])
 
-        self.continuous_padding = PaddingLayer(padding_value=0, mask_value=EMPTY_FLOAT)
-        self.categorical_padding = PaddingLayer(padding_value=config["empty_value"], mask_value=EMPTY_INT)
-        # self.rotation_layer = RotatePhiLayer(
-        #     columns=list(map(str, continous_features)),
-        #     ref_phi_columns=config["ref_phi_columns"],
-        #     rotate_columns=config["rotate_columns"],
-        # )
+        continuous_padding = PaddingLayer(padding_value=0, mask_value=EMPTY_FLOAT)
+        categorical_padding = PaddingLayer(padding_value=config["empty_value"], mask_value=EMPTY_INT)
+
+        if config["enable_rotation"]:
+            rotation_layer = RotatePhiLayer(
+                columns=list(map(str, continous_features)),
+                ref_phi_columns=config["ref_phi_columns"],
+                rotate_columns=config["rotate_columns"],
+            )
+        else:
+            rotation_layer = None
+
         self.input_layer = InputLayer(
             continuous_inputs=continous_features,
             categorical_inputs=categorical_features,
             embedding_dim=10,
             expected_categorical_inputs=embedding_expected_inputs,
             empty=config["empty_value"],
-            std_layer=self.std_layer,
-            # rotation_layer=rotation_layer,
-            rotation_layer=None,
-            padding_categorical_layer=self.categorical_padding,
-            padding_continous_layer=self.continuous_padding,
+            std_layer=std_layer,
+            rotation_layer=rotation_layer,
+            padding_categorical_layer=categorical_padding,
+            padding_continous_layer=continuous_padding,
         )
 
         self.transition_dense_1 = DenseBlock(input_nodes = self.input_layer.ndim, output_nodes = config["nodes"], activation_functions=config["activation_functions"], eps=config["batch_norm_eps"], normalize=normalize) # noqa
@@ -123,43 +79,46 @@ class BNetDenseNet(torch.nn.Module):
         # helper where all layers are defined
         # std layers are filled when statitics are known
         if config["mean"] is None and config["std"] is None:
-            self.std_layer = StandardizeLayer(
+            std_layer = StandardizeLayer(
                 mean = torch.zeros(len(continous_features)),
                 std = torch.ones(len(continous_features))
             )
         else:
-            self.std_layer = StandardizeLayer(mean=config["mean"], std=config["std"])
+            std_layer = StandardizeLayer(mean=config["mean"], std=config["std"])
 
 
         if config["continous_padding_value"] is None:
-            self.continuous_padding = None
+            continuous_padding = None
         else:
-            self.continuous_padding = PaddingLayer(padding_value=-4, mask_value=EMPTY_FLOAT)
+            continuous_padding = PaddingLayer(padding_value=-4, mask_value=EMPTY_FLOAT)
 
 
         if config["categorical_padding_value"] is None:
-            self.categorical_padding = None
+            categorical_padding = None
         else:
-            self.categorical_padding = PaddingLayer(padding_value=config["categorical_padding_value"], mask_value=EMPTY_INT)
+            categorical_padding = PaddingLayer(padding_value=config["categorical_padding_value"], mask_value=EMPTY_INT)
 
-        # self.rotation_layer = RotatePhiLayer(
-        #     columns=list(map(str, continous_features)),
-        #     ref_phi_columns=config["ref_phi_columns"],
-        #     rotate_columns=config["rotate_columns"],
-        # )
+
+        if config["enable_rotation"]:
+            rotation_layer = RotatePhiLayer(
+                columns=list(map(str, continous_features)),
+                ref_phi_columns=config["ref_phi_columns"],
+                rotate_columns=config["rotate_columns"],
+            )
+        else:
+            rotation_layer = None
+
         self.input_layer = InputLayer(
             continuous_inputs=continous_features,
             categorical_inputs=categorical_features,
             embedding_dim=10,
             expected_categorical_inputs=embedding_expected_inputs,
             empty=config["categorical_padding_value"],
-            std_layer=self.std_layer,
-            # rotation_layer=rotation_layer,
+            std_layer=std_layer,
+            rotation_layer=rotation_layer,
             rotation_layer=None,
-            # padding_categorical_layer=self.categorical_padding,
-            # padding_continous_layer=self.continuous_padding,
-            padding_categorical_layer=self.categorical_padding,
-            padding_continous_layer=self.continuous_padding,
+            padding_categorical_layer=categorical_padding,
+            padding_continous_layer=continuous_padding,
         )
 
         dense_config = {
@@ -224,11 +183,15 @@ class BNetLBNDenseNet(torch.nn.Module):
         else:
             categorical_padding = PaddingLayer(padding_value=config["categorical_padding_value"], mask_value=EMPTY_INT)
 
-        # self.rotation_layer = RotatePhiLayer(
-        #     columns=list(map(str, continous_features)),
-        #     ref_phi_columns=config["ref_phi_columns"],
-        #     rotate_columns=config["rotate_columns"],
-        # )
+        if config["enable_rotation"]:
+            rotation_layer = RotatePhiLayer(
+                columns=list(map(str, continous_features)),
+                ref_phi_columns=config["ref_phi_columns"],
+                rotate_columns=config["rotate_columns"],
+            )
+        else:
+            rotation_layer = None
+
         self.input_layer = InputLayer(
             continuous_inputs=continous_features,
             categorical_inputs=categorical_features,
@@ -236,10 +199,7 @@ class BNetLBNDenseNet(torch.nn.Module):
             expected_categorical_inputs=embedding_expected_inputs,
             empty=config["categorical_padding_value"],
             std_layer=std_layer,
-            # rotation_layer=rotation_layer,
-            rotation_layer=None,
-            # padding_categorical_layer=self.categorical_padding,
-            # padding_continous_layer=self.continuous_padding,
+            rotation_layer=rotation_layer,
             padding_categorical_layer=categorical_padding,
             padding_continous_layer=continuous_padding,
         )
