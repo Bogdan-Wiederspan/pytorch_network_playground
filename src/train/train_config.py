@@ -19,8 +19,9 @@ dataset_config = {
 
 # config of network
 model_building_config = {
-    "ref_phi_columns": None, # ("res_dnn_pnet_vis_tau1", "res_dnn_pnet_vis_tau2"), # which columsn should be used to get rotation angle
-    "rotate_columns": None, # ("res_dnn_pnet_bjet1", "res_dnn_pnet_bjet2", "res_dnn_pnet_fatjet", "res_dnn_pnet_vis_tau1", "res_dnn_pnet_vis_tau2"), # which columns should be rotated
+    "enable_rotation": True,
+    "ref_phi_columns": ("res_dnn_pnet_vis_tau1", "res_dnn_pnet_vis_tau2"), # which columsn should be used to get rotation angle
+    "rotate_columns": ("res_dnn_pnet_bjet1", "res_dnn_pnet_bjet2", "res_dnn_pnet_fatjet", "res_dnn_pnet_vis_tau1", "res_dnn_pnet_vis_tau2"), # which columns should be rotated
     "categorical_padding_value": None, # missing values in categorical inputs are replaced by this
     "continous_padding_value": None, # missing values in continous inputs are replaced by this
     "nodes": 128, # number of nodes in each linear layer of the dense blocks
@@ -65,6 +66,6 @@ scheduler_config = {
 optimizer_config = {
     "apply_to": "weight",
     "decay_factor": 500,
-    "normalize": True,
+    "normalize": True, # add weight normalized
     "lr":1e-3,
 }
