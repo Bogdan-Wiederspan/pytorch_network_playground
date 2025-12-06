@@ -116,7 +116,6 @@ class BNetDenseNet(torch.nn.Module):
             empty=config["categorical_padding_value"],
             std_layer=std_layer,
             rotation_layer=rotation_layer,
-            rotation_layer=None,
             padding_categorical_layer=categorical_padding,
             padding_continous_layer=continuous_padding,
         )
