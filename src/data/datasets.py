@@ -236,6 +236,7 @@ class DatasetSampler(t_data.Sampler):
 
         # step 4: apply overflow to original floored
         # combine sort indices and threshold mask
+        # this returns floored sizes sorted by biggest by indices
         indices_above_threshold = torch.arange(len(floored_sizes))[mask_above_threshold][floored_oveflow_idx]
         floored_sizes[indices_above_threshold] -= floored_overflow_sizes
 
@@ -250,13 +251,15 @@ class DatasetSampler(t_data.Sampler):
 
         # TODO BETTER SCHEME
         # remove remaining from biggest sample or add more to biggest sample
-        if very_last_remaining <= -1:
-            floored_sizes[indices_above_threshold[-1]] -= very_last_remaining
-        elif very_last_remaining >= 1:
-            floored_sizes[indices_above_threshold[-1]] -= very_last_remaining
-        elif very_last_remaining != 0:
-            from IPython import embed; embed(header=f"{floored_sizes.sum()} but should be {sub_batch_size}")
-            raise ValueError(f"Resampling failed: Created batch size of size: {floored_sizes.sum()} but should be {sub_batch_size}")
+
+        floored_sizes[indices_above_threshold[0]] -= very_last_remaining
+        # if very_last_remaining <= -1:
+        #     floored_sizes[indices_above_threshold[0]] -= very_last_remaining
+        # elif very_last_remaining >= 1:
+        #     floored_sizes[indices_above_threshold[0]] -= very_last_remaining
+        # elif very_last_remaining != 0:
+        #     from IPython import embed; embed(header=f"{floored_sizes.sum()} but should be {sub_batch_size}")
+        #     raise ValueError(f"Resampling failed: Created batch size of size: {floored_sizes.sum()} but should be {sub_batch_size}")
 
         # store batch size per phase space in dataset
         if not dry:
