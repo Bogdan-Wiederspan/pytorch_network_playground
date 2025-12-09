@@ -1,4 +1,5 @@
 
+
 def expand(str_list):
     def brace_expand(s):
         # "a{b,c}d" -> ["abd", "acd"]
@@ -23,8 +24,20 @@ def add_prefix(string, prefix, ignore_code="_"):
     else:
         return prefix + string
 
+def prefix_map():
+    import os
+    import pathlib
+    stem = pathlib.Path(os.environ["INPUT_DATA_DIR"]).stem
+    stem_to_prefix = {
+    "prod14": "res_dnn_pnet_",
+    "prod20_vbf": "reg_dnn_moe_",
+    "prod19": "res_dnn_pnet_",
+    }
+    return stem_to_prefix[stem]
+
+
 def input_features(debug=False, debug_length=3):
-    data_prefix = "res_dnn_pnet_"
+    data_prefix = prefix_map()
     categorical_features: list[str] = [
         "pair_type",
         # "_channel_id",
