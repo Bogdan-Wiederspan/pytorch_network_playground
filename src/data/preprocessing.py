@@ -85,7 +85,7 @@ def get_batch_statistics_from_sampler(sampler, padding_values=None, features=Non
         f_means, f_vars = [], []
         array = features_dict[pid]
         num_f = array.shape[-1]
-        print(f"calculating stats for {pid} status:{current_pid_idx}/{len(features_dict)}\t\t\t\r",end=" ", flush=True)
+        print(f"\rcalculating stats for {pid}:{current_pid_idx}/{len(features_dict)}\x1b[K",end="", flush=True)
 
 
         for f_idx in range(num_f):
