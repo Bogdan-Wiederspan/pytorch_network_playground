@@ -78,42 +78,35 @@ def get_batch_statistics_from_sampler(sampler, padding_values=None, features=Non
     weights_dict = sampler.get_attribute_of_datasets("relative_weight")
     sum_of_weights = sum(list(weights_dict.values()))
 
-    # for each uid calculate mean,std and get weight
-    # do weighted mean,std over all uid with weight
+    # for each process id calculate weighted mean, std for each feature representing batch statistics
     for current_pid_idx, pid in enumerate(features_dict.keys(), start = 1):
-        # go throught each feature axis and calculate statitic per feature
-        f_means, f_vars = [], []
+        # get array of specific process id - [num_events x num_features]
         array = features_dict[pid]
-        num_f = array.shape[-1]
+
         print(f"\rcalculating stats for {pid}:{current_pid_idx}/{len(features_dict)}\x1b[K",end="", flush=True)
 
-
-        for f_idx in range(num_f):
-
-            # extract feature by index
-            feature_array = array[..., f_idx]
-            # do not include padding into calculation
-            if isinstance(padding_values, (list, tuple)):
-                padding_value = padding_values[f_idx]
-            else:
-                padding_value = padding_values
-
-            padding_mask = (feature_array == padding_value)
-            masked_array = feature_array[~padding_mask]
-
-            masked_mean = masked_array.mean(axis=0)
-            masked_var = masked_array.var(axis=0)
-            # if anything got a nan go into debug mode to investigate
-            if torch.isnan(masked_mean):
-                from IPython import embed; embed(header=f"{pid} is nan check feature_array and sampler")
-
-            f_means.append(masked_mean)
-            f_vars.append(masked_var)
+        # mean and var calculation should exclude padding values
+        # if padding value shape is 1 -> expand to num_feature or equals num_features
+        num_f = array.shape[-1]
+        ignore_tensor = torch.tensor(padding_values)
+        if ignore_tensor.shape == torch.Size([]):
+            ignore_tensor = torch.full((1, num_f), fill_value=padding_values)
+        elif ignore_tensor.shape != torch.Size([num_f]):
+            raise ValueError(f"Padding values need to be of shape [num_features] or single value, got {ignore_tensor.shape}")
+        # create and apply mask to include values
+        include_mask = ~(array == ignore_tensor)
+        masked_mean = torch.masked.mean(input=array, mask=include_mask, dim=0, dtype=torch.float64)
+        masked_var = torch.masked.var(input=array, mask=include_mask, dim=0, dtype=torch.float64)
+        if torch.any(masked_mean.isnan()):
+            from IPython import embed; embed(header=f"{pid} is nan check feature_array and sampler")
 
         # weight mean and add to collection
+        # pid_weight = weights_dict[pid]
+        # weighted_means.append(torch.tensor(f_means) * pid_weight)
+        # weighted_vars.append(torch.tensor(f_vars) * pid_weight)
         pid_weight = weights_dict[pid]
-        weighted_means.append(torch.tensor(f_means) * pid_weight)
-        weighted_vars.append(torch.tensor(f_vars) * pid_weight)
+        weighted_means.append(masked_mean * pid_weight)
+        weighted_vars.append(masked_var * pid_weight)
 
     # calculate weighted average over uid means and var
     w_avg_mean  = torch.sum(torch.stack(weighted_means, axis=0), axis = 0) / sum_of_weights
