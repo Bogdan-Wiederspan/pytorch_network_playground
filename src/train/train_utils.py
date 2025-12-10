@@ -55,7 +55,7 @@ def validation_default(model, loss_fn, sampler, device):
         truth = []
         weights = []
 
-        for uid, validation_batch_generator in sampler.get_dataset_batch_generators(batch_size=sampler.batch_size, device=device).items():
+        for uid, validation_batch_generator in sampler.batch_generator(batch_size=sampler.batch_size, device=device).items():
             dataset_losses = []
             for cont, cat, tar in validation_batch_generator:
                 cat, cont, tar = cat, cont, tar
