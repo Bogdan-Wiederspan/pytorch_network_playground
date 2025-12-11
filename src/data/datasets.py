@@ -116,6 +116,7 @@ class DatasetSampler(t_data.Sampler):
         batch_size=1,
         sample_ratio={"dy": 0.25, "tt": 0.25, "hh": 0.5},
         min_size = None,
+        target_map = None,
         ):
         self.total_weight = {"dy":0, "tt":0, "hh":0}
         self.dataset_inst = defaultdict(dict)  # {dataset_type: {process_id: dataset}}
@@ -125,6 +126,7 @@ class DatasetSampler(t_data.Sampler):
                 self.add_dataset(dataset)
         self.sample_ratio = sample_ratio
         self.min_size = min_size # index where to split continous and categorical data
+        self.target_map = target_map
 
         # set attributes to access dataset properties directly from sampler
         self.set_attr(["weight", "relative_weight", "sample_size", "dataset_type", "batch_generator"])
@@ -276,34 +278,25 @@ class DatasetSampler(t_data.Sampler):
 
         # shuffle finished batch optionally
         # Get a batch of data from each dataset
-        batch_cont, batch_cat, batch_target,  = [], [], []
+        batch_cont, batch_cat, batch_target, batch_weight = [], [], [], []
+
         sample_indices = {
             "signal":[],
             "background":[],
         }
 
-        relative_weight = {
-            "signal": [],
-            "background": [],
-        }
-
-        for process_type, uid in self.dataset_inst.items():
-            signal_or_background = self.signal_background_map[process_type]
-            for ds in uid.values():
-                cont, cat, target = ds.sample(device=device)
-                batch_cont.append(cont), batch_cat.append(cat), batch_target.append(target)
-
-                sample_indices[self.signal_background_map[signal_or_background]].append(target.shape[0])
-                relative_weight[self.signal_background_map[signal_or_background]].append(ds.weight.reshape(-1,1))
+        # do iteration over keys to GUARANTEE deterministic behavior when looping accross different python version
+        for uid, ds in sorted(self.flat_datasets().items()):
+            cont, cat, target = ds.sample(device=device)
+            batch_cont.append(cont), batch_cat.append(cat), batch_target.append(target), batch_weight.append(torch.full((target.shape[0], 1), ds.weight))
+            sample_indices[self.signal_background_map[ds.dataset_type]].append(target.shape[0])
 
         # combine everything into tensors
         batch_cont = torch.concatenate(batch_cont, dim=0).to(device)
         batch_cat = torch.concatenate(batch_cat, dim=0).to(device)
         batch_target = torch.concatenate(batch_target, dim=0).to(device)
-        for key in relative_weight.keys():
-            relative_weight[key] = torch.concatenate(relative_weight[key], dim=0).to(device)
-            sample_indices[key] = torch.concatenate(relative_weight[key], dim=0).to(device)
-        return batch_cont, batch_cat, batch_target, relative_weight, sample_indices
+        batch_weight = torch.concatenate(batch_weight, dim=0).to(device)
+        return batch_cont, batch_cat, batch_target, batch_weight, sample_indices
 
     def set_attr(self, attribute):
         if isinstance(attribute, str):
