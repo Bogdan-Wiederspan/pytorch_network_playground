@@ -895,9 +895,7 @@ class LBN(torch.nn.Module):
     def update_boosted_vectors(self, boosted_vecs: torch.Tensor) -> torch.Tensor:
         return boosted_vecs
 
-    def forward(self, input_vecs, debug=False) -> torch.Tensor:
-        if debug:
-            from IPython import embed; embed(header="DEBUGGING LBN - 895 in layers.py ")
+    def forward(self, input_vecs) -> torch.Tensor:
         # e, px, py, pz: (B, N)
         E, PX, PY, PZ = range(4)
 
@@ -1096,9 +1094,9 @@ class LBN_DNN(torch.nn.Module):
     def ndim(self):
         return self.lbn.ndim()
 
-    def forward(self, x, debug=False):
+    def forward(self, x):
         x = self.lbn_feature_extractor(x)
-        x = self.lbn(x, debug)
+        x = self.lbn(x)
         x = self.lbn_batch_norm(x)
         return x
 
