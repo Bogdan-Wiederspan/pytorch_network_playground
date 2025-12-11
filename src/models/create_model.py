@@ -1,10 +1,12 @@
+import torch
+
 from models.layers import (
     InputLayer, StandardizeLayer, ResNetPreactivationBlock, DenseBlock, PaddingLayer, RotatePhiLayer,
     DenseNetBlock, LBN_DNN, TemperaturCalibrationLayer
 )
+from utils.utils import EMPTY_INT, EMPTY_FLOAT
+from data.features import expected_embedding_inputs
 
-from utils.utils import EMPTY_INT, EMPTY_FLOAT, embedding_expected_inputs
-import torch
 
 
 class BNet(torch.nn.Module):
@@ -39,7 +41,7 @@ class BNet(torch.nn.Module):
             continuous_inputs=continous_features,
             categorical_inputs=categorical_features,
             embedding_dim=10,
-            expected_categorical_inputs=embedding_expected_inputs,
+            expected_categorical_inputs=expected_embedding_inputs(),
             empty=config["empty_value"],
             std_layer=std_layer,
             rotation_layer=rotation_layer,
@@ -112,7 +114,7 @@ class BNetDenseNet(torch.nn.Module):
             continuous_inputs=continous_features,
             categorical_inputs=categorical_features,
             embedding_dim=10,
-            expected_categorical_inputs=embedding_expected_inputs,
+            expected_categorical_inputs=expected_embedding_inputs(),
             empty=config["categorical_padding_value"],
             std_layer=std_layer,
             rotation_layer=rotation_layer,
@@ -195,7 +197,7 @@ class BNetLBNDenseNet(torch.nn.Module):
             continuous_inputs=continous_features,
             categorical_inputs=categorical_features,
             embedding_dim=10,
-            expected_categorical_inputs=embedding_expected_inputs,
+            expected_categorical_inputs=expected_embedding_inputs(),
             empty=config["categorical_padding_value"],
             std_layer=std_layer,
             rotation_layer=rotation_layer,

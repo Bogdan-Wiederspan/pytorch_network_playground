@@ -308,7 +308,7 @@ def create_train_or_validation_sampler(events, target_map, batch_size, min_size=
         logger.warning(f"Sampler is not created due to feeding empty events")
         return None
 
-    DatasetManager = DatasetSampler(None, batch_size=batch_size, min_size=min_size, sample_ratio=sample_ratio)
+    DatasetManager = DatasetSampler(None, batch_size=batch_size, min_size=min_size, sample_ratio=sample_ratio, target_map = target_map)
     for uid in list(events.keys()):
         (dataset_type, process_id) = uid
         arrays = events.pop(uid)
