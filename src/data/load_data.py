@@ -46,6 +46,7 @@ def find_datasets(dataset_patterns: list[str], year_patterns: list[str], file_ty
     years = sorted(set(years))
 
     data = {}
+    missing = []
     for year in years:
         data[year] = {}
         for dataset_patter in dataset_patterns:
@@ -57,14 +58,17 @@ def find_datasets(dataset_patterns: list[str], year_patterns: list[str], file_ty
             for dataset in datasets:
                 files = sorted(map(str, pathlib.Path(dataset).glob(file_pattern)))
                 if len(files) == 0:
-                    raise ValueError(f"{dataset.name} has 0 files")
-
+                    logger.warning(f"{dataset} has 0 files")
+                    missing.append(dataset)
                 if verbose:
                     size = round(sum(os.path.getsize(f) for f in files) / (1024**2),2)
                     logger.info(f"+{len(files)} files | size {size} MB | {year}/{dataset.name}")
                 data[year][dataset.name] = files
     if not data:
         raise ValueError("No datasets found with given patterns")
+
+    if missing:
+        raise ValueError(f"following datasets has 0 files:\n{"\n\t".join(missing)}")
 
     # merge over years era information is not needed
     merged_over_era_data = {}
@@ -76,7 +80,11 @@ def find_datasets(dataset_patterns: list[str], year_patterns: list[str], file_ty
             merged_over_era_data[dataset].extend(files)
     return merged_over_era_data
 
-def root_to_numpy(files_path: Union[list[str],str], branches: Union[list[str], str, None]=None, cut=None) -> ak.Array:
+def root_to_numpy(
+    files_path: Union[list[str],str],
+    branches: Union[list[str], str, None]=None,
+    cut=None
+    ) -> ak.Array:
     """
     Load all root files in *files_path* and return them as a single awkward array.
     If only certain branches are needed, they can be specified in *branches*.
@@ -92,16 +100,24 @@ def root_to_numpy(files_path: Union[list[str],str], branches: Union[list[str], s
     if depthCount(branches) > 1 and branches is not None:
         raise ValueError("branches must be a flat list")
 
-    # include meta fields that are necessary for preprocessing and baseline cuts
+    ### manage fields to get from root file
     # fields -> purpose:
     #   process_id -> filtering of subphasespaces
     #   normalization_weight -> used as sample weight for batch
     #   tau2_isolated, lepton_os, channel_id -> used for baseline cut
     #   event -> event number used for k-fold splitting
-    meta_fields = {"process_id", "normalization_weight", "tau2_isolated", "leptons_os", "channel_id", "event"}
-    branches = set(branches).union(meta_fields)
+    #   normalization_weight -> oversampling weight that defines the fraction within batch
+    meta_fields = {"process_id", "tau2_isolated", "leptons_os", "channel_id", "event", "normalization_weight"}
+    # training and evaluation phase space are not the same transfer weight is calculated using these weights
+    weights = {
+    "normalized_pdf_weight","normalized_murmuf_weight","normalized_pu_weight",
+    "normalized_isr_weight","normalized_fsr_weight","normalized_njet_btag_weight_pnet",
+    "electron_id_weight","electron_reco_weight","muon_id_weight","muon_iso_weight",
+    "tau_weight","trigger_weight", "dy_weight","top_pt_weight"
+    }
+    all_branches = set(branches).union(meta_fields)
 
-    # handle baseline combine with additional cuts
+    ### handle baseline combine with additional cuts
     baseline_cuts = [
         "(tau2_isolated == 1)",
         "(leptons_os == 1)",
@@ -112,18 +128,35 @@ def root_to_numpy(files_path: Union[list[str],str], branches: Union[list[str], s
         cut = [cut]
     if cut is None:
         cut = []
-    cuts = baseline_cuts + cut
+    final_cut = "&".join(baseline_cuts + cut)
 
-    # load root files and combine the array to continogus arrays
+    ### load root files and combine the array to continogus arrays
     if isinstance(files_path, str):
         files_path = [files_path]
+
     arrays = []
     for file_path in files_path:
         logger.info(f"loading: {file_path}")
         with uproot.open(file_path, object_cache=None, array_cache=None) as file:
             tree = file["events"]
-            arrays.append(tree.arrays(branches, library="ak", cut="&".join(cuts)).to_numpy())
-    return np.concatenate(arrays, axis=0)
+            ### first load all input features that EVERY DATASET has in COMMON
+            all_branches_array = tree.arrays(all_branches, library="ak", cut=final_cut)
+
+            ### second handle WEIGHTS that not every dataset has
+            # e.x. muon_id_weight does not exist in dy datasets
+            # find out which weights exist in root file
+            weights_in_root_file = set(tree.keys()).intersection(weights)
+            weights_arrays = tree.arrays(weights_in_root_file, library="ak", cut=final_cut)
+
+            combined_weight = 1
+            for weight in weights_in_root_file:
+                combined_weight = combined_weight * weights_arrays[weight]
+            all_branches_array["combined_weight"] = combined_weight
+
+            arrays.append(all_branches_array.to_numpy())
+
+    arrays = np.concatenate(arrays, axis=0)
+    return arrays
 
 def parquet_to_awkward(files_path: Union[list[str],str], columns: Union[list[str], str, None]=None) -> ak.Array:
     """
