@@ -603,7 +603,7 @@ class StandardizeLayer(torch.nn.Module):  # noqa: F811
 
     def forward(self, x: torch.FloatTensor) -> torch.FloatTensor:
         x = (x - self.mean) / self.std
-        return x
+        return x.to(torch.float32)
 
     def _type_check(self, mean: torch.FloatTensor, std: torch.FloatTensor):
         if not all([isinstance(value, torch.Tensor) for value in [mean, std]]):

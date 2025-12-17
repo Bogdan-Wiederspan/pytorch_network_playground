@@ -280,8 +280,8 @@ def split_k_fold_into_training_and_validation(events_dict, c_fold, k_fold, seed,
     train, valid = {}, {}
     for uid in list(events_dict.keys()):
         array = events_dict.pop(uid)
-        train[uid] = {"weight" : array["weight"]}
-        valid[uid] = {"weight" : array["weight"]}
+        train[uid] = {"weight" : array["weight"], "total_evaluation_weight": array["total_evaluation_weight"]}
+        valid[uid] = {"weight" : array["weight"], "total_evaluation_weight": array["total_evaluation_weight"]}
         tv_indices = k_fold_indices(array["event_id"], c_fold, k_fold, seed, test=return_test)
         t_idx, v_idx = split_array_to_train_and_validation(tv_indices, train_ratio)
 
@@ -307,7 +307,6 @@ def create_train_or_validation_sampler(events, target_map, batch_size, min_size=
     if not events:
         logger.warning(f"Sampler is not created due to feeding empty events")
         return None
-
     DatasetManager = DatasetSampler(None, batch_size=batch_size, min_size=min_size, sample_ratio=sample_ratio, target_map = target_map)
     for uid in list(events.keys()):
         (dataset_type, process_id) = uid
@@ -326,6 +325,7 @@ def create_train_or_validation_sampler(events, target_map, batch_size, min_size=
             weight=arrays["weight"],
             name=process_id,
             dataset_type=dataset_type,
+            eval_weight=arrays["total_evaluation_weight"],
         )
         DatasetManager.add_dataset(era_dataset)
         logger.info(f"Add {dataset_type} pid: {process_id}")

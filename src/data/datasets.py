@@ -14,7 +14,8 @@ class Dataset(t_data.Dataset):
         weight: torch.Tensor=None,
         name: str=None,
         dataset_type: str=None,
-        randomize: bool =True
+        randomize: bool =True,
+        eval_weight: torch.Tensor=None,
     ):
         self.continous_input = continous_tensor.to(torch.float32)
         self.categorical_input = categorical_tensor.to(torch.int32)
@@ -26,6 +27,7 @@ class Dataset(t_data.Dataset):
         self.dataset_type = dataset_type
         self.sample_size = len(self)
         self.relative_weight = None
+        self.eval_weight = eval_weight
 
     @property
     def uid(self):

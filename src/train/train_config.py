@@ -6,7 +6,8 @@ from data.load_data import find_datasets
 target_map = {"hh" : 0, "tt": 1, "dy": 2}
 continous_features, categorical_features = input_features(debug=False, debug_length=3)
 dataset_pattern = ["dy_*","tt_*", "hh_ggf_hbb_htt_kl0_kt1*","hh_ggf_hbb_htt_kl1_kt1*"]
-eras = ["22pre", "22post", "23pre", "23post"]
+# eras = ["22pre", "22post", "23pre", "23post"]
+eras = ["22pre"]
 datasets =  find_datasets(dataset_pattern, eras, "root", verbose=False)
 # changes in this dictionary will create a NEW hash of the data
 dataset_config = {
@@ -19,7 +20,7 @@ dataset_config = {
 
 # config of network
 model_building_config = {
-    "enable_rotation": True,
+    "enable_rotation": False, # enbale rotiation layer based on two reference objects, TODO: this breaks export to torch script
     "ref_phi_columns": ("res_dnn_pnet_vis_tau1", "res_dnn_pnet_vis_tau2"), # which columsn should be used to get rotation angle
     "rotate_columns": ("res_dnn_pnet_bjet1", "res_dnn_pnet_bjet2", "res_dnn_pnet_fatjet", "res_dnn_pnet_vis_tau1", "res_dnn_pnet_vis_tau2"), # which columns should be rotated
     "categorical_padding_value": None, # missing values in categorical inputs are replaced by this
@@ -48,12 +49,13 @@ config = {
     "sample_ratio" : {"dy": 1/3, "tt": 1/3, "hh": 1/3},
     "min_events_in_batch": 1,
 
-    "save_model_name" : "model_nr5_lbn_asam",
+    "save_model_name" : "test",
     "get_batch_statistic_return_dummy" : False,
     "load_marcel_stats" : False,
     "load_marcel_weights" : False,
     "training_fn" : "default", # chooses the training function
-    "validation_fn" : "default"
+    "validation_fn" : "default",
+    "loss_fn" : "signal_efficiency",
 }
 
 scheduler_config = {

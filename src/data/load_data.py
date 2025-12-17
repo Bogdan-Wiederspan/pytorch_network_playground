@@ -153,10 +153,66 @@ def root_to_numpy(
                 combined_weight = combined_weight * weights_arrays[weight]
             all_branches_array["combined_weight"] = combined_weight
 
+            # get number of expected events
+            di_tau_mask, di_bjet_mask, bjet_mask = evaluation_phase_space_filter(
+                uproot_file=tree,
+                year=pathlib.Path(file_path).parents[1].stem,
+                cut=final_cut,
+                suffix=("res_dnn_pnet" if branches[0].startswith("res_dnn_pnet") else "reg_dnn_moe"))
+            all_branches_array["bjet_mask"] = bjet_mask
+            all_branches_array["di_tau_mask"] = di_tau_mask
+            all_branches_array["di_bjet_mask"] = di_bjet_mask
+
             arrays.append(all_branches_array.to_numpy())
 
     arrays = np.concatenate(arrays, axis=0)
     return arrays
+
+def evaluation_phase_space_filter(uproot_file, year, cut, suffix="res_dnn_pnet"):
+    # as taken from https://github.com/uhh-cms/hh2bbtautau/blob/master/hbt/config/configs_hbt.py#L1252
+    def particle_net_wp(year, wp_level="medium"):
+        particle_net_wp = {
+            "loose": {"22pre": 0.047, "22post": 0.0499, "23pre": 0.0358, "23post": 0.0359, "2024": None}[year],
+            "medium": {"22pre": 0.245, "22post": 0.2605, "23pre": 0.1917, "23post": 0.1919, "2024": None}[year],
+            "tight": {"22pre": 0.6734, "22post": 0.6915, "23pre": 0.6172, "23post": 0.6133, "2024": None}[year],
+            "xtight": {"22pre": 0.7862, "22post": 0.8033, "23pre": 0.7515, "23post": 0.7544, "2024": None}[year],
+            "xxtight": {"22pre": 0.961, "22post": 0.9664, "23pre": 0.9659, "23post": 0.9688, "2024": None}[year],
+        }
+        return particle_net_wp[wp_level]
+    b_tag_wp = particle_net_wp(year, "medium")
+    ### load the necessary events with applied cut from baseselection
+    # leptons_fields = [f"{particle}_{k}" for particle in ("Electron", "Muon", "Tau") for k in ("px", "py", "pz", "e")]
+    leptons_fields = [f"{suffix}_vis_tau{num}_{kin}" for num in ("1", "2") for kin in ("px", "py", "pz", "e")]
+    hhbjet_fields = ["HHBJet_mass", "HHBJet_btagPNetB"]
+
+    events = uproot_file.arrays(leptons_fields + hhbjet_fields, library="ak", cut=cut)
+
+    ### masks
+    # tau mass window
+    # TODO marcel fragen warum das so klein ist
+    # dilep_mass = ak.sum(ak.concatenate([[events[lepton_mass] for lepton_mass in leptons_fields]], axis=1), axis=0)
+    l_px = events[f"{suffix}_vis_tau1_px"] + events[f"{suffix}_vis_tau2_px"]
+    l_py = events[f"{suffix}_vis_tau1_py"] + events[f"{suffix}_vis_tau2_py"]
+    l_pz = events[f"{suffix}_vis_tau1_pz"] + events[f"{suffix}_vis_tau2_pz"]
+    l_e = events[f"{suffix}_vis_tau1_e"] + events[f"{suffix}_vis_tau2_e"]
+
+    di_tau_mass = (l_e**2 - (l_px**2 + l_py**2 + l_pz**2))**0.5
+    di_tau_mask = (
+        (di_tau_mass >= 15) &
+        (di_tau_mass <= 130)
+    )
+
+    # btag score success atleast 1 btag score above
+    bjet_mask = ak.sum(events.HHBJet_btagPNetB > b_tag_wp, axis=1) >= 1
+
+    # di bjet mass window
+    di_bjet_mass = ak.sum(events.HHBJet_mass, axis=1)
+    di_bjet_mask = (
+        (di_bjet_mass >= 40) &
+        (di_bjet_mass <= 270)
+    )
+    # final_mask =
+    return di_tau_mask, di_bjet_mask, bjet_mask
 
 def parquet_to_awkward(files_path: Union[list[str],str], columns: Union[list[str], str, None]=None) -> ak.Array:
     """
@@ -306,7 +362,6 @@ def convert_numpy_to_torch(events, continous_features, categorical_features, dty
             logger.info(f"Filter {num_filter} Nans out form {uid}")
         return ~event_mask
 
-
     for uid in list(events.keys()):
         arr = events.pop(uid)
 
@@ -318,6 +373,15 @@ def convert_numpy_to_torch(events, continous_features, categorical_features, dty
         if arr.size == 0:
             logger.info(f"Skipping {uid} due to zero elements")
             continue
+
+        # calculate total weight for trainings and evaluation space
+        total_trainings_weight = np.sum(arr["combined_weight"])
+        final_mask = arr["bjet_mask"] & arr["di_tau_mask"] & arr["di_bjet_mask"]
+
+        total_bjet_weight = np.sum(arr["combined_weight"][arr["bjet_mask"]])
+        total_di_tau_weight = np.sum(arr["combined_weight"][arr["di_tau_mask"]])
+        total_di_bjet_weight = np.sum(arr["combined_weight"][arr["di_bjet_mask"]])
+        total_evaluation_weight = np.sum(arr["combined_weight"][final_mask])
 
         continous_tensor, categorical_tensor = [
             numpy_to_torch(arr, feature, dtype)
@@ -333,5 +397,10 @@ def convert_numpy_to_torch(events, continous_features, categorical_features, dty
             "categorical": categorical_tensor,
             "weight": weight,
             "event_id" : event_id,
+            "total_trainings_space_weight" : total_trainings_weight,
+            "total_evaluation_weight" : total_evaluation_weight,
+            "total_bjet_weight" : total_bjet_weight,
+            "total_di_tau_weight" : total_di_tau_weight,
+            "total_di_bjet_weight" : total_di_bjet_weight,
         }
     return events
