@@ -115,7 +115,6 @@ def main(**kwargs):
             validation_loss_fn = torch.nn.CrossEntropyLoss(weight=None, size_average=None,label_smoothing=config["label_smoothing"])
 
         ### training loop
-        from IPython import embed; embed(header="string - 120 in train.py ")
         for current_iteration in range(1_000_000):
             t_loss, (t_pred, t_targets) = training_fn(
                 model = model,
