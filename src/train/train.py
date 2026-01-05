@@ -18,13 +18,12 @@ from early_stopping import EarlyStopSignal, EarlyStopOnPlateau
 from export import torch_save, torch_export_v2
 import marcel_weight_translation as mwt
 
+CPU = torch.device("cpu")
+CUDA = torch.device("cuda")
+DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+
 def main(**kwargs):
     logger = get_logger(__name__)
-
-    CPU = torch.device("cpu")
-    CUDA = torch.device("cuda")
-    DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    VERBOSE = False
 
     logger.info(f"Running DEVICE is {DEVICE}")
     # load data
@@ -176,10 +175,10 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Train model runner")
-    parser.add_argument("--overwrite", action="store_true", default=False, help="Overwrite cached data if present (default: False)")
-    parser.add_argument("--no-save-cache", dest="save_cache", action="store_false", help="Do not save loaded data to cache (default: save cache)")
+    parser.add_argument("--ignore_cache", "-ic", action="store_true", default=False, help="Ignore cache when running the program (default: False)")
+    parser.add_argument("--no-save-cache", dest="save_cache", action="store_false", default=False, help="Do not save loaded data to cache (default: save cache)")
 
     args = parser.parse_args()
 
     # call main with parsed args
-    main(overwrite=args.overwrite, save_cache=args.save_cache)
+    main(ignore_cache=args.ignore_cache, save_cache=args.save_cache)

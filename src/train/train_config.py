@@ -8,7 +8,7 @@ continous_features, categorical_features = input_features(debug=False, debug_len
 dataset_pattern = ["dy_*","tt_*", "hh_ggf_hbb_htt_kl0_kt1*","hh_ggf_hbb_htt_kl1_kt1*"]
 # eras = ["22pre", "22post", "23pre", "23post"]
 eras = ["22pre"]
-datasets =  find_datasets(dataset_pattern, eras, "root", verbose=False)
+datasets =  find_datasets(dataset_pattern, eras, file_type="root", verbose=False)
 # changes in this dictionary will create a NEW hash of the data
 dataset_config = {
     "continous_features" : continous_features,

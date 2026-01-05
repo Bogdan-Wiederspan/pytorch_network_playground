@@ -21,7 +21,7 @@ def find_datasets(dataset_patterns: list[str], year_patterns: list[str], *, file
 
     Args:
         dataset_patterns (list[str]): Pattern describing our nano AODs, ex: ['hh_ggf_hbb_htt_kl*_kt1*',]
-        year_pattern (str): Pattern describing the years, ex: ['22pre*', 22post*,].
+        year_pattern (list[str]): pattern describing the years e.g. "2*pre" -> 22pre, 23pre
         file_type (str, optional): File extension . Defaults to "root".
 
     Returns:
@@ -78,6 +78,7 @@ def find_datasets(dataset_patterns: list[str], year_patterns: list[str], *, file
                 merged_over_era_data[dataset] = []
             merged_over_era_data[dataset].extend(files)
     return merged_over_era_data
+
 
 def root_to_numpy(
     files_path: Union[list[str],str],
@@ -174,6 +175,7 @@ def root_to_numpy(
     arrays = np.concatenate(arrays, axis=0)
     return arrays
 
+
 def evaluation_phase_space_filter(uproot_file, year, cut, suffix="res_dnn_pnet"):
     # as taken from https://github.com/uhh-cms/hh2bbtautau/blob/master/hbt/config/configs_hbt.py#L1252
     def particle_net_wp(year, wp_level="medium"):
@@ -220,79 +222,35 @@ def evaluation_phase_space_filter(uproot_file, year, cut, suffix="res_dnn_pnet")
     # final_mask =
     return di_tau_mask, di_bjet_mask, bjet_mask
 
-def parquet_to_awkward(files_path: Union[list[str],str], columns: Union[list[str], str, None]=None) -> ak.Array:
-    """
-    Load all parquet files in *files_path* and return them as a single awkward array.
-    If only certain columns are needed, they can be specified in *columns*.
 
-    Args:
-        files_path (list[str], str): list of root files or single root file
-        columns (list[str], str, optional): columns that should be loaded e.g. ["events", "run"]. If None loads all branches . Defaults to None.
-
-    Returns:
-        ak.Array: awkward array containing all data from the root files
-    """
-    if depthCount(columns) > 1 and columns is not None:
-        raise ValueError("columns must be a flat list")
-    arrays = []
-    for file_path in files_path:
-        arrays.append(ak.from_parquet(file_path, columns=columns))
-    return ak.concatenate(arrays, axis=0)
-
-def get_loader(file_type: str, **kwargs):
-    """
-    Small helper function to load correct loader function and its configuration based on given *file_type*.
-
-    Args:
-        file_type (str): file extension.
-
-    Raises:
-        ValueError: if file type is not supported by loader
-
-    Returns:
-        func: loader function, configuration dictionary
-    """
-    match file_type:
-        case "root":
-            return root_to_numpy, {"branches": kwargs.get("columns", None), "cut": kwargs.get("cuts", None)}
-        case "parquet":
-            return parquet_to_awkward, {"columns": kwargs.get("columns", None)}
-        case _:
-            raise ValueError(f"Unknown file type: {file_type}")
-
-
-def load_data(datasets, file_type: str="root", columns: Union[list[str],str, None]=None):
+def load_data(datasets, columns: Union[list[str],str, None]=None, cuts: Union[list[str], None]=None):
     """
     Loads data with given *file_type* in given a *dataset_pattern* and *year_pattern*. If only certain columns are needed, they can be specified in *columns*.
     The data sorted by year and dataset name is returned as a nested dictionary in awkward format.
 
     Args:
         dataset_patter (str): pattern describing dataset e.g. "dy_*" -> all drell-yan datasets
-        year_pattern (str): pattern describing the years e.g. "2*pre" -> 22pre, 23pre
-        file_type (str, optional): file extension. Defaults to "root".
         columns (list[str], str, optional): columns that should be lodead e.g. ["events", "run"]. If None loads all columns . Defaults to None.
+        cuts ()
 
     Returns:
         dict: {year:{pid: List(Ids)}}
     """
-    def sort_by_process_id(array):
-        # helper to sort data by process id and not datasets,
-        # results in array of structure {year:{dataset : array}}
-        pids = array["process_id"]
-        unique_ids = np.unique(pids)
-        p_array = {}
-        for uid in unique_ids:
-            mask = pids == uid
-            p_array[int(uid)] = array[mask]
-        return tuple(p_array.items())
-
-    def load_data_per_process_id(loader, datasets, config):
-
+    def load_data_per_process_id(dataset_paths, branches, cut=None):
+        # helper to load root data into a dictionary of form:
+        # {year:{dataset : array}}, where array is a structured array
+        def sort_by_process_id(array):
+            # helper to extract data by process id and group them by this
+            pids = array["process_id"]
+            unique_ids = np.unique(pids)
+            p_array = {}
+            for uid in unique_ids:
+                mask = pids == uid
+                p_array[int(uid)] = array[mask]
+            return tuple(p_array.items())
         data = {}
-        for dataset, files in datasets.items():
-            # add events with structure {dataset_name : events}
-            # load inputs
-            events = loader(files, **config)
+        for dataset, files in dataset_paths.items():
+            events = root_to_numpy(files, branches=branches, cut=cut)
             p_arrays = sort_by_process_id(events)
             for pid, p_array in p_arrays:
                 uid = (dataset[:2],pid)
@@ -303,7 +261,7 @@ def load_data(datasets, file_type: str="root", columns: Union[list[str],str, Non
         return data
 
     def merge_per_pid(data):
-        # replace_with_concatenated_from_buffers(data, axis=0)
+        # helper to merge all process_ids together to continous array
         keys = list(data.keys())
 
         logger.info("Start merging arrays per process id")
@@ -313,42 +271,10 @@ def load_data(datasets, file_type: str="root", columns: Union[list[str],str, Non
             concat = np.concatenate(arrays, axis=0)
             data[uid] = concat
         return data
-    loader, config = get_loader(file_type, columns=list(columns))
-    data = load_data_per_process_id(loader, datasets, config)
+    data = load_data_per_process_id(datasets, branches=list(columns), cut=cuts)
     data = merge_per_pid(data)
     return data
 
-def get_data(config, _save_cache = True, overwrite=False):
-    # find cache if exists and recreate sample with this
-    # else prepare data if not cache exist
-    cacher = DataCacher(config=config)
-
-    # when cache exist load it and return the data
-    if not overwrite and cacher.path.exists():
-        events = cacher.load_cache()
-    else:
-        logger.info("Start loading and filtering of data:")
-        cont_feat, cat_feat = config["continous_features"], config["categorical_features"]
-        # load the data in {pid : awkward}
-        events = load_data(
-            config["datasets"],
-            file_type = "root",
-            columns = cont_feat + cat_feat
-        )
-        # conver data in {pid : {cont:arr, cat: arr, weight: arr, target: arr}}
-        events = convert_numpy_to_torch(
-            events=events,
-            continous_features=cont_feat,
-            categorical_features=cat_feat,
-        )
-        logger.info("Done loading data")
-        # save events in cache
-        if _save_cache:
-            try:
-                cacher.save_cache(events)
-            except:
-                from IPython import embed; embed(header="Saving Cache did not work out - going debugging to manually save \'events\' with \'cacher.save_cache\'")
-    return events
 
 def convert_numpy_to_torch(events, continous_features, categorical_features, dtype=None):
     def numpy_to_torch(array, columns, dtype):
@@ -389,24 +315,77 @@ def convert_numpy_to_torch(events, continous_features, categorical_features, dty
         total_di_bjet_weight = np.sum(arr["combined_weight"][arr["di_bjet_mask"]])
         total_evaluation_weight = np.sum(arr["combined_weight"][final_mask])
 
+        normalization_weights = arr["normalization_weight"]
+        sum_of_normalization_weights = torch.tensor(np.sum(normalization_weights), dtype = dtype)
+
+        product_of_all_weights = arr["combined_weight"]
+        sum_of_combined_weights = torch.tensor(np.sum(product_of_all_weights), dtype= dtype)
+
+        # convert struct numpy to torch tensors
         continous_tensor, categorical_tensor = [
             numpy_to_torch(arr, feature, dtype)
             for feature in (continous_features,categorical_features)
             ]
-        # convert to torch
-        weight = torch.tensor(np.sum(arr["normalization_weight"]), dtype = dtype)
-        # event id
+        # event id is a uint and is stored as uncontiguousarray for some reason after the casting
+        # this ensures that a continous copy is created that is castable to torch
         event_id = torch.tensor(np.ascontiguousarray(arr["event"]), dtype=torch.int64)
 
         events[uid] = {
             "continous": continous_tensor,
             "categorical": categorical_tensor,
-            "weight": weight,
             "event_id" : event_id,
-            "total_trainings_space_weight" : total_trainings_weight,
+            "normalization_weights" : normalization_weights,
+            "product_of_weights" : product_of_all_weights,
+
+            "total_product_of_weights" : sum_of_combined_weights,
+            "total_normalization_weights" : sum_of_normalization_weights,
+
             "total_evaluation_weight" : total_evaluation_weight,
             "total_bjet_weight" : total_bjet_weight,
             "total_di_tau_weight" : total_di_tau_weight,
             "total_di_bjet_weight" : total_di_bjet_weight,
         }
+    return events
+
+
+def get_data(config: dict, _save_cache = True, ignore_cache=False) -> dict[torch.Tensor]:
+    """
+    Main function to combine all steps from loading root files to filter by process ids and finally convert to torch
+
+    Args:
+        config (dict): Config as defined in train_config.py
+        _save_cache (bool, optional): Save the result of this function as cache, using config as hash. Defaults to True.
+        ignore_cache (bool, optional): Rerun loading of data, regardless of existing cache. Defaults to False.
+
+    Returns:
+        dict[torch.Tensor]: Dictionary with torch tensors
+    """
+    # find cache if exists and recreate sample with this
+    # else prepare data if not cache exist
+    cacher = DataCacher(config=config)
+
+    # when cache exist load it and return the data
+    if not ignore_cache and cacher.path.exists():
+        events = cacher.load_cache()
+    else:
+        logger.info("Start loading and filtering of data:")
+        # load the data in {pid : awkward}
+        events = load_data(
+            config["datasets"],
+            columns=config["continous_features"] + config["categorical_features"],
+            cuts=config["cuts"],
+        )
+        # conver data in {pid : {cont:arr, cat: arr, weight: arr, target: arr}}
+        events = convert_numpy_to_torch(
+            events=events,
+            continous_features=config["continous_features"],
+            categorical_features=config["categorical_features"],
+        )
+        logger.info("Done loading data")
+        # save events in cache
+        if _save_cache:
+            try:
+                cacher.save_cache(events)
+            except:
+                from IPython import embed; embed(header="Saving Cache did not work out - going debugging to manually save \'events\' with \'cacher.save_cache\'")
     return events
