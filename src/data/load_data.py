@@ -13,25 +13,24 @@ from data.cache import DataCacher
 
 logger = get_logger(__name__)
 
-def find_datasets(dataset_patterns: list[str], year_patterns: list[str], file_type: str="root", verbose=True):
+def find_datasets(dataset_patterns: list[str], year_patterns: list[str], *, file_type: str="root", verbose=True):
     """
-    Find all files in ${INPUT_DATA_DIR} by glob pattern defined by <year_pattern>/<dataset_pattern>/*.file_type and
-    return the result as a dictionary with dataset names as keys and list of file paths as values.
-    Duplicates in *year_pattern* and *dataset_patterns* DO NOT change result.
+    Find all files in variable ${INPUT_DATA_DIR} by using glob patterns following <year_pattern>/<dataset_pattern>/*.<file_type>.
+    The result is as a dictionary of form: {dataset_name : [file_paths]}.
+    Duplicates in *year_patterns* and *dataset_patterns* will not affect the result.
 
     Args:
-        dataset_patterns (list[str]): Pattern describing our nano AODs, ex: ['hh_ggf_hbb_htt_kl*_kt1*']
-        year_pattern (str): Pattern describing the years.
+        dataset_patterns (list[str]): Pattern describing our nano AODs, ex: ['hh_ggf_hbb_htt_kl*_kt1*',]
+        year_pattern (str): Pattern describing the years, ex: ['22pre*', 22post*,].
         file_type (str, optional): File extension . Defaults to "root".
 
     Returns:
         dict: dictionary with dataset names as keys and list of file paths as values
     """
-    # get data dir from config
+    # precautions: get dir, wrap strings, set pattern
     if (data_dir := os.environ.get("INPUT_DATA_DIR", None)) is None:
         raise ValueError("Environment variable INPUT_DATA_DIR not set! Source setup.sh")
 
-    # wrapp patterns since iterable is assumed
     if isinstance(dataset_patterns, str):
         dataset_patterns = [dataset_patterns]
     if isinstance(year_patterns, str):
@@ -83,11 +82,12 @@ def find_datasets(dataset_patterns: list[str], year_patterns: list[str], file_ty
 def root_to_numpy(
     files_path: Union[list[str],str],
     branches: Union[list[str], str, None]=None,
-    cut=None
+    cut: list[str]=None,
     ) -> ak.Array:
     """
     Load all root files in *files_path* and return them as a single awkward array.
     If only certain branches are needed, they can be specified in *branches*.
+    To prevent loading unnecessary data a list of *cut*s can be added.
 
     Args:
         files_path (list[str], str): list of root files or single root file
@@ -100,15 +100,17 @@ def root_to_numpy(
     if depthCount(branches) > 1 and branches is not None:
         raise ValueError("branches must be a flat list")
 
-    ### manage fields to get from root file
-    # fields -> purpose:
+    # set of branches that are always extracted from root files
+    # purpose -> fields:
     #   process_id -> filtering of subphasespaces
     #   normalization_weight -> used as sample weight for batch
-    #   tau2_isolated, lepton_os, channel_id -> used for baseline cut
-    #   event -> event number used for k-fold splitting
-    #   normalization_weight -> oversampling weight that defines the fraction within batch
+    #   used for baseline cut -> tau2_isolated, lepton_os, channel_id
+    #   event number used for k-fold splitting -> event
+    #   oversampling weight that defines the fraction within batch -> normalization_weight
     meta_fields = {"process_id", "tau2_isolated", "leptons_os", "channel_id", "event", "normalization_weight"}
-    # training and evaluation phase space are not the same transfer weight is calculated using these weights
+
+    # training and evaluation phase space are not the same
+    # a transfer weight can be calculated using the product of these weights
     weights = {
     "normalized_pdf_weight","normalized_murmuf_weight","normalized_pu_weight",
     "normalized_isr_weight","normalized_fsr_weight","normalized_njet_btag_weight_pnet",
@@ -117,7 +119,9 @@ def root_to_numpy(
     }
     all_branches = set(branches).union(meta_fields)
 
-    ### handle baseline combine with additional cuts
+    # handling cuts
+    # by default all analysis has a base cut applied
+    # if further cuts are desired, cut is applied on top of baseline cut
     baseline_cuts = [
         "(tau2_isolated == 1)",
         "(leptons_os == 1)",
@@ -130,7 +134,7 @@ def root_to_numpy(
         cut = []
     final_cut = "&".join(baseline_cuts + cut)
 
-    ### load root files and combine the array to continogus arrays
+    # load root files and combine the array to continogus arrays
     if isinstance(files_path, str):
         files_path = [files_path]
 
@@ -138,13 +142,16 @@ def root_to_numpy(
     for file_path in files_path:
         logger.info(f"loading: {file_path}")
         with uproot.open(file_path, object_cache=None, array_cache=None) as file:
+            # loading of data is split into 3 steps: all_common, weights, evaluation phasespace
+            # reason for 2 is that weights are not present in all datasets
+            # e.x. muon_id_weight does not exist in dy datasets, thus require filtering
+            # reason for 3: masks that are necessary later are calculated here
             tree = file["events"]
-            ### first load all input features that EVERY DATASET has in COMMON
+
+            # step 1
             all_branches_array = tree.arrays(all_branches, library="ak", cut=final_cut)
 
-            ### second handle WEIGHTS that not every dataset has
-            # e.x. muon_id_weight does not exist in dy datasets
-            # find out which weights exist in root file
+            # step 2
             weights_in_root_file = set(tree.keys()).intersection(weights)
             weights_arrays = tree.arrays(weights_in_root_file, library="ak", cut=final_cut)
 
@@ -153,7 +160,7 @@ def root_to_numpy(
                 combined_weight = combined_weight * weights_arrays[weight]
             all_branches_array["combined_weight"] = combined_weight
 
-            # get number of expected events
+            # step 3
             di_tau_mask, di_bjet_mask, bjet_mask = evaluation_phase_space_filter(
                 uproot_file=tree,
                 year=pathlib.Path(file_path).parents[1].stem,
@@ -164,7 +171,6 @@ def root_to_numpy(
             all_branches_array["di_bjet_mask"] = di_bjet_mask
 
             arrays.append(all_branches_array.to_numpy())
-
     arrays = np.concatenate(arrays, axis=0)
     return arrays
 
