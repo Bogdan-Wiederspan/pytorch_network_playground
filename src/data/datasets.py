@@ -6,28 +6,54 @@ from utils.logger import get_logger
 logger = get_logger(__name__)
 
 class Dataset(t_data.Dataset):
+    """
+    Dataset class hold the actual data and weights corresponding to a process id and also all necessary meta information.
+    """
     def __init__(
         self,
-        continous_tensor: torch.Tensor,
-        categorical_tensor: torch.Tensor,
+        continous: torch.Tensor,
+        categorical: torch.Tensor,
         target: torch.Tensor,
-        weight: torch.Tensor=None,
+        normalization_weights: torch.Tensor=None,
+        product_of_weights: torch.Tensor=None,
+        total_normalization_weights: torch.Tensor=None,
+        total_product_of_weights: torch.Tensor=None,
         name: str=None,
         dataset_type: str=None,
         randomize: bool =True,
-        eval_weight: torch.Tensor=None,
     ):
-        self.continous_input = continous_tensor.to(torch.float32)
-        self.categorical_input = categorical_tensor.to(torch.int32)
+        """
+        The input data of the dataset is stored as torch tensors for *continous*, *categorical* and *target* data.
+        The *normalization_weights* handle the oversampling of the event generator.
+        The *product_of_weights* is the product of all event weights assigned during generation and reconstruction.
+
+        Args:
+            continous (torch.Tensor): _description_
+            categorical (torch.Tensor): _description_
+            target (torch.Tensor): _description_
+            normalization_weights (torch.Tensor, optional): _description_. Defaults to None.
+            product_of_weights (torch.Tensor, optional): _description_. Defaults to None.
+            total_normalization_weights (torch.Tensor, optional): _description_. Defaults to None.
+            total_product_of_weights (torch.Tensor, optional): _description_. Defaults to None.
+            name (str, optional): _description_. Defaults to None.
+            dataset_type (str, optional): _description_. Defaults to None.
+            randomize (bool, optional): _description_. Defaults to True.
+        """
+
+        self.continous = continous.to(torch.float32)
+        self.categorical = categorical.to(torch.int32)
         self.targets = target.to(torch.float32)
-        self.weight = weight
+        self.normalization_weights = normalization_weights.to(torch.float32)
+        self.product_of_weights = product_of_weights.to(torch.float32)
+        self.total_normalization_weights = total_normalization_weights.to(torch.float32)
+        self.total_product_of_weights = total_product_of_weights.to(torch.float32)
+        from IPython import embed; embed(header = "DATASET INIT line: 50 in datasets.py")
         self.name = name
         self.randomize = randomize
         self.reset()
         self.dataset_type = dataset_type
         self.sample_size = len(self)
         self.relative_weight = None
-        self.eval_weight = eval_weight
 
     @property
     def uid(self):
@@ -37,7 +63,7 @@ class Dataset(t_data.Dataset):
         return self.targets.shape[0]
 
     def __getitem__(self, idx):
-        return self.continous_input[idx], self.continous_input[idx], self.targets[idx]
+        return self.continous[idx], self.continous[idx], self.targets[idx]
 
     def reset(self):
         self.current_idx = 0
@@ -76,7 +102,7 @@ class Dataset(t_data.Dataset):
         idx = self.indices[start_idx:next_idx]
         self.current_idx = next_idx
 
-        return self.continous_input[idx].to(device), self.categorical_input[idx].to(device), self.targets[idx].to(device)
+        return self.continous[idx].to(device), self.categorical[idx].to(device), self.targets[idx].to(device)
 
     def batch_generator(self, batch_size=None, device=torch.device("cpu")):
         """
@@ -106,7 +132,7 @@ class Dataset(t_data.Dataset):
             idx = indices[start_idx:next_idx]
             start_idx = next_idx
             # reset if we reached the end of the dataset and drop last incomplete batch
-            cont, cat, tar = self.continous_input[idx], self.categorical_input[idx],self.targets[idx]
+            cont, cat, tar = self.continous[idx], self.categorical[idx],self.targets[idx]
             yield cont.to(device), cat.to(device), tar.to(device)
 
 class DatasetSampler(t_data.Sampler):
@@ -131,8 +157,10 @@ class DatasetSampler(t_data.Sampler):
         self.target_map = target_map
 
         # set attributes to access dataset properties directly from sampler
-        self.set_attr(["weight", "relative_weight", "sample_size", "dataset_type", "batch_generator"])
-
+        self.set_attr([
+            "total_normalization_weights", "relative_weight", "sample_size",
+            "dataset_type", "batch_generator", "total_product_of_weights"
+            ])
 
     def __getitem__(self, uid):
         return self.flat_datasets()[uid]
@@ -157,11 +185,16 @@ class DatasetSampler(t_data.Sampler):
     def __len__(self):
         return sum(list(self.events_per_dataset().values()))
 
-    def add_dataset(self, dataset):
+    def add_dataset(self, dataset_inst):
+        """
+        Adds a *dataset_inst* to the collection of the sampler and update statitics related to it.
+
+        Args:
+            dataset_inst (_type_): Instance of the Dataset class
+        """
         # {era : process_id: {array}}
-        weight = dataset.weight
-        self.total_weight[dataset.dataset_type] += weight
-        self.dataset_inst[dataset.dataset_type][dataset.name] = dataset
+        self.total_weight[dataset_inst.dataset_type] += dataset_inst.total_normalization_weights
+        self.dataset_inst[dataset_inst.dataset_type][dataset_inst.name] = dataset_inst
 
     @property
     def keys(self):
@@ -183,7 +216,7 @@ class DatasetSampler(t_data.Sampler):
         # unpack and convert to tensors for easier handling, get desired_sub_batch_size
         weights, keys = [], []
         for pid, ds in self.dataset_inst[dataset_type].items():
-            weights.append(ds.weight.item())
+            weights.append(ds.total_normalization_weights.item())
             keys.append(pid)
         weights = torch.tensor(weights, dtype=torch.float32)
         min_size = torch.tensor(self.min_size)
@@ -200,12 +233,12 @@ class DatasetSampler(t_data.Sampler):
 
 
         # preperation: calculate batch size according to weight
-        total_weight = weights.sum()
-        ideal_sizes = sub_batch_size * weights / total_weight
+        total_weight_of_dataset_type = weights.sum()
+        ideal_sizes = sub_batch_size * weights / total_weight_of_dataset_type
 
         # add relative weight to datasets
         for pid, ds in self.dataset_inst[dataset_type].items():
-            ds.relative_weight = ds.weight / total_weight * self.sample_ratio[dataset_type]
+            ds.relative_weight = ds.total_normalization_weights / total_weight_of_dataset_type * self.sample_ratio[dataset_type]
         # step 1:
 
         # check if UPSAMPLING IS NECESSARY AT ALL
@@ -290,7 +323,10 @@ class DatasetSampler(t_data.Sampler):
         # do iteration over keys to GUARANTEE deterministic behavior when looping accross different python version
         for uid, ds in sorted(self.flat_datasets().items()):
             cont, cat, target = ds.sample(device=device)
-            batch_cont.append(cont), batch_cat.append(cat), batch_target.append(target), batch_weight.append(torch.full((target.shape[0], 1), ds.weight))
+            batch_cont.append(cont)
+            batch_cat.append(cat)
+            batch_target.append(target)
+            batch_weight.append(torch.full((target.shape[0], 1), ds.total_normalization_weights / ds.sample_size).to(device))
             sample_indices[self.signal_background_map[ds.dataset_type]].append(target.shape[0])
 
         # combine everything into tensors

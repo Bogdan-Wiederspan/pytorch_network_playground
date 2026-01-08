@@ -276,13 +276,7 @@ def load_data(datasets, columns: Union[list[str],str, None]=None, cuts: Union[li
     return data
 
 
-def convert_numpy_to_torch(events, continous_features, categorical_features, dtype=None):
-    def numpy_to_torch(array, columns, dtype):
-        array = torch.from_numpy(np.stack([array[col] for col in columns], axis=1))
-        if dtype is not None:
-            array = array.to(dtype)
-        return array
-
+def handle_weights_and_convert_to_torch(events, continous_features, categorical_features, dtype=None):
     def filter_nan_mask(array, features, uid):
         masks = []
         for f in features:
@@ -306,27 +300,27 @@ def convert_numpy_to_torch(events, continous_features, categorical_features, dty
             logger.info(f"Skipping {uid} due to zero elements")
             continue
 
-        # calculate total weight for trainings and evaluation space
-        total_trainings_weight = np.sum(arr["combined_weight"])
-        final_mask = arr["bjet_mask"] & arr["di_tau_mask"] & arr["di_bjet_mask"]
-
-        total_bjet_weight = np.sum(arr["combined_weight"][arr["bjet_mask"]])
-        total_di_tau_weight = np.sum(arr["combined_weight"][arr["di_tau_mask"]])
-        total_di_bjet_weight = np.sum(arr["combined_weight"][arr["di_bjet_mask"]])
-        total_evaluation_weight = np.sum(arr["combined_weight"][final_mask])
-
-        normalization_weights = arr["normalization_weight"]
-        sum_of_normalization_weights = torch.tensor(np.sum(normalization_weights), dtype = dtype)
-
-        product_of_all_weights = arr["combined_weight"]
-        sum_of_combined_weights = torch.tensor(np.sum(product_of_all_weights), dtype= dtype)
-
-        # convert struct numpy to torch tensors
+        # combine columns from struct numpy and convert to torch tensor
         continous_tensor, categorical_tensor = [
-            numpy_to_torch(arr, feature, dtype)
-            for feature in (continous_features,categorical_features)
+            torch.from_numpy(np.stack([arr[feature] for feature in features], axis=1))
+            for features in (continous_features,categorical_features)
             ]
-        # event id is a uint and is stored as uncontiguousarray for some reason after the casting
+        # handling weights and convert to torch tensors
+        # single numbers cant be converted by using from_numpy thus have to be wrapped in array
+        final_mask = arr["bjet_mask"] & arr["di_tau_mask"] & arr["di_bjet_mask"]
+        total_bjet_weight = torch.tensor(np.sum(arr["combined_weight"][arr["bjet_mask"]]))
+        total_di_tau_weight = torch.tensor(np.sum(arr["combined_weight"][arr["di_tau_mask"]]))
+        total_di_bjet_weight = torch.tensor(np.sum(arr["combined_weight"][arr["di_bjet_mask"]]))
+        total_evaluation_weight = torch.tensor(np.sum(arr["combined_weight"][final_mask]))
+
+        # some arrays have negative strides for some reason, which torch cannot handle
+        normalization_weights = torch.tensor(np.ascontiguousarray(arr["normalization_weight"]), dtype=torch.float32)
+        sum_of_normalization_weights = torch.sum(normalization_weights)
+
+        product_of_all_weights = torch.tensor(np.ascontiguousarray(arr["combined_weight"]), dtype=torch.float32)
+        sum_of_combined_weights = torch.sum(product_of_all_weights)
+
+        # event id is a uint and is stored as uncontiguousarray for some reason after sthe casting
         # this ensures that a continous copy is created that is castable to torch
         event_id = torch.tensor(np.ascontiguousarray(arr["event"]), dtype=torch.int64)
 
@@ -376,7 +370,7 @@ def get_data(config: dict, _save_cache = True, ignore_cache=False) -> dict[torch
             cuts=config["cuts"],
         )
         # conver data in {pid : {cont:arr, cat: arr, weight: arr, target: arr}}
-        events = convert_numpy_to_torch(
+        events = handle_weights_and_convert_to_torch(
             events=events,
             continous_features=config["continous_features"],
             categorical_features=config["categorical_features"],

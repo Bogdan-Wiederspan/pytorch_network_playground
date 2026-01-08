@@ -272,26 +272,32 @@ def split_k_fold_into_training_and_validation(events_dict, c_fold, k_fold, seed,
         c_fold (int): Current fold, this fold is returned when *test* is True
         k_fold (int): Number of folds
         seed (int): Seeds used for random permutation
-        train_ratio (float, optional): _description_. Defaults to 0.75.
+        train_ratio (float, optional): Percentage of training data. Defaults to 0.75.
 
     Returns:
         dict(torch.tensor): Train and validation dictionary
     """
     train, valid = {}, {}
     for uid in list(events_dict.keys()):
+        # handle constant values that are independent of splitting, like sum of weights
         array = events_dict.pop(uid)
-        train[uid] = {"weight" : array["weight"], "total_evaluation_weight": array["total_evaluation_weight"]}
-        valid[uid] = {"weight" : array["weight"], "total_evaluation_weight": array["total_evaluation_weight"]}
+
+        # create a copy of the dictionary with constant values
+        # otherwise train and valid would point to the same memory
+        constant_values = {
+            "total_normalization_weights" : array["total_normalization_weights"],
+            "total_product_of_weights" : array["total_product_of_weights"]
+            }
+        train[uid], valid[uid] = constant_values.copy(), constant_values.copy()
+
         tv_indices = k_fold_indices(array["event_id"], c_fold, k_fold, seed, test=return_test)
         t_idx, v_idx = split_array_to_train_and_validation(tv_indices, train_ratio)
 
-        for key in ("continous", "categorical", "event_id"):
+        # splitt arrays into train and validation
+        for key in ("continous", "categorical", "event_id", "normalization_weights", "product_of_weights"):
             arr = array.pop(key)
-            t_arr = arr[t_idx]
-            v_arr = arr[v_idx]
+            train[uid][key], valid[uid][key] = arr[t_idx], arr[v_idx]
 
-            train[uid][key] = t_arr
-            valid[uid][key] = v_arr
     # edge case split results in empty tensors (due to very low event count) remove these
     # if empty do not save
     for uid in list(train.keys()):
@@ -307,6 +313,7 @@ def create_train_or_validation_sampler(events, target_map, batch_size, min_size=
     if not events:
         logger.warning(f"Sampler is not created due to feeding empty events")
         return None
+
     DatasetManager = DatasetSampler(None, batch_size=batch_size, min_size=min_size, sample_ratio=sample_ratio, target_map = target_map)
     for uid in list(events.keys()):
         (dataset_type, process_id) = uid
@@ -317,15 +324,17 @@ def create_train_or_validation_sampler(events, target_map, batch_size, min_size=
         target_value = target_map[dataset_type]
         target = torch.zeros(size=(num_events, len(target_map)), dtype=torch.float32)
         target[:, target_value] = 1.
-
         era_dataset = Dataset(
             continous_tensor=arrays["continous"],
             categorical_tensor=arrays["categorical"],
-            target=target,
-            weight=arrays["weight"],
+            target_tensor=target,
+            normalization_weights=arrays["normalization_weights"],
+            product_of_weights=arrays["product_of_weights"],
+            total_normalization_weights=arrays["total_normalization_weights"],
+            total_product_of_weights=arrays["total_product_of_weights"],
             name=process_id,
             dataset_type=dataset_type,
-            eval_weight=arrays["total_evaluation_weight"],
+            randomize=True,
         )
         DatasetManager.add_dataset(era_dataset)
         logger.info(f"Add {dataset_type} pid: {process_id}")
