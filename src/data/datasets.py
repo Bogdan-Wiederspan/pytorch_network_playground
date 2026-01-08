@@ -47,7 +47,6 @@ class Dataset(t_data.Dataset):
         self.product_of_weights = product_of_weights.to(torch.float32)
         self.total_normalization_weights = total_normalization_weights.to(torch.float32)
         self.total_product_of_weights = total_product_of_weights.to(torch.float32)
-        from IPython import embed; embed(header = "DATASET INIT line: 50 in datasets.py")
         self.name = name
         self.randomize = randomize
         self.reset()
@@ -287,7 +286,6 @@ class DatasetSampler(t_data.Sampler):
 
         # if one still mismatch add it on lowest or remove from highest
         very_last_remaining = int(floored_sizes.sum()) - sub_batch_size
-        # from IPython import embed; embed(header="string - 144 in datasets.py ")
 
         # TODO BETTER SCHEME
         # remove remaining from biggest sample or add more to biggest sample

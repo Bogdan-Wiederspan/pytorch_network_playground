@@ -325,9 +325,9 @@ def create_train_or_validation_sampler(events, target_map, batch_size, min_size=
         target = torch.zeros(size=(num_events, len(target_map)), dtype=torch.float32)
         target[:, target_value] = 1.
         era_dataset = Dataset(
-            continous_tensor=arrays["continous"],
-            categorical_tensor=arrays["categorical"],
-            target_tensor=target,
+            continous=arrays["continous"],
+            categorical=arrays["categorical"],
+            target=target,
             normalization_weights=arrays["normalization_weights"],
             product_of_weights=arrays["product_of_weights"],
             total_normalization_weights=arrays["total_normalization_weights"],
