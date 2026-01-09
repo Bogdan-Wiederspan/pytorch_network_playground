@@ -36,8 +36,7 @@ def main(**kwargs):
 
         # load data from cache is necessary or from root files
         # events is of form : {uid : {"continous","categorical", "weight": torch tensor}}
-        events = get_data(dataset_config, overwrite=kwargs["overwrite"], _save_cache=kwargs["save_cache"])
-
+        events = get_data(dataset_config, ignore_cache=kwargs["ignore_cache"], _save_cache=kwargs["save_cache"])
         train_data, validation_data = split_k_fold_into_training_and_validation(
             events,
             c_fold=current_fold,
@@ -45,7 +44,6 @@ def main(**kwargs):
             seed=config["seed"],
             train_ratio=0.75,
         )
-
         training_sampler = create_train_or_validation_sampler(
             train_data,
             target_map = target_map,
@@ -176,7 +174,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Train model runner")
     parser.add_argument("--ignore_cache", "-ic", action="store_true", default=False, help="Ignore cache when running the program (default: False)")
-    parser.add_argument("--no-save-cache", dest="save_cache", action="store_false", default=False, help="Do not save loaded data to cache (default: save cache)")
+    parser.add_argument("--save-cache", "-s", dest="save_cache", action="store_true", default=False, help="Save cache (default: False)")
 
     args = parser.parse_args()
 
