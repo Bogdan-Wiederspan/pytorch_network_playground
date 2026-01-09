@@ -158,7 +158,8 @@ class DatasetSampler(t_data.Sampler):
         # set attributes to access dataset properties directly from sampler
         self.set_attr([
             "total_normalization_weights", "relative_weight", "sample_size",
-            "dataset_type", "batch_generator", "total_product_of_weights"
+            "dataset_type", "batch_generator", "total_product_of_weights",
+            "continous", "categorical", "targets",
             ])
 
     def __getitem__(self, uid):

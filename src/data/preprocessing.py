@@ -62,7 +62,7 @@ def get_batch_statistics_from_sampler(sampler, padding_values=None, features=Non
     """
     # when only dummy values for init are necessary return mean = 0 and std as 1
     if return_dummy:
-        features_dict = sampler.get_attribute_of_datasets("continous_input")
+        features_dict = sampler.continous()
         feature_shape = features_dict[list(features_dict.keys())[0]].shape[-1]
         mean = torch.zeros(feature_shape)
         std = torch.ones(feature_shape)
@@ -74,8 +74,8 @@ def get_batch_statistics_from_sampler(sampler, padding_values=None, features=Non
     # filter keys after processes
     weighted_means = []
     weighted_vars = []
-    features_dict = sampler.get_attribute_of_datasets("continous_input")
-    weights_dict = sampler.get_attribute_of_datasets("relative_weight")
+    features_dict = sampler.continous()
+    weights_dict = sampler.relative_weight()
     sum_of_weights = sum(list(weights_dict.values()))
 
     # for each process id calculate weighted mean, std for each feature representing batch statistics
