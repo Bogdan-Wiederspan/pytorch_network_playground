@@ -162,7 +162,7 @@ def root_to_numpy(
             all_branches_array["combined_weight"] = combined_weight
 
             # step 3
-            di_tau_mask, di_bjet_mask, bjet_mask = evaluation_phase_space_filter(
+            di_tau_mask, di_bjet_mask, bjet_mask = res1b_and_res2b_phase_space_mask(
                 uproot_file=tree,
                 year=pathlib.Path(file_path).parents[1].stem,
                 cut=final_cut,
@@ -176,7 +176,21 @@ def root_to_numpy(
     return arrays
 
 
-def evaluation_phase_space_filter(uproot_file, year, cut, suffix="res_dnn_pnet"):
+def res1b_and_res2b_phase_space_mask(uproot_file: str, year: list[str], cut: list[str], suffix: str="res_dnn_pnet"):
+    """
+    Calculates Masks to get into our evaluation phase space.
+    Open *uproot_file* by specific *year*, apply  base *cut* and depending on the producer add a *suffix* to fields in root file.
+    Definition of mask is defined in https://github.com/uhh-cms/hh2bbtautau/blob/master/hbt/categorization/default.py#L206-L240
+
+    Args:
+        uproot_file (str): Uproot opened root file
+        year (list[str]): Year string e.g. "22pre"
+        cut (list[str]): Base cut to be applied, should match the one used in root_to_numpy
+        suffix (str, optional): Suffix for fields in uproot file. Defaults to "res_dnn_pnet".
+
+    Returns:
+        ak.array: Masks for di_tau_mass_window, di_bjet_mass_window, bjet
+    """
     # as taken from https://github.com/uhh-cms/hh2bbtautau/blob/master/hbt/config/configs_hbt.py#L1252
     def particle_net_wp(year, wp_level="medium"):
         particle_net_wp = {
@@ -187,9 +201,10 @@ def evaluation_phase_space_filter(uproot_file, year, cut, suffix="res_dnn_pnet")
             "xxtight": {"22pre": 0.961, "22post": 0.9664, "23pre": 0.9659, "23post": 0.9688, "2024": None}[year],
         }
         return particle_net_wp[wp_level]
+    from IPython import embed; embed(header = "EVALUATUON  line: 191 in load_data.py")
+    # load the necessary events with applied cut from baseselection
+    # all particles are pre rotate relative to visible tau system
     b_tag_wp = particle_net_wp(year, "medium")
-    ### load the necessary events with applied cut from baseselection
-    # leptons_fields = [f"{particle}_{k}" for particle in ("Electron", "Muon", "Tau") for k in ("px", "py", "pz", "e")]
     leptons_fields = [f"{suffix}_vis_tau{num}_{kin}" for num in ("1", "2") for kin in ("px", "py", "pz", "e")]
     hhbjet_fields = ["HHBJet_mass", "HHBJet_btagPNetB"]
 
@@ -197,30 +212,28 @@ def evaluation_phase_space_filter(uproot_file, year, cut, suffix="res_dnn_pnet")
 
     ### masks
     # tau mass window
-    # TODO marcel fragen warum das so klein ist
-    # dilep_mass = ak.sum(ak.concatenate([[events[lepton_mass] for lepton_mass in leptons_fields]], axis=1), axis=0)
     l_px = events[f"{suffix}_vis_tau1_px"] + events[f"{suffix}_vis_tau2_px"]
     l_py = events[f"{suffix}_vis_tau1_py"] + events[f"{suffix}_vis_tau2_py"]
     l_pz = events[f"{suffix}_vis_tau1_pz"] + events[f"{suffix}_vis_tau2_pz"]
     l_e = events[f"{suffix}_vis_tau1_e"] + events[f"{suffix}_vis_tau2_e"]
 
+    # since no coffee behavior, calculate mass by manually from 4 vector
     di_tau_mass = (l_e**2 - (l_px**2 + l_py**2 + l_pz**2))**0.5
-    di_tau_mask = (
+    di_tau_mass_window_mask = (
         (di_tau_mass >= 15) &
         (di_tau_mass <= 130)
     )
 
-    # btag score success atleast 1 btag score above
+    # have atleast 1 bjet
     bjet_mask = ak.sum(events.HHBJet_btagPNetB > b_tag_wp, axis=1) >= 1
 
-    # di bjet mass window
     di_bjet_mass = ak.sum(events.HHBJet_mass, axis=1)
-    di_bjet_mask = (
+    di_bjet_mass_window_mask = (
         (di_bjet_mass >= 40) &
         (di_bjet_mass <= 270)
     )
-    # final_mask =
-    return di_tau_mask, di_bjet_mask, bjet_mask
+
+    return di_tau_mass_window_mask, di_bjet_mass_window_mask, bjet_mask
 
 
 def load_data(datasets, columns: Union[list[str],str, None]=None, cuts: Union[list[str], None]=None):
@@ -231,7 +244,7 @@ def load_data(datasets, columns: Union[list[str],str, None]=None, cuts: Union[li
     Args:
         dataset_patter (str): pattern describing dataset e.g. "dy_*" -> all drell-yan datasets
         columns (list[str], str, optional): columns that should be lodead e.g. ["events", "run"]. If None loads all columns . Defaults to None.
-        cuts ()
+        cuts (list[str]): list of cuts to be applied on top of baseline cut, which are defined in root_to_numpy. Defaults to None.
 
     Returns:
         dict: {year:{pid: List(Ids)}}
@@ -276,7 +289,18 @@ def load_data(datasets, columns: Union[list[str],str, None]=None, cuts: Union[li
     return data
 
 
-def handle_weights_and_convert_to_torch(events, continous_features, categorical_features, dtype=None):
+def handle_weights_and_convert_to_torch(events: np.array, continous_features: list[str], categorical_features: list[str], dtype: torch.dtype=None):
+    """
+    Calculates final weights, extract masks aswell as extract all *continous_features* and *categorical_features* from structured numpy array *events*.
+    Converts all arrays to torch tensors and returns a dictionary containing these.
+
+    Args:
+        events (np.array): _description_
+        continous_features (list[str]): List of continous features to be extracted
+        categorical_features (list[str]): List of categorical features to be extracted
+        dtype (torch.dtype, optional): Torch dtype. Defaults to None.
+    """
+
     def filter_nan_mask(array, features, uid):
         masks = []
         for f in features:
@@ -313,15 +337,14 @@ def handle_weights_and_convert_to_torch(events, continous_features, categorical_
         total_di_bjet_weight = torch.tensor(np.sum(arr["combined_weight"][arr["di_bjet_mask"]]))
         total_evaluation_weight = torch.tensor(np.sum(arr["combined_weight"][final_mask]))
 
-        # some arrays have negative strides for some reason, which torch cannot handle
+        # some arrays have negative strides for some reason, which torch cannot handle -> cast to contiguous array first
         normalization_weights = torch.tensor(np.ascontiguousarray(arr["normalization_weight"]), dtype=torch.float32)
         sum_of_normalization_weights = torch.sum(normalization_weights)
 
         product_of_all_weights = torch.tensor(np.ascontiguousarray(arr["combined_weight"]), dtype=torch.float32)
         sum_of_combined_weights = torch.sum(product_of_all_weights)
 
-        # event id is a uint and is stored as uncontiguousarray for some reason after sthe casting
-        # this ensures that a continous copy is created that is castable to torch
+        # event id is a uint and is stored as uncontiguousarray for some reason after the casting
         event_id = torch.tensor(np.ascontiguousarray(arr["event"]), dtype=torch.int64)
 
         events[uid] = {
@@ -342,41 +365,36 @@ def handle_weights_and_convert_to_torch(events, continous_features, categorical_
     return events
 
 
-def get_data(config: dict, _save_cache = True, ignore_cache=False) -> dict[torch.Tensor]:
+def get_data(config: dict, _save_cache = False, ignore_cache=False) -> dict[torch.Tensor]:
     """
     Main function to combine all steps from loading root files to filter by process ids and finally convert to torch
 
     Args:
         config (dict): Config as defined in train_config.py
-        _save_cache (bool, optional): Save the result of this function as cache, using config as hash. Defaults to True.
-        ignore_cache (bool, optional): Rerun loading of data, regardless of existing cache. Defaults to False.
+        _save_cache (bool, optional): Save the result of this function as cache, using config as hash. Defaults to False.
+        ignore_cache (bool, optional): Rerun loading of data if true, ignoring existing cache. Defaults to False.
 
     Returns:
         dict[torch.Tensor]: Dictionary with torch tensors
     """
-    # find cache if exists and recreate sample with this
-    # else prepare data if not cache exist
     cacher = DataCacher(config=config)
 
-    # when cache exist load it and return the data
+    # when cache exist load -> it and return the data
     if not ignore_cache and cacher.path.exists():
         events = cacher.load_cache()
     else:
         logger.info("Start loading and filtering of data:")
-        # load the data in {pid : awkward}
         events = load_data(
             config["datasets"],
             columns=config["continous_features"] + config["categorical_features"],
             cuts=config["cuts"],
         )
-        # conver data in {pid : {cont:arr, cat: arr, weight: arr, target: arr}}
         events = handle_weights_and_convert_to_torch(
             events=events,
             continous_features=config["continous_features"],
             categorical_features=config["categorical_features"],
         )
         logger.info("Done loading data")
-        # save events in cache
         if _save_cache:
             try:
                 cacher.save_cache(events)
