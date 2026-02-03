@@ -96,32 +96,32 @@ def training_default(model, loss_fn, optimizer, sampler, sample_from, device):
 
 
 @register
-def validation_default(model, loss_fn, sampler, device):
+def validation_default(model, loss_fn, sampler, sample_from, device):
     with torch.no_grad():
-        # run validation every x steps
         val_loss = []
         model.eval()
         predictions = []
         truth = []
         weights = []
 
-        for uid, validation_batch_generator in sampler.batch_generator(batch_size=sampler.batch_size, device=device).items():
+        for uid, validation_batch_generator in sampler.create_sample_generator(
+            batch_size=sampler.batch_size, # do validation over whole dataset at once
+            sample_from=sample_from,
+            device=device).items():
             dataset_losses = []
-            for cont, cat, tar in validation_batch_generator:
-                cat, cont, tar = cat, cont, tar
-                val_pred = model(categorical_inputs=cat, continuous_inputs=cont)
-                # if torch.any(torch.isnan(val_pred)):
-                #     from IPython import embed; embed(header="string - 63 in train_utils.py ")
-                loss = loss_fn(val_pred, tar.reshape(-1, 3))
 
+            for events in validation_batch_generator:
+                val_pred = model(categorical_inputs=events.pop("categorical"), continuous_inputs=events.pop("continous"))
+                targets = events.pop("targets")
+                loss = loss_fn(val_pred, targets.reshape(-1,3), events, debug=False)
+                # collect data for metric plots
                 dataset_losses.append(loss)
-
                 predictions.append(torch.softmax(val_pred, dim=1).cpu())
-                truth.append(tar.cpu())
+                truth.append(targets.cpu())
                 weights.append(torch.full(size=(val_pred.shape[0], 1), fill_value=sampler[uid].relative_weight).cpu())
-            # create event based weight tensor for dataset
 
-            average_val = sum(dataset_losses) / len(dataset_losses) * sampler[uid].relative_weight
+            process_contribution = sampler[uid].relative_weight
+            average_val = sum(dataset_losses) / len(dataset_losses) * process_contribution
             val_loss.append(average_val)
 
         final_validation_loss = sum(val_loss).cpu()#/ len(val_loss)

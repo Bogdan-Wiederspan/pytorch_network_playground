@@ -201,15 +201,14 @@ def res1b_and_res2b_phase_space_mask(uproot_file: str, year: list[str], cut: lis
             "xxtight": {"22pre": 0.961, "22post": 0.9664, "23pre": 0.9659, "23post": 0.9688, "2024": None}[year],
         }
         return particle_net_wp[wp_level]
-    from IPython import embed; embed(header = "EVALUATUON  line: 191 in load_data.py")
     # load the necessary events with applied cut from baseselection
     # all particles are pre rotate relative to visible tau system
     b_tag_wp = particle_net_wp(year, "medium")
     leptons_fields = [f"{suffix}_vis_tau{num}_{kin}" for num in ("1", "2") for kin in ("px", "py", "pz", "e")]
     hhbjet_fields = ["HHBJet_mass", "HHBJet_btagPNetB"]
+    di_bjet_fields = [f"{suffix}_bjet{num}_{kin}" for num in ("1", "2") for kin in ("px", "py", "pz", "e")]
 
-    events = uproot_file.arrays(leptons_fields + hhbjet_fields, library="ak", cut=cut)
-
+    events = uproot_file.arrays(leptons_fields + hhbjet_fields + di_bjet_fields, library="ak", cut=cut)
     ### masks
     # tau mass window
     l_px = events[f"{suffix}_vis_tau1_px"] + events[f"{suffix}_vis_tau2_px"]
@@ -227,7 +226,15 @@ def res1b_and_res2b_phase_space_mask(uproot_file: str, year: list[str], cut: lis
     # have atleast 1 bjet
     bjet_mask = ak.sum(events.HHBJet_btagPNetB > b_tag_wp, axis=1) >= 1
 
-    di_bjet_mass = ak.sum(events.HHBJet_mass, axis=1)
+    # wrong
+    # di_bjet_mass = ak.sum(events.HHBJet_mass, axis=1)
+
+    b_px = events[f"{suffix}_bjet1_px"] + events[f"{suffix}_bjet2_px"]
+    b_py = events[f"{suffix}_bjet1_py"] + events[f"{suffix}_bjet2_py"]
+    b_pz = events[f"{suffix}_bjet1_pz"] + events[f"{suffix}_bjet2_pz"]
+    b_e = events[f"{suffix}_bjet1_e"] + events[f"{suffix}_bjet2_e"]
+    di_bjet_mass = (b_e**2 - (b_px**2 + b_py**2 + b_pz**2))**0.5
+
     di_bjet_mass_window_mask = (
         (di_bjet_mass >= 40) &
         (di_bjet_mass <= 270)
@@ -332,9 +339,9 @@ def handle_weights_and_convert_to_torch(events: np.array, continous_features: li
         # handling weights and convert to torch tensors
         # single numbers cant be converted by using from_numpy thus have to be wrapped in array
         final_mask = arr["bjet_mask"] & arr["di_tau_mask"] & arr["di_bjet_mask"]
-        total_bjet_weight = torch.tensor(np.sum(arr["combined_weight"][arr["bjet_mask"]]))
-        total_di_tau_weight = torch.tensor(np.sum(arr["combined_weight"][arr["di_tau_mask"]]))
-        total_di_bjet_weight = torch.tensor(np.sum(arr["combined_weight"][arr["di_bjet_mask"]]))
+        # total_bjet_weight = torch.tensor(np.sum(arr["combined_weight"][arr["bjet_mask"]]))
+        # total_di_tau_weight = torch.tensor(np.sum(arr["combined_weight"][arr["di_tau_mask"]]))
+        # total_di_bjet_weight = torch.tensor(np.sum(arr["combined_weight"][arr["di_bjet_mask"]]))
         total_evaluation_weight = torch.tensor(np.sum(arr["combined_weight"][final_mask]))
 
         # some arrays have negative strides for some reason, which torch cannot handle -> cast to contiguous array first
@@ -358,9 +365,15 @@ def handle_weights_and_convert_to_torch(events: np.array, continous_features: li
             "total_normalization_weights" : sum_of_normalization_weights,
 
             "total_evaluation_weight" : total_evaluation_weight,
-            "total_bjet_weight" : total_bjet_weight,
-            "total_di_tau_weight" : total_di_tau_weight,
-            "total_di_bjet_weight" : total_di_bjet_weight,
+            # "total_bjet_weight" : total_bjet_weight,
+            # "total_di_tau_weight" : total_di_tau_weight,
+            # "total_di_bjet_weight" : total_di_bjet_weight,
+            "evaluation_mask": torch.tensor(final_mask),
+            "mask" : {
+                "bjet": arr["bjet_mask"],
+                "di_tau": arr["di_tau_mask"],
+                "di_bjet": arr["di_bjet_mask"],
+                },
         }
     return events
 

@@ -2,59 +2,54 @@ from __future__ import annotations
 
 import torch
 
-
-
-
-
 class SignalEfficiency(torch.nn.Module):
-    def __init__(self, target_map, total_weights, device, *args, **kwargs):
+    def __init__(self, sampler, device, train=True,  *args, **kwargs):
         super().__init__()
-        self.target_map = target_map
-        self.s_cls = self.target_map["hh"]
-        self.total_weights = total_weights
+        self.total_product_of_weights = sampler.total_product_of_weights_per_process_type # weight whole space
+        self.train = train
+        self.target_map = sampler.target_map
+        self.s_cls = self.target_map["hh"] # definition of signal class
         self.device = device
 
-    def s(self, prediction, truth, weight):
-        # true positive weighted by signal node
-        return weight * torch.sum(truth[:, self.s_cls] * prediction[:, self.s_cls])
+    def approximation_sb(self, prediction, truth, product_of_weights, evaluation_phase_space_mask, is_signal):
+        # determine if signal (true positive) or false identified background events (false negative) are calculated
+        if is_signal:
+            bool_filter = truth
+        else:
+            bool_filter = (1 - truth)
 
-    def b(self, prediction, truth, weight):
-        # false negative
-        return weight * torch.sum((1 - truth[:, self.s_cls]) * prediction[:, self.s_cls])
+        if self.train:
+            filtered_batch_weight = bool_filter * product_of_weights
+        else:
+            filtered_batch_weight = product_of_weights
 
-    def _loss_v1(self, prediction, truth, weight):
-        s_weight = weight["signal"]
-        b_weight = weight["background"]
-        s = self.s(prediction, truth, s_weight)
-        b = self.b(prediction, truth, b_weight)
-        loss = s / (s + b)**0.5
+        # since filtered batch is 0 for either signal or background this reduces the sum
+        # to be specificly only over signal OR background events
+        weighted_yield = torch.sum(prediction * filtered_batch_weight) # term 1
+        evaluation_yield = torch.sum(filtered_batch_weight * evaluation_phase_space_mask) # term 3
+        batch_yield = torch.sum(filtered_batch_weight) # term 2
+
+        return weighted_yield * evaluation_yield / batch_yield
+
+    def loss_small(self, s, b):
+        return s / torch.sqrt(s + b)
+
+    def loss_full(self, s, b):
+        # torch log is per default to base e
+        return torch.sqrt( (2 * ((s + b) * torch.log(1 + s / b) - s)))
+
+    def forward(self, prediction, truth, weight, debug=False):
+        if debug:
+            from IPython import embed; embed(header = "LOSS line: 38 in loss.py")
+        signal_node_truth = truth[:, self.s_cls]
+        prediction = torch.softmax(prediction, dim = 1) # network does not contain softmax
+        signal_node_prediction =prediction[:, self.s_cls]
+
+        s = self.approximation_sb(signal_node_prediction, signal_node_truth, weight["product_of_weights"], weight["evaluation_space_mask"], is_signal=True)
+        b = self.approximation_sb(signal_node_prediction, signal_node_truth, weight["product_of_weights"], weight["evaluation_space_mask"], is_signal=False)
+
+        loss = self.loss_full(s= s, b=b)
         return 1 / loss
-
-    def _loss_asm(self, prediction, truth, weight):
-        s_weight = weight["signal"]
-        b_weight = weight["background"]
-        s = self.s(prediction, truth, s_weight)
-        b = self.b(prediction, truth, b_weight)
-        sig_b = 0 # TODO wie berechnen?
-
-        ln = torch.log
-
-        N = s + b
-        B = b**2
-        Si = sig_b**2
-
-        first_term = N * ln(N * (b + Si) / B + N*Si)
-        second_term = (B / Si) * ln(1 + (Si * s)/(B + b*Si))
-
-        full_term = 2 * (first_term - second_term)
-        return torch.sqrt(full_term)
-
-
-    def forward(self, prediction, truth, weight, threshold = 0.5):
-        from IPython import embed; embed(header = " line: 59 in loss.py")
-
-
-        return None
 
 class ZScore(torch.nn.Module):
     """
@@ -135,7 +130,9 @@ class ZScore(torch.nn.Module):
             bg_scores.append(score)
         return torch.tensor(bg_scores)
 
-    def forward(self, pred, truth, weight, idx):
+    def forward(self, pred, truth, weight, idx,debug=False):
+        if debug:
+            from IPython import embed; embed(header = "FORWARD LOSS line: 129 in loss.py")
         signal_predictions, signal_truth, background_prediction, background_truth = self.split_signal_and_background(pred, truth)
         # separate signal and background
 

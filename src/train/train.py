@@ -74,16 +74,13 @@ def main(**kwargs):
         )
 
         ### model setup
-        # model = create_model.BNetDenseNet(dataset_config["continous_features"], dataset_config["categorical_features"], config=model_building_config)
-        model = create_model.BNetLBNDenseNet(
-            dataset_config["continous_features"], dataset_config["categorical_features"], config=model_building_config
-            )
+        model = create_model.BNetLBNDenseNet(dataset_config["continous_features"], dataset_config["categorical_features"], config=model_building_config)
         model = model.to(DEVICE).train()
 
-        # ## load mean from marcel if activated
+        # load mean from marcel if activated
         model = mwt.load_marcels_weights(model, continous_features=dataset_config["continous_features"], with_std=config["load_marcel_stats"], with_weights=config["load_marcel_weights"])
 
-        # only linear layers contribute to weight decay
+        # only linear layers contribute to weight decay, prepare config that separates them for the optimizer
         weight_decay_parameters = optimizer.prepare_weight_decay(model, optimizer_config)
 
         if config["training_fn"] == "default":
@@ -105,13 +102,14 @@ def main(**kwargs):
 
         early_stopper_inst = EarlyStopOnPlateau()
 
+
         if config["loss_fn"] == "default":
             train_loss_fn = torch.nn.CrossEntropyLoss(weight=None, size_average=None,label_smoothing=config["label_smoothing"])
             validation_loss_fn = torch.nn.CrossEntropyLoss(weight=None, size_average=None,label_smoothing=config["label_smoothing"])
         elif config["loss_fn"] == "signal_efficiency":
             from loss import SignalEfficiency
-            train_loss_fn = SignalEfficiency(target_map=training_sampler.target_map, total_weights=training_sampler.total_weight ,device=DEVICE)
-            validation_loss_fn = torch.nn.CrossEntropyLoss(weight=None, size_average=None,label_smoothing=config["label_smoothing"])
+            train_loss_fn = SignalEfficiency(sampler=training_sampler ,device=DEVICE, train=True)
+            validation_loss_fn = SignalEfficiency(sampler=training_sampler, device=DEVICE, train=False)
 
         ### training loop
         for current_iteration in range(1_000_000):
@@ -164,7 +162,7 @@ def main(**kwargs):
                     mode = "validation",
                     loss = eval_v_loss.item(),
                 )
-                print(f"Evaluation: it: {current_iteration} - TLoss: {eval_t_loss:.4f} VLoss: {eval_v_loss:.4f}")
+                print(f"Evaluation: it: {current_iteration} - TLoss: {eval_t_loss:.4E} VLoss: {eval_v_loss:.4E}")
 
                 # if (current_iteration % 1000 == 0) and (current_iteration > 0):
                 previous_lr =  optimizer_inst.param_groups[0]["lr"]

@@ -292,11 +292,13 @@ def split_k_fold_into_training_and_validation(events_dict, c_fold, k_fold, seed,
 
         tv_indices = k_fold_indices(array["event_id"], c_fold, k_fold, seed, test=return_test)
         t_idx, v_idx = split_array_to_train_and_validation(tv_indices, train_ratio)
-
         # splitt arrays into train and validation
-        for key in ("continous", "categorical", "event_id", "normalization_weights", "product_of_weights"):
+        for key in ("continous", "categorical", "event_id", "normalization_weights", "product_of_weights", "evaluation_mask"):
+
             arr = array.pop(key)
+            # there are multiple masks
             train[uid][key], valid[uid][key] = arr[t_idx], arr[v_idx]
+
 
     # edge case split results in empty tensors (due to very low event count) remove these
     # if empty do not save

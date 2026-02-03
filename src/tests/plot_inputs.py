@@ -77,7 +77,7 @@ def plot_feature(features, events, ftype):
     return fig, ax
 
 
-events = get_data(dataset_config, overwrite=False, _save_cache=True)
+events = get_data(dataset_config, ignore_cache=False, _save_cache=True)
 # create k-folds, whe current fold is test fold and leave out
 
 # train_data, validation_data = split_k_fold_into_training_and_validation(
