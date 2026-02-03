@@ -45,14 +45,15 @@ def training_sam(model, loss_fn, optimizer, sampler, device):
     return loss, (pred, targets)
 
 @register
-def training_default(model, loss_fn, optimizer, sampler, device):
+def training_default(model, loss_fn, optimizer, sampler, sample_from, device):
     optimizer.zero_grad()
 
-    cont, cat, targets, weight, idx = sampler.sample_batch(device=device)
-    pred = model(categorical_inputs=cat, continuous_inputs=cont)
+    events = sampler.sample_batch(sample_from=sample_from, device=device)
+    pred = model(categorical_inputs=events.pop("categorical"), continuous_inputs=events.pop("continous"))
 
     # loss = loss_fn(pred, targets.reshape(-1,3), weight, idx)
-    loss = loss_fn(pred, targets.reshape(-1,3))
+    targets = events.pop("targets")
+    loss = loss_fn(pred, targets.reshape(-1,3), events)
     loss.backward()
     optimizer.step()
     return loss, (pred, targets)

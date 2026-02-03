@@ -4,7 +4,7 @@ import numpy as np
 from collections import defaultdict
 from utils.logger import get_logger
 
-from data.datasets import Dataset, DatasetSampler
+from data.sampler import Process, ProcessSampler
 
 logger = get_logger(__name__)
 
@@ -307,42 +307,6 @@ def split_k_fold_into_training_and_validation(events_dict, c_fold, k_fold, seed,
                 logger.info(f"removed {uid} from {d} since zero elements left after k-fold split")
                 dictionary.pop(uid)
     return train, valid
-
-def create_train_or_validation_sampler(events, target_map, batch_size, min_size=1, train=True, sample_ratio={"dy": 0.25, "tt": 0.25, "hh": 0.5}):
-    # extract data from events and wrap into Datasets
-    if not events:
-        logger.warning(f"Sampler is not created due to feeding empty events")
-        return None
-
-    DatasetManager = DatasetSampler(None, batch_size=batch_size, min_size=min_size, sample_ratio=sample_ratio, target_map = target_map)
-    for uid in list(events.keys()):
-        (dataset_type, process_id) = uid
-        arrays = events.pop(uid)
-
-        # create target tensor from uid
-        num_events = len(arrays["continous"])
-        target_value = target_map[dataset_type]
-        target = torch.zeros(size=(num_events, len(target_map)), dtype=torch.float32)
-        target[:, target_value] = 1.
-        era_dataset = Dataset(
-            continous=arrays["continous"],
-            categorical=arrays["categorical"],
-            target=target,
-            normalization_weights=arrays["normalization_weights"],
-            product_of_weights=arrays["product_of_weights"],
-            total_normalization_weights=arrays["total_normalization_weights"],
-            total_product_of_weights=arrays["total_product_of_weights"],
-            name=process_id,
-            dataset_type=dataset_type,
-            randomize=True,
-        )
-        DatasetManager.add_dataset(era_dataset)
-        logger.info(f"Add {dataset_type} pid: {process_id}")
-
-    if train:
-        for ds_type in DatasetManager.keys:
-            DatasetManager.calculate_sample_size(dataset_type=ds_type)
-    return DatasetManager
 
 def test_sampler(events, target_map, batch_size, min_size=1, train=True):
     # FIXME: Test sampler does not work currently due to the fact that a

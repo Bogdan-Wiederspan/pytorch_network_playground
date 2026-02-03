@@ -5,8 +5,9 @@ import torch
 from models import create_model
 from data.load_data import get_data
 from data.preprocessing import (
-    create_train_or_validation_sampler, get_batch_statistics_from_sampler, split_k_fold_into_training_and_validation,
+    get_batch_statistics_from_sampler, split_k_fold_into_training_and_validation,
     )
+from data.sampler import create_sampler
 from utils.logger import get_logger, TensorboardLogger
 from data.cache import hash_config
 import optimizer
@@ -14,7 +15,7 @@ from train_config import (
     config, dataset_config, model_building_config, optimizer_config, target_map, scheduler_config
 )
 from train_utils import training_fn, validation_fn, log_metrics
-from early_stopping import EarlyStopSignal, EarlyStopOnPlateau
+from early_stopping import EarlyStopOnPlateau
 from export import torch_save, torch_export_v2
 import marcel_weight_translation as mwt
 
@@ -33,10 +34,10 @@ def main(**kwargs):
         logger.info(f"Start Training of fold {current_fold} from {config["k_fold"] - 1}")
         ### data preparation
         # HINT: order matters, due to memory constraints views are moved in and out of dictionaries
-
         # load data from cache is necessary or from root files
         # events is of form : {uid : {"continous","categorical", "weight": torch tensor}}
         events = get_data(dataset_config, ignore_cache=kwargs["ignore_cache"], _save_cache=kwargs["save_cache"])
+
         train_data, validation_data = split_k_fold_into_training_and_validation(
             events,
             c_fold=current_fold,
@@ -44,7 +45,7 @@ def main(**kwargs):
             seed=config["seed"],
             train_ratio=0.75,
         )
-        training_sampler = create_train_or_validation_sampler(
+        training_sampler = create_sampler(
             train_data,
             target_map = target_map,
             min_size=config["min_events_in_batch"],
@@ -52,7 +53,7 @@ def main(**kwargs):
             train=True,
             sample_ratio=config["sample_ratio"],
         )
-        validation_sampler = create_train_or_validation_sampler(
+        validation_sampler = create_sampler(
             validation_data,
             target_map = target_map,
             min_size=config["min_events_in_batch"],
@@ -60,6 +61,7 @@ def main(**kwargs):
             train=False,
             sample_ratio=config["sample_ratio"],
         )
+
         # share relative weight from training batch statistic to validation sampler
         training_sampler.share_weights_between_sampler(validation_sampler)
 
@@ -118,17 +120,24 @@ def main(**kwargs):
                 loss_fn = train_loss_fn,
                 optimizer = optimizer_inst,
                 sampler = training_sampler,
-                device=DEVICE
+                device=DEVICE,
+                sample_from = config["sample_attributes"],
             )
 
             if current_iteration % config["verbose_interval"] == 0:
                 tboard_writer.log_loss({"batch_loss": t_loss.item()}, step=current_iteration)
-                print(f"Training: {current_iteration} - batch loss: {t_loss.item():.4f}")
+                print(f"Training: {current_iteration} - batch loss: {t_loss.item():.4E}")
 
             if (current_iteration % config["validation_interval"] == 0) & (current_iteration > 0):
                 # evaluation of training data
                 print(f"Running evaluation of training data at iteration {current_iteration}...")
-                eval_t_loss, (eval_t_pred, eval_t_tar, eval_t_weights) = validation_fn(model, validation_loss_fn, training_sampler, device=DEVICE)
+                eval_t_loss, (eval_t_pred, eval_t_tar, eval_t_weights) = validation_fn(
+                    model,
+                    validation_loss_fn,
+                    training_sampler,
+                    sample_from=config["sample_attributes"],
+                    device=DEVICE
+                    )
                 log_metrics(
                     tensorboard_inst = tboard_writer,
                     iteration_step = current_iteration,
@@ -140,7 +149,13 @@ def main(**kwargs):
                 )
                 print(f"Running evaluation of validation data at iteration {current_iteration}...")
                 # evaluation of validation
-                eval_v_loss, (eval_v_pred, eval_v_tar, eval_v_weights) = validation_fn(model, validation_loss_fn, validation_sampler, device=DEVICE)
+                eval_v_loss, (eval_v_pred, eval_v_tar, eval_v_weights) = validation_fn(
+                    model,
+                    validation_loss_fn,
+                    validation_sampler,
+                    sample_from=config["sample_attributes"],
+                    device=DEVICE
+                    )
                 log_metrics(
                     tensorboard_inst = tboard_writer,
                     iteration_step = current_iteration,

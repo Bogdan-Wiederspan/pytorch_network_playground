@@ -37,16 +37,17 @@ model_building_config = {
 config = {
     "max_train_iteration" : 60000,
     "verbose_interval" : 25,
-    "validation_interval" : 400,
+    "validation_interval" : 300,
     "gamma":0.5,
     "label_smoothing":0,
     "train_folds" : (0,),
     "k_fold" : 5,
     "seed" : 1,
     "train_ratio" : 0.75,
-    "v_batch_size" : 4096 * 8,
+    "v_batch_size" : -1, # for signal efficiency a validation pass needs to have whole WEIGHTs
     "t_batch_size" : 4096,
     "sample_ratio" : {"dy": 1/3, "tt": 1/3, "hh": 1/3},
+    "sample_attributes" : ["continous", "categorical", "targets"] + ["product_of_weights", "evaluation_space_mask"], # continous, categorical, targets should always be present
     "min_events_in_batch": 1,
 
     "save_model_name" : "test",
