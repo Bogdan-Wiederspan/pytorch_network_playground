@@ -133,6 +133,67 @@ def validation_default(model, loss_fn, sampler, sample_from, device):
         return final_validation_loss, (predictions, truth, weights)
 
 
+@register
+def validation_signal_efficiency(model, loss_fn, sampler, sample_from, device):
+    with torch.no_grad():
+        val_loss = []
+        model.eval()
+        predictions = []
+        truth = []
+        weights = []
+
+        # get constant process factors and filter signal or background out
+        p, t = [], []
+        e = {"product_of_weights" : [], "evaluation_space_mask" : []}
+        for uid, validation_batch_generator in sampler.create_sample_generator(
+            batch_size=sampler.batch_size, # do validation over whole dataset at once
+            sample_from=sample_from,
+            device=device).items():
+            dataset_losses = []
+
+
+
+            for events in validation_batch_generator:
+
+
+
+
+                val_pred = model(categorical_inputs=events.pop("categorical"), continuous_inputs=events.pop("continous"))
+                p.append(val_pred)
+                targets = events.pop("targets")
+                t.append(targets)
+                e["product_of_weights"].append(events.pop("product_of_weights"))
+                e["evaluation_space_mask"].append(events.pop("evaluation_space_mask"))
+
+                # collect data for metric plots
+
+                predictions.append(torch.softmax(val_pred, dim=1).cpu())
+                truth.append(targets.cpu())
+                weights.append(torch.full(size=(val_pred.shape[0], 1), fill_value=sampler[uid].relative_weight).cpu())
+
+        p = torch.concatenate(p)
+        t = torch.concatenate(t)
+        e["product_of_weights"] = torch.concatenate(e["product_of_weights"])
+        e["evaluation_space_mask"] = torch.concatenate(e["evaluation_space_mask"])
+        loss = loss_fn(p, t.reshape(-1,3), e, debug=False)
+        # loss = loss_fn(val_pred, targets.reshape(-1,3), events, debug=False)
+        dataset_losses.append(loss)
+
+        # from IPython import embed; embed(header = "VALID LOSS line: 182 in train_utils.py")
+        # process_contribution = sampler[uid].relative_weight
+        # average_val = sum(dataset_losses) / len(dataset_losses) * process_contribution
+        # val_loss.append(average_val)
+
+        # final_validation_loss = sum(val_loss).cpu()#/ len(val_loss)
+        final_validation_loss = loss.cpu()#/ len(val_loss)
+        model.train()
+
+        truth = torch.concatenate(truth, dim=0)
+        predictions = torch.concatenate(predictions, dim=0)
+        weights = torch.flatten(torch.concatenate(weights, dim=0))
+        return final_validation_loss, (predictions, truth, weights)
+
+
 def log_metrics(tensorboard_inst, iteration_step, sampler_output, target_map, mode="train", **data):
     # general logging
     if (loss := data.get("loss")) is not None:

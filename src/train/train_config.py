@@ -55,7 +55,7 @@ config = {
     "load_marcel_stats" : False,
     "load_marcel_weights" : False,
     "training_fn" : "default", # chooses the training function
-    "validation_fn" : "default",
+    "validation_fn" : "signal_efficiency",
     "loss_fn" : "signal_efficiency",
 }
 

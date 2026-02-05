@@ -44,6 +44,57 @@ def plot_input_features(data_map, columns):
         _ = ax.hist(np.clip(data, a_min=lower_edge, a_max=None), bins=bins)
     return fig, axes
 
+def network_binary_predictions(y_true, y_pred, target_map, normalize=True, single_legend=False, **kwargs):
+    # create a figure with subplots for each node, where the score is shown
+    # nodes are defined over target_map order
+
+    fig, axes = plt.subplots(1,1, figsize=(8, 8))
+    fig.suptitle(kwargs.pop("title", None))
+    weight = None
+    # get events that are predicted correctly for each class
+
+    y_label = "frequency"
+
+    if not normalize:
+        axes[0].set_yscale("log")
+        axes[0].set_ylim(top=len(y_pred))
+    else:
+        axes[0].set_yscale("linear")
+        axes[0].set_ylim(top=1.)
+        y_label += " normalized"
+
+    axes[0].set_xlabel("Prediction", )
+    axes[0].set_ylabel(y_label)
+    axes[0].grid()
+
+
+            # get events of specific cls (e.g. hh)
+            correct_cls_mask = y_true[:, data_idx] == 1
+            # get predictions for cls
+            filtered_predictions = y_pred[correct_cls_mask][:, node_idx]
+
+            if normalize:
+                weight = np.full(filtered_predictions.shape, 1 / len(filtered_predictions))
+
+            _ = axes[node_idx].hist(
+                filtered_predictions,
+                bins=kwargs.get("bins", 20),
+                histtype=kwargs.get("histtype", "step"),
+                alpha=kwargs.get("alpha", 0.7),
+                label=data_cls,
+                weights=weight,
+                **kwargs,
+        )
+        if not single_legend:
+            axes[node_idx].legend()
+    if single_legend:
+        lines_labels = [fig.axes[0].get_legend_handles_labels()]
+        lines, labels = [sum(lol, []) for lol in zip(*lines_labels)]
+        fig.legend(lines, labels)
+    return fig, axes
+
+
+
 
 def network_predictions(y_true, y_pred, target_map, normalize=True, single_legend=False, **kwargs):
     # create a figure with subplots for each node, where the score is shown
@@ -122,7 +173,6 @@ def confusion_matrix(y_true, y_pred, target_map, sample_weight=None, normalized=
         sample_weight=sample_weight,
         normalize=normalized,  # normalize to get probabilities
     )
-
     disp = sklearn.metrics.ConfusionMatrixDisplay(
         confusion_matrix=cm, display_labels=list(target_map.keys()),
     )

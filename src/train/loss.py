@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 
 class SignalEfficiency(torch.nn.Module):
-    def __init__(self, sampler, device, train=True,  *args, **kwargs):
+    def __init__(self, sampler, device, train=True, *args, **kwargs):
         super().__init__()
         self.total_product_of_weights = sampler.total_product_of_weights_per_process_type # weight whole space
         self.train = train
@@ -11,25 +11,43 @@ class SignalEfficiency(torch.nn.Module):
         self.s_cls = self.target_map["hh"] # definition of signal class
         self.device = device
 
+        if not train:
+            # validation mode goes over whole validation phase space and not only over a batch
+            # thus this information is handed over by sampler
+            self.eval_weights = sampler.sampler_total_eval_weight_per_process_type
+            self.total_process_weights = sampler.sampler_total_weight_per_process_type
+
+
     def approximation_sb(self, prediction, truth, product_of_weights, evaluation_phase_space_mask, is_signal):
         # determine if signal (true positive) or false identified background events (false negative) are calculated
         if is_signal:
             bool_filter = truth
         else:
             bool_filter = (1 - truth)
+        filtered_batch_weight = bool_filter * product_of_weights
 
         if self.train:
-            filtered_batch_weight = bool_filter * product_of_weights
+            # when training, calculate factors on batch base
+            evaluation_yield = torch.sum(filtered_batch_weight * evaluation_phase_space_mask) # term 3
+            batch_yield = torch.sum(filtered_batch_weight) # term 2
         else:
-            filtered_batch_weight = product_of_weights
+            # for validation batches cover whole validation space, not just a batch
+            # these reduces the factors to constants, where s is hh and b is dy + tt factor
+            # for background or signal different
+            if is_signal:
+                evaluation_yield = self.eval_weights["hh"]
+                batch_yield = self.total_process_weights["hh"]
+            else:
+                evaluation_yield = self.eval_weights["dy"] + self.eval_weights["tt"]
+                batch_yield = self.total_process_weights["dy"] + self.total_process_weights["tt"]
 
         # since filtered batch is 0 for either signal or background this reduces the sum
         # to be specificly only over signal OR background events
         weighted_yield = torch.sum(prediction * filtered_batch_weight) # term 1
-        evaluation_yield = torch.sum(filtered_batch_weight * evaluation_phase_space_mask) # term 3
-        batch_yield = torch.sum(filtered_batch_weight) # term 2
-
-        return weighted_yield * evaluation_yield / batch_yield
+        a = weighted_yield * evaluation_yield / batch_yield
+        # if a == 0:
+        #     from IPython import embed; embed(header = " line: 49 in loss.py")
+        return a
 
     def loss_small(self, s, b):
         return s / torch.sqrt(s + b)
@@ -49,6 +67,8 @@ class SignalEfficiency(torch.nn.Module):
         b = self.approximation_sb(signal_node_prediction, signal_node_truth, weight["product_of_weights"], weight["evaluation_space_mask"], is_signal=False)
 
         loss = self.loss_full(s= s, b=b)
+        if loss == 0:
+            return 0
         return 1 / loss
 
 class ZScore(torch.nn.Module):

@@ -65,7 +65,7 @@ class Process(t_data.Dataset):
         # it is not just the sum over all splitted weights, which is the reason why it must be handed over!
         self.total_product_of_weights = total_product_of_weights.to(torch.float32)
         self.total_normalization_weights = total_normalization_weights.to(torch.float32)
-        self.evaluation_space_mask = evaluation_space_mask.to(torch.float32)
+        self.evaluation_space_mask = evaluation_space_mask.to(torch.bool)
 
         self.process_id = process_id
         self.randomize = randomize
@@ -74,6 +74,20 @@ class Process(t_data.Dataset):
         self.process_type = process_type
         self.sample_size = len(self)
         self.relative_weight = None
+
+    @property
+    def total_process_eval_product_of_weight(self):
+        if hasattr(self, "_total_process_eval_product_of_weight"):
+            return self._total_process_eval_product_of_weight
+        self._total_process_eval_product_of_weight = torch.sum(self.product_of_weights[self.evaluation_space_mask])
+        return self._total_process_eval_product_of_weight
+
+    @property
+    def total_process_product_of_weight(self):
+        if hasattr(self, "_total_process_product_of_weight"):
+            return self._total_process_product_of_weight
+        self._total_process_product_of_weight = torch.sum(self.product_of_weights)
+        return self._total_process_product_of_weight
 
     @property
     def uid(self):
@@ -207,13 +221,50 @@ class ProcessSampler(t_data.Sampler):
         self.set_attr([
             "total_normalization_weights", "relative_weight", "sample_size",
             "process_type", "create_sample_generator", "total_product_of_weights", "evaluation_space_mask",
+            "total_process_eval_product_of_weight", "total_process_product_of_weight",
             "continous", "categorical", "targets", "normalization_weights", "product_of_weights",
             ])
 
     def __getitem__(self, uid):
-        return self.flat_process_dict()[uid]
+        return self.processes()[uid]
 
-    def flat_process_dict(self) -> dict[Process]:
+    @property
+    def sampler_total_eval_weight_per_process_type(self) -> dict[torch.Tensor]:
+        if hasattr(self, "_sampler_total_eval_weight_per_process_type"):
+            return self._sampler_total_eval_weight_per_process_type
+        process_type_weight = {"dy":0, "tt":0, "hh":0}
+        for pid, value in self.total_process_eval_product_of_weight().items():
+            if pid >50000:
+                process_type_weight["dy"] += value
+            elif pid < 40000 and value > 5000:
+                process_type_weight["hh"] += value
+            else:
+                process_type_weight["tt"] += value
+        self._sampler_total_eval_weight_per_process_type = process_type_weight
+        return self._sampler_total_eval_weight_per_process_type
+
+    @property
+    def sampler_total_weight_per_process_type(self) -> dict[torch.Tensor]:
+        """
+        Calculates the total product of weights for a whole process type, but only for the data of the sampler.
+
+        Returns:
+            dict[torch.Tensor]: Dictionary of all process types with their total product of weights for the sampler
+        """
+        if hasattr(self, "_sampler_total_weight_per_process_type"):
+            return self._sampler_total_weight_per_process_type
+        process_type_weight = {"dy":0, "tt":0, "hh":0}
+        for pid, value in self.total_process_product_of_weight().items():
+            if pid >50000:
+                process_type_weight["dy"] += value
+            elif pid < 40000 and value > 5000:
+                process_type_weight["hh"] += value
+            else:
+                process_type_weight["tt"] += value
+        self._sampler_total_weight_per_process_type = process_type_weight
+        return self._sampler_total_weight_per_process_type
+
+    def processes(self) -> dict[Process]:
         """
         By default process instances are nested as "process_type": {uid : process_inst}.
         This returns a flat version removing outer nesting
@@ -228,11 +279,11 @@ class ProcessSampler(t_data.Sampler):
 
     def apply_func_on_datasets(self, func):
         # small helper to apply function of managet datasets
-        return {uid: func(ds) for uid,ds in self.flat_process_dict().items()}
+        return {uid: func(ds) for uid,ds in self.processes().items()}
 
     def get_attribute_of_datasets(self, attr):
         # small helper to getattributes from managet datasets
-        return {uid: getattr(ds, attr) for uid,ds in self.flat_process_dict().items()}
+        return {uid: getattr(ds, attr) for uid,ds in self.processes().items()}
 
     def events_per_dataset(self):
         return self.apply_func_on_datasets(len)
@@ -381,7 +432,7 @@ class ProcessSampler(t_data.Sampler):
         """
         # sample sample_size number of events from different process instances
         events = {}
-        for _, ds in sorted(self.flat_process_dict().items()):
+        for _, ds in sorted(self.processes().items()):
             for attribute, sampled_events in ds.sample(sample_from, device=device).items():
                 if attribute not in events:
                     events[attribute] = []
@@ -402,7 +453,7 @@ class ProcessSampler(t_data.Sampler):
 
             def _accesor(*args, dataset_attr=attr, **kwargs):
                 collector = {}
-                for uid, process_inst in self.flat_process_dict().items():
+                for uid, process_inst in self.processes().items():
                     process_inst_attr = getattr(process_inst, dataset_attr)
                     # when attribute is a callable function pass args and kwargs
                     if callable(process_inst_attr):
