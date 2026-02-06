@@ -4,10 +4,185 @@ import numpy as np
 from collections import defaultdict
 from utils.logger import get_logger
 
-from data.sampler import Process, ProcessSampler
-
 logger = get_logger(__name__)
 
+class WeightAggregator():
+    def __init__(self, events, indices):
+        self.weights = self.calculate_weights(events, indices)
+
+    # # TODO maybe access weights per dot
+    # def set_attr(self, attribute):
+    #     if isinstance(attribute, str):
+    #         attribute = [attribute]
+
+    #     for attr in attribute:
+    #         if hasattr(self, attr):
+    #             raise AttributeError(f"Attribute {attr} already exists in sampler class.")
+
+    #         def _accesor(*args, dataset_attr=attr, **kwargs):
+    #             collector = {}
+    #             for uid, _weights in self.weights().items():
+    #                 _weights_attr = getattr(_weights, dataset_attr)
+    #                 # when attribute is a callable function pass args and kwargs
+    #                 if callable(_weights_attr):
+    #                     collector[uid] = _weights_attr(*args, **kwargs)
+    #                 else:
+    #                     collector[uid] = _weights_attr
+    #             return collector
+    #         setattr(self, attr, _accesor)
+
+    def identify_pid(self, pid):
+        if (pid < 2000):
+            return "tt"
+        elif (pid > 2000) and (pid < 50000):
+            return "hh"
+        else:
+            return "dy"
+
+    def process_weights_sum_from_nested_weight(self, weights, first_key, second_key):
+        process_weights_sum = {}
+        for uid, _weights in weights.items():
+            _, pid = uid
+            process_name = self.identify_pid(pid)
+            if process_name not in process_weights_sum:
+                process_weights_sum[process_name] = 0
+
+            process_weights_sum[process_name] += _weights[first_key][second_key]
+        return process_weights_sum
+
+    def calculate_weights(self, events, indices):
+        weights = {}
+        for uid, _events in events.items():
+
+            normalization_weights = _events["normalization_weights"]
+            product_of_weights = _events["product_of_weights"]
+
+            weights[uid] = {
+                "normalization_weights" : {
+                    # "per_event": normalization_weights,
+                    "whole_sum": torch.sum(normalization_weights),
+                    **{f"{i}_sum": torch.sum(normalization_weights[indices[uid][i]]) for i in ("training", "validation", "test")},
+                    "evaluation_sum": torch.sum(normalization_weights[_events["evaluation_mask"]]),
+
+                },
+                "product_of_weights": {
+                    # "per_event": product_of_weights,
+                    "whole_sum": torch.sum(product_of_weights),
+                    **{f"{i}_sum": torch.sum(product_of_weights[indices[uid][i]]) for i in ("training", "validation", "test")},
+                    "evaluation_sum": torch.sum(product_of_weights[_events["evaluation_mask"]]),
+                },
+            }
+
+        # sum weights over all subprocesses that represent the whole process
+        weights["process"] = {
+            weight_name: self.process_weights_sum_from_nested_weight(weights, first_key=weight_name, second_key="whole_sum")
+            for weight_name in ("product_of_weights", "normalization_weights")
+        }
+        return weights
+
+class FoldAndSplitCoordinator():
+    def __init__(self, events: dict[torch.Tensor], c_fold: int, k_fold: int, training_percentage: float, seed: int=0, randomize: bool=True):
+        """
+        Creates and manage indicies for k-fold Crossvalidation and splitting into training and validation data.
+        *events* is a dictionary of form: (process_name, pid), event["event_id"].
+        The number of folds are defined by *k_fold*, where *c_fold* is the current active test fold.
+        The k-1 folds are further split into training and validation, defined by *traning_percentage*.
+        The indicies are permutated using permutation if *randomize* is set with a given *seed*.
+
+        Args:
+            events (dict[torch.Tensor]): Dictionary with key "event_id" for each process, which are used to create the k-fold splits
+            c_fold (int): Current fold. This fold is used as test fold and not included in training and validation data.
+            k_fold (int): Number of folds. This defines how many splits are created, where one is used as test fold and the rest is split into training and validation data.
+            training_percentage (float): Percentage of training data in the split of the k-1 folds. Needs to be in range of (inclusive) 0 and 1.
+            seed (int, optional): Seed for the randomizer of the indicies. Defaults to 0.
+            randomize (bool, optional): If True randomize order of events after split. Defaults to True.
+
+        Raises:
+            ValueError: If *k_fold* is smaller or equal to 0, since at least one fold is necessary for a test split.
+            ValueError: If *training_percentage* is not in range of (inclusive) 0 and 1, since this defines the split of training and validation data.
+        """
+
+        if k_fold <= 0:
+            raise ValueError(f"k_fold parameter needs to be > 0")
+
+        if (training_percentage > 1) or (training_percentage < 0):
+            raise ValueError(f"Training percentage needs to be in range of (inclusive) 0 and 1")
+
+
+        self.current_fold = c_fold
+        self.k_fold = k_fold
+        self.seed = seed
+        self.percentage_training = training_percentage
+        self.randomize = randomize
+
+        self.indices = self.split_index_to_sets(events=events)
+
+    def __len__(self):
+        return len(self.event_ids)
+
+    def split_index_to_sets(self, events):
+        # TODO Docstring
+        indicies = {}
+        for (process_name, pid), value in events.items():
+            test_fold, training_fold = self.create_fold_index_map(value["event_id"])
+
+            # further split into train and validation
+            training_id, validation_id = self.split_array_to_train_variation_by_ratio(training_fold)
+            indicies[(process_name, pid)] = {"test":test_fold, "training": training_id, "validation":validation_id}
+        return indicies
+
+    def create_fold_index_map(self, event_id) -> tuple[torch.Tensor]:
+        # TODO Docstring
+        test_fold_mask = event_id % self.k_fold == self.current_fold
+        indices = torch.arange(len(event_id))
+
+        # apply mask and randomize
+        # ATTENTION: it is not the same to randomize the indices and the mask and then do the cut
+        test_id = indices[test_fold_mask]
+        training_id = indices[~test_fold_mask]
+        if self.randomize:
+            test_id = test_id[torch.randperm(len(test_id), generator=torch.Generator().manual_seed(self.seed))]
+            training_id = training_id[torch.randperm(len(training_id), generator=torch.Generator().manual_seed(self.seed))]
+        return test_id, training_id
+
+    def split_array_to_train_variation_by_ratio(self, array):
+        """
+        Splits given *array* into *trainings_proportion* train and (1 - *trainings_proportion*) validation parts.
+
+        Args:
+            array (torch.Tensor, numpy.Array): flat torch or numpy array
+            trainings_proportion (float, optional): Relative proportion of the resulting trainings array. Defaults to 0.75.
+
+        Returns:
+            tuple (torch.Tensor, numpy.Array): Tuple of trainings and validation array
+        """
+        train_length = int(round((len(array) * self.percentage_training)))
+        t_idx = array[:train_length]
+        v_idx = array[train_length:]
+        return t_idx, v_idx
+
+    def apply_indices(self, events, which="training"):
+        if which not in ("training", "validation", "test"):
+            raise ValueError(f"which needs to be one of training, validation or test, got {which}")
+        splitted_events = {}
+        for uid, arrays in events.items():
+            arrays = events[uid]
+            splitted_events[uid] = {}
+            for key in ("continous", "categorical", "event_id", "normalization_weights", "product_of_weights", "evaluation_mask"):
+                array = arrays[key]
+
+                splitted_array = array[self.indices[uid][which]]
+                splitted_events[uid][key] = splitted_array
+        # edge case split results in empty tensors (due to very low event count).
+        # just stop applying indices and remove this process from the splitted_events
+        for uid in list(splitted_events.keys()):
+            if splitted_events[uid]["continous"].numel() == 0:
+                logger.info(f"removed {uid} from {splitted_events} since zero elements left after k-fold split")
+                splitted_events.pop(uid)
+        return splitted_events
+
+    def __call__(self, events, which="training"):
+        return self.apply_indices(events, which)
 
 def apply_tokenization(expected_inputs, events, categorical_features):
     for uid in list(events.keys()):
@@ -259,7 +434,6 @@ def split_array_to_train_and_validation(array, trainings_proportion=0.75):
     t_idx = array[:train_length]
     v_idx = array[train_length:]
     return t_idx, v_idx
-
 
 def split_k_fold_into_training_and_validation(events_dict, c_fold, k_fold, seed, train_ratio=0.75, return_test=False):
     """
