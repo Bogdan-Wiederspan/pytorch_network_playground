@@ -5,7 +5,7 @@ import torch
 from models import create_model
 from data.load_data import get_data
 from data.preprocessing import (
-    get_batch_statistics_from_sampler, split_k_fold_into_training_and_validation,
+    get_batch_statistics_from_sampler, split_k_fold_into_training_and_validation, FoldAndSplitCoordinator, WeightAggregator,
     )
 from data.sampler import create_sampler
 from utils.logger import get_logger, TensorboardLogger
@@ -38,15 +38,25 @@ def main(**kwargs):
         # events is of form : {uid : {"continous","categorical", "weight": torch tensor}}
         events = get_data(dataset_config, ignore_cache=kwargs["ignore_cache"], _save_cache=kwargs["save_cache"])
 
-        train_data, validation_data = split_k_fold_into_training_and_validation(
-            events,
+        fold_split_coordinator = FoldAndSplitCoordinator(
+            events=events,
             c_fold=current_fold,
             k_fold=config["k_fold"],
             seed=config["seed"],
-            train_ratio=0.75,
+            training_percentage=0.75,
+            randomize=True,
         )
+
+        train_events, validation_events = fold_split_coordinator(events, which="training"), fold_split_coordinator(events, which="validation")
+
+        weight_aggregator = WeightAggregator(events, fold_split_coordinator.indices)
+
+        for key in list(events.keys()):
+            del events[key]
+
         training_sampler = create_sampler(
-            train_data,
+            train_events,
+            weight_aggregator_inst = weight_aggregator,
             target_map = target_map,
             min_size=config["min_events_in_batch"],
             batch_size=config["t_batch_size"],
@@ -54,14 +64,14 @@ def main(**kwargs):
             sample_ratio=config["sample_ratio"],
         )
         validation_sampler = create_sampler(
-            validation_data,
+            validation_events,
+            weight_aggregator_inst = weight_aggregator,
             target_map = target_map,
             min_size=config["min_events_in_batch"],
             batch_size=config["v_batch_size"],
             train=False,
             sample_ratio=config["sample_ratio"],
         )
-
         # share relative weight from training batch statistic to validation sampler
         training_sampler.share_weights_between_sampler(validation_sampler)
 

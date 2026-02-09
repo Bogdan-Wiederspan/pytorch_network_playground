@@ -5,7 +5,7 @@ import torch
 class SignalEfficiency(torch.nn.Module):
     def __init__(self, sampler, device, train=True, *args, **kwargs):
         super().__init__()
-        self.total_product_of_weights = sampler.total_product_of_weights_per_process_type # weight whole space
+        self.total_product_of_weights = sampler.weights_aggregator_inst("product_of_weights", "whole_sum")
         self.train = train
         self.target_map = sampler.target_map
         self.s_cls = self.target_map["hh"] # definition of signal class
@@ -14,8 +14,8 @@ class SignalEfficiency(torch.nn.Module):
         if not train:
             # validation mode goes over whole validation phase space and not only over a batch
             # thus this information is handed over by sampler
-            self.eval_weights = sampler.sampler_total_eval_weight_per_process_type
-            self.total_process_weights = sampler.sampler_total_weight_per_process_type
+            self.eval_weights = sampler.weights_aggregator_inst("product_of_weights", "evaluation_sum")
+            self.total_process_weights = sampler.weights_aggregator_inst("product_of_weights", "validation_sum")
 
 
     def approximation_sb(self, prediction, truth, product_of_weights, evaluation_phase_space_mask, is_signal):

@@ -14,8 +14,7 @@ class Process(t_data.Dataset):
         target: torch.Tensor,
         normalization_weights: torch.Tensor,
         product_of_weights: torch.Tensor,
-        total_normalization_weights: torch.Tensor,
-        total_product_of_weights: torch.Tensor,
+        weights_statistics: dict[str, torch.Tensor],
         evaluation_space_mask: torch.Tensor,
         process_id: str=None,
         process_type: str=None,
@@ -39,11 +38,10 @@ class Process(t_data.Dataset):
             continous (torch.Tensor): Tensor with continous features of shape [num_events, num_continous_features]
             categorical (torch.Tensor): Tensor with categorical features of shape [num_events, num_categorical_features]
             target (torch.Tensor): Tensor with target one-hot encoded of shape [num_events, num_classes]
-            normalization_weights (torch.Tensor, optional): Tensor with normalization weights per event of shape [num_events].
-            product_of_weights (torch.Tensor, optional): Tensor of product of weights per event of shape [num_events].
-            total_normalization_weights (Dict[torch.Tensor], optional): Single Tensor describing the sum over normalized weights over the whole MC population.
-            total_product_of_weights (torch.Tensor, optional): Single Tensor describing the sum over all product of weights over the whole MC population.
-            evaluation_space_mask (torch.Tensor, optional): Bool Tensor to bring events into evaluation phase space
+            normalization_weights (torch.Tensor): Tensor with normalization weights per event of shape [num_events].
+            product_of_weights (torch.Tensor): Tensor of product of weights per event of shape [num_events].
+            weight_statitics (dict[str, torch.Tensor]): Dictionary with summary statistics of the weights for the whole subprocess.
+            evaluation_space_mask (torch.Tensor): Bool Tensor to bring events into evaluation phase space
             process_id (int, optional): Unique process id of the process. Defaults to None.
             process_type (str, optional): To which process type does the process belong to (ex. "hh"). Defaults to None.
             randomize (bool, optional): Defines if a new cycle of a process instance is shuffled. Defaults to True.
@@ -53,18 +51,19 @@ class Process(t_data.Dataset):
         self.categorical = categorical.to(torch.int32)
         self.targets = target.to(torch.float32)
 
-        # is product of all weights assigned during generation and reconstruction
-        # necessary to transfer to real yield (real events one would see in data)
+        # product of all weights assigned during generation and reconstruction
+        # necessary to transfer mc to real yield (real events one would see in data)
+
         self.product_of_weights = product_of_weights.to(torch.float32)
 
         # mc sampler are generated with higher lumi (to reduce stat. unc.)
         # normalization weights scale down to correct lumi
         self.normalization_weights = normalization_weights.to(torch.float32)
 
-        # IMPORTANT: Due to splitting of events the total weights is the total of the WHOLE POPULATION
-        # it is not just the sum over all splitted weights, which is the reason why it must be handed over!
-        self.total_product_of_weights = total_product_of_weights.to(torch.float32)
-        self.total_normalization_weights = total_normalization_weights.to(torch.float32)
+        # contains summary of normalization and product of weights for the whole process
+        # but also for evaluation, training ,validation phase space
+        self.weights_statistics = weights_statistics
+
         self.evaluation_space_mask = evaluation_space_mask.to(torch.bool)
 
         self.process_id = process_id
@@ -74,20 +73,6 @@ class Process(t_data.Dataset):
         self.process_type = process_type
         self.sample_size = len(self)
         self.relative_weight = None
-
-    @property
-    def total_process_eval_product_of_weight(self):
-        if hasattr(self, "_total_process_eval_product_of_weight"):
-            return self._total_process_eval_product_of_weight
-        self._total_process_eval_product_of_weight = torch.sum(self.product_of_weights[self.evaluation_space_mask])
-        return self._total_process_eval_product_of_weight
-
-    @property
-    def total_process_product_of_weight(self):
-        if hasattr(self, "_total_process_product_of_weight"):
-            return self._total_process_product_of_weight
-        self._total_process_product_of_weight = torch.sum(self.product_of_weights)
-        return self._total_process_product_of_weight
 
     @property
     def uid(self):
@@ -140,12 +125,12 @@ class Process(t_data.Dataset):
 
         # sample events from sample_from, and normalization weight per default
         sampled_events = {attribute:getattr(self, attribute)[idx].to(device) for attribute in sample_from}
-        sampled_events["weights"] = torch.full((len(idx), 1), self.total_normalization_weights / self.sample_size).to(device)
+        sampled_events["weights"] = torch.full((len(idx), 1), self.weights_statistics["normalization_weights"]["whole_sum"] / self.sample_size).to(device)
         return sampled_events
 
         # return self.continous[idx].to(device), self.categorical[idx].to(device), self.targets[idx].to(device)
 
-    def create_sample_generator(self, sample_from, batch_size=None, device=torch.device("cpu")):
+    def create_sample_generator(self, sample_from, batch_size=-1, device=torch.device("cpu")):
         """
         Creates a generator object that returns a dict of torch tensors, defined by *sample_from*.
         If *batch
@@ -160,7 +145,6 @@ class Process(t_data.Dataset):
         Yields:
             tuple (torch.Tensor): Tuple with 3 torch tensors for categorical, continous and target data of the shape [batch_size, num_features]
         """
-
         # save current state of the sampler to restore after full iteration
         # HINT: Do not mix sample with batch generator, as both manipulate current_idx
         start_idx, next_idx = 0, 0
@@ -176,7 +160,7 @@ class Process(t_data.Dataset):
             start_idx = next_idx
             # reset if we reached the end of the dataset and drop last incomplete batch
             sampled_events = {attribute:getattr(self, attribute)[idx].to(device) for attribute in sample_from}
-            sampled_events["weights"] = torch.full((len(idx), 1), self.total_normalization_weights / self.sample_size).to(device)
+            sampled_events["weights"] = torch.full((len(idx), 1), self.weights_statistics["normalization_weights"]["whole_sum"] / self.sample_size).to(device)
             yield sampled_events
 
 
@@ -189,6 +173,7 @@ class ProcessSampler(t_data.Sampler):
         sample_ratio: dict[int]={"dy": 0.25, "tt": 0.25, "hh": 0.5},
         min_size: int=0,
         target_map: dict[int] = {"hh": 0, "tt": 1, "dy": 2},
+        weight_aggregator_inst = None,
         ):
         """
         Manager for Process instances to regulate sampling across multiple processes.
@@ -209,18 +194,20 @@ class ProcessSampler(t_data.Sampler):
         """
         self.process_inst = defaultdict(dict)  # {process_type: {process_id: dataset}}
         # statistics describing whole population of a process type
-        self.total_normalization_weight_per_process_type = {"dy":0, "tt":0, "hh":0}
-        self.total_product_of_weights_per_process_type = {"dy":0, "tt":0, "hh":0}
+        # self.total_normalization_weight_per_process_type = {"dy":0, "tt":0, "hh":0}
+        # self.total_product_of_weights_per_process_type = {"dy":0, "tt":0, "hh":0}
 
         self.batch_size = torch.tensor([batch_size], dtype=torch.int32)
         self.sample_ratio = sample_ratio
         self.min_size = min_size
         self.target_map = target_map
+        self.weights_aggregator_inst = weight_aggregator_inst
 
         # set attributes to access dataset properties directly from sampler, enabling dot notation
         self.set_attr([
-            "total_normalization_weights", "relative_weight", "sample_size",
-            "process_type", "create_sample_generator", "total_product_of_weights", "evaluation_space_mask",
+            # "total_normalization_weights", "total_product_of_weights",
+            "relative_weight", "sample_size",
+            "process_type", "create_sample_generator", "evaluation_space_mask",
             "total_process_eval_product_of_weight", "total_process_product_of_weight",
             "continous", "categorical", "targets", "normalization_weights", "product_of_weights",
             ])
@@ -298,8 +285,6 @@ class ProcessSampler(t_data.Sampler):
         Args:
             process_inst (Process): Instance of the Dataset class
         """
-        self.total_normalization_weight_per_process_type[process_inst.process_type] += process_inst.total_normalization_weights
-        self.total_product_of_weights_per_process_type[process_inst.process_type] += process_inst.total_product_of_weights
         self.process_inst[process_inst.process_type][process_inst.process_id] = process_inst
 
     @property
@@ -320,14 +305,9 @@ class ProcessSampler(t_data.Sampler):
     def calculate_sample_size(self, process_type, dry=False):
         if self.batch_size == -1:
             raise ValueError("Batch Size < 1 is not supported. Try a number big enough to be representative")
-
         logger.info(f"Calculate sample sizes for: {process_type}")
         # unpack and convert to tensors for easier handling, get desired_sub_batch_size
-        weights, keys = [], []
-        for pid, process_inst in self.process_inst[process_type].items():
-            weights.append(process_inst.total_normalization_weights.item())
-            keys.append(pid)
-        weights = torch.tensor(weights, dtype=torch.float32)
+        weights = torch.tensor([proc.weights_statistics["normalization_weights"]["whole_sum"] for proc in self.process_inst[process_type].values()])
         min_size = torch.tensor(self.min_size)
         sub_batch_size = int(self.batch_size * self.sample_ratio[process_type])
 
@@ -345,11 +325,14 @@ class ProcessSampler(t_data.Sampler):
         total_weight_of_process_type = weights.sum()
         ideal_sizes = sub_batch_size * weights / total_weight_of_process_type
 
-        # add relative weight to datasets
-        for pid, ds in self.process_inst[process_type].items():
-            ds.relative_weight = ds.total_normalization_weights / total_weight_of_process_type * self.sample_ratio[process_type]
-        # step 1:
+        # add relative contribution as information to process
+        for _, ds in self.process_inst[process_type].items():
+            relative_weight_contribution_of_process = ds.weights_statistics["normalization_weights"]["whole_sum"] / total_weight_of_process_type
+            ds.relative_weight = (
+                 relative_weight_contribution_of_process * self.sample_ratio[process_type]
+                )
 
+        # step 1:
         # check if UPSAMPLING IS NECESSARY AT ALL
         floored_sizes = torch.floor(ideal_sizes) # decreases sub batch size by length of tensor
         floored_sizes = torch.maximum(floored_sizes, min_size) # increase sub batch size by different to threshold
@@ -411,10 +394,10 @@ class ProcessSampler(t_data.Sampler):
 
         # store batch size per phase space in dataset
         if not dry:
-            for k, w in zip(keys, floored_sizes):
+            for k, w in zip(list(self.process_inst[process_type].keys()), floored_sizes):
                 self.process_inst[process_type][k].sample_size = w.item()
         else:
-            logger.info({k:w.item() for k,w in zip(keys, floored_sizes)})
+            logger.info({k:w.item() for k,w in zip(list(self.process_inst[process_type].keys()), floored_sizes)})
 
     def sample_batch(self, sample_from: list[str], device: torch.device=torch.device("cpu")):
         """
@@ -472,13 +455,21 @@ class ProcessSampler(t_data.Sampler):
                 v_process_inst.relative_weight = process_inst.relative_weight
 
 
-def create_sampler(events, target_map, batch_size, min_size=1, train=True, sample_ratio={"dy": 0.25, "tt": 0.25, "hh": 0.5}):
+def create_sampler(events, weight_aggregator_inst, target_map, batch_size, min_size=1, train=True, sample_ratio={"dy": 0.25, "tt": 0.25, "hh": 0.5}):
     # extract data from events and wrap into Datasets
     if not events:
-        logger.warning(f"Sampler is not created due to feeding empty events")
-        return None
+        raise ValueError(f"Sampler is not created due to feeding empty events")
 
-    process_sampler = ProcessSampler(batch_size=batch_size, min_size=min_size, sample_ratio=sample_ratio, target_map = target_map)
+    # sampler has information about all processes, information required for sampling
+    # and weights accross all processes
+    process_sampler = ProcessSampler(
+        batch_size=batch_size,
+        min_size=min_size,
+        sample_ratio=sample_ratio,
+        target_map = target_map,
+        weight_aggregator_inst=weight_aggregator_inst
+        )
+
     for uid in list(events.keys()):
         (process_type, process_id) = uid
         arrays = events.pop(uid)
@@ -494,8 +485,7 @@ def create_sampler(events, target_map, batch_size, min_size=1, train=True, sampl
             target=target,
             normalization_weights=arrays["normalization_weights"],
             product_of_weights=arrays["product_of_weights"],
-            total_normalization_weights=arrays["total_normalization_weights"],
-            total_product_of_weights=arrays["total_product_of_weights"],
+            weights_statistics=weight_aggregator_inst.weights[uid],
             evaluation_space_mask=arrays["evaluation_mask"],
             process_id=process_id,
             process_type=process_type,

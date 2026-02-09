@@ -365,9 +365,6 @@ def handle_weights_and_convert_to_torch(events: np.array, continous_features: li
             "total_normalization_weights" : sum_of_normalization_weights,
 
             "total_evaluation_weight" : total_evaluation_weight,
-            # "total_bjet_weight" : total_bjet_weight,
-            # "total_di_tau_weight" : total_di_tau_weight,
-            # "total_di_bjet_weight" : total_di_bjet_weight,
             "evaluation_mask": torch.tensor(final_mask),
             "mask" : {
                 "bjet": arr["bjet_mask"],

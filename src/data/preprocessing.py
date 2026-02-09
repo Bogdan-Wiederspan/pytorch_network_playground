@@ -8,28 +8,8 @@ logger = get_logger(__name__)
 
 class WeightAggregator():
     def __init__(self, events, indices):
-        self.weights = self.calculate_weights(events, indices)
-
-    # # TODO maybe access weights per dot
-    # def set_attr(self, attribute):
-    #     if isinstance(attribute, str):
-    #         attribute = [attribute]
-
-    #     for attr in attribute:
-    #         if hasattr(self, attr):
-    #             raise AttributeError(f"Attribute {attr} already exists in sampler class.")
-
-    #         def _accesor(*args, dataset_attr=attr, **kwargs):
-    #             collector = {}
-    #             for uid, _weights in self.weights().items():
-    #                 _weights_attr = getattr(_weights, dataset_attr)
-    #                 # when attribute is a callable function pass args and kwargs
-    #                 if callable(_weights_attr):
-    #                     collector[uid] = _weights_attr(*args, **kwargs)
-    #                 else:
-    #                     collector[uid] = _weights_attr
-    #             return collector
-    #         setattr(self, attr, _accesor)
+        self.weights = self.calculate_process_weights(events, indices)
+        self.summary_statistic_of_processes = self.calculate_summary_statistics_from_process_weights(self.weights)
 
     def identify_pid(self, pid):
         if (pid < 2000):
@@ -50,7 +30,7 @@ class WeightAggregator():
             process_weights_sum[process_name] += _weights[first_key][second_key]
         return process_weights_sum
 
-    def calculate_weights(self, events, indices):
+    def calculate_process_weights(self, events, indices):
         weights = {}
         for uid, _events in events.items():
 
@@ -72,13 +52,25 @@ class WeightAggregator():
                     "evaluation_sum": torch.sum(product_of_weights[_events["evaluation_mask"]]),
                 },
             }
+        return weights
 
-        # sum weights over all subprocesses that represent the whole process
-        weights["process"] = {
-            weight_name: self.process_weights_sum_from_nested_weight(weights, first_key=weight_name, second_key="whole_sum")
+    def sum_weights_over(self, first_key, second_key):
+        weights = self.process_weights_sum_from_nested_weight(self.weights, first_key=first_key, second_key=second_key)
+        return weights
+
+    # TODO REMOVE
+    def calculate_summary_statistics_from_process_weights(self, weights_per_process=None):
+        if weights_per_process is None:
+            self.weights_per_process = self.weights
+        weights = {
+            weight_name: self.process_weights_sum_from_nested_weight(weights_per_process, first_key=weight_name, second_key="whole_sum")
             for weight_name in ("product_of_weights", "normalization_weights")
         }
         return weights
+
+    def __call__(self, kind_weight, phase_space):
+        return self.sum_weights_over(kind_weight, phase_space)
+
 
 class FoldAndSplitCoordinator():
     def __init__(self, events: dict[torch.Tensor], c_fold: int, k_fold: int, training_percentage: float, seed: int=0, randomize: bool=True):
