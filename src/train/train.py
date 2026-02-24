@@ -118,8 +118,8 @@ def main(**kwargs):
             validation_loss_fn = torch.nn.CrossEntropyLoss(weight=None, size_average=None,label_smoothing=config["label_smoothing"])
         elif config["loss_fn"] == "signal_efficiency":
             from loss import SignalEfficiency
-            train_loss_fn = SignalEfficiency(sampler=training_sampler ,device=DEVICE, train=True)
-            validation_loss_fn = SignalEfficiency(sampler=training_sampler, device=DEVICE, train=False)
+            train_loss_fn = SignalEfficiency(sampler=training_sampler ,device=DEVICE, train=True, mode="full")
+            validation_loss_fn = SignalEfficiency(sampler=training_sampler, device=DEVICE, train=False, mode="full")
 
         ### training loop
         for current_iteration in range(1_000_000):

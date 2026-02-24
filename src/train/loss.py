@@ -3,11 +3,30 @@ from __future__ import annotations
 import torch
 
 class SignalEfficiency(torch.nn.Module):
-    def __init__(self, sampler, device, train=True, *args, **kwargs):
+    def __init__(self, sampler, device, train=True, mode="full", *args, **kwargs):
+        """
+        This function creates a loss using the Asimov Significance as introduced in https://arxiv.org/abs/1806.00322.
+        The loss is calculated as 1 / significance, thus maximizing the significance is equivalent to minimizing the loss.
+
+        The loss comes in three implementations: "full", "no_unc", "approximation", which is used in the forward pass is determined by the *mode* argument.
+        The loss is calculated differently in *train* and validation mode.
+        All tensors are placed on *device*.
+        The necessary information about phase space and weights is handed over by *sampler*.
+
+        Args:
+            sampler (_type_): _description_
+            device (_type_): _description_
+            train (bool, optional): _description_. Defaults to True.
+        """
         super().__init__()
-        self.total_product_of_weights = sampler.weights_aggregator_inst("product_of_weights", "whole_sum")
+
         self.train = train
+        self.total_product_of_weights = sampler.weights_aggregator_inst("product_of_weights", "whole_sum")
         self.target_map = sampler.target_map
+
+        self.mode = mode
+        self.loss = self.chosen_loss()
+
         self.s_cls = self.target_map["hh"] # definition of signal class
         self.device = device
 
@@ -17,8 +36,50 @@ class SignalEfficiency(torch.nn.Module):
             self.eval_weights = sampler.weights_aggregator_inst("product_of_weights", "evaluation_sum")
             self.total_process_weights = sampler.weights_aggregator_inst("product_of_weights", "validation_sum")
 
+    def chosen_loss(self):
+        """
+        Function that returns the correct loss function according to the set mode of the instance.
 
-    def approximation_sb(self, prediction, truth, product_of_weights, evaluation_phase_space_mask, is_signal):
+        Raises:
+            ValueError: If mode is not one of "full", "no_unc", "approximation"
+
+        Returns:
+            function: The loss function corresponding to the set mode.
+        """
+        losses = {
+            "full" : self.asimov_full,
+            "no_unc" : self.asimov_no_uncertainty,
+            "approximation" : self.asimov_small_signal_approximation,
+            }
+
+        if self.mode in losses:
+            return losses[self.mode]
+        raise ValueError(f"Unknown mode {self.mode} for SignalEfficiency loss, choose between {tuple(losses.keys())}")
+
+    def approximation_sb(
+        self,
+        prediction: torch.tensor,
+        truth: torch.tensor,
+        product_of_weights: dict[torch.tensor],
+        evaluation_phase_space_mask: dict[torch.tensor],
+        is_signal: bool
+        ):
+        """
+        Approximation of (s)ignal and (b)ackground yield as defined in 4.1 and 4.2 in https://arxiv.org/abs/1806.00322
+        The approximation is calculated batchwise and only defined for binary classification, which is calculated is defined by *is_signal*.
+        The physics weight information is handed over by *product_of_weights* and *evaluation_phase_space_mask*.
+        The actual network output is handed over by *prediction* and *truth*.
+
+        Args:
+            prediction (torch.tensor): torch tensor coming from model output, containing the predicted probabilities for each class.
+            truth (torch.tensor): torch tensor containing the true class labels, one-hot encoded.
+            product_of_weights (dict[torch.tensor]): Dictionary of torch tensors containing the product of all weights for different processes
+            evaluation_phase_space_mask (dict[torch.tensor]): Dictionary of torch tensors containing a mask for the evaluation phase space, which is 1 for events in the evaluation phase space and 0 otherwise
+            is_signal (bool): bool to signal if calculation for s or b is done
+
+        Returns:
+            torch.tensor: torch tensor to be either s or b, depending on *is_signal*
+        """
         # determine if signal (true positive) or false identified background events (false negative) are calculated
         if is_signal:
             bool_filter = truth
@@ -42,31 +103,45 @@ class SignalEfficiency(torch.nn.Module):
                 batch_yield = self.total_process_weights["dy"] + self.total_process_weights["tt"]
 
         # since filtered batch is 0 for either signal or background this reduces the sum
-        # to be specificly only over signal OR background events
+        # to be specifically only over signal OR background events
         weighted_yield = torch.sum(prediction * filtered_batch_weight) # term 1
-        a = weighted_yield * evaluation_yield / batch_yield
-        # if a == 0:
-        #     from IPython import embed; embed(header = " line: 49 in loss.py")
-        return a
+        return weighted_yield * evaluation_yield / batch_yield
 
-    def loss_small(self, s, b):
+    def asimov_small_signal_approximation(self, s, b, *args, **kwargs):
+        # approximation for small signal yield  3.3
         return s / torch.sqrt(s + b)
 
-    def loss_full(self, s, b):
-        # torch log is per default to base e
+    def asimov_no_uncertainty(self, s, b, *args, **kwargs):
+        # approximation coming from asimov for no background uncertainty: https://arxiv.org/abs/1806.00322 3.2
         return torch.sqrt( (2 * ((s + b) * torch.log(1 + s / b) - s)))
 
-    def forward(self, prediction, truth, weight, debug=False):
-        if debug:
-            from IPython import embed; embed(header = "LOSS line: 38 in loss.py")
+    def asimov_full(self, s, b, unc_b, *args, **kwargs):
+        # full asimov formula with background uncertainty: https://arxiv.org/abs/1806.00322 3.1
+        ln_nominator_1 = ( s + b ) * ( b + unc_b**2 )
+        ln_denominator_1 = ( b**2 + ( s + b ) )
+        part_1 = ( s + b ) * torch.log( ln_nominator_1 / ln_denominator_1 )
+
+        ln_nominator_2 = 1 + (unc_b**2 * s)
+        ln_denominator_2 = b * ( b + unc_b**2 )
+        part_2 = b**2 / unc_b**2 * torch.log( ln_nominator_2 / ln_denominator_2)
+
+        _asimov = torch.sqrt(
+        2 * ( part_1 - part_2 )
+        )
+        return _asimov
+
+    def forward(self, prediction, truth, weight, uncertainty=10, *args, **kwargs):
         signal_node_truth = truth[:, self.s_cls]
         prediction = torch.softmax(prediction, dim = 1) # network does not contain softmax
-        signal_node_prediction =prediction[:, self.s_cls]
+        signal_node_prediction = prediction[:, self.s_cls]
 
         s = self.approximation_sb(signal_node_prediction, signal_node_truth, weight["product_of_weights"], weight["evaluation_space_mask"], is_signal=True)
         b = self.approximation_sb(signal_node_prediction, signal_node_truth, weight["product_of_weights"], weight["evaluation_space_mask"], is_signal=False)
 
-        loss = self.loss_full(s= s, b=b)
+        if (s <= 0 or b <= 0):
+            from IPython import embed; embed(header = "Either s or b is below 0, which is not physical, starting debugger in Forward of SignalEfficiency loss")
+
+        loss = self.loss(s= s, b=b, unc_b=uncertainty)
         if loss == 0:
             return 0
         return 1 / loss
