@@ -79,6 +79,8 @@ def input_features(debug=False, debug_length=3):
         "hbb_e", "hbb_px", "hbb_py", "hbb_pz",
         "htthbb_e", "htthbb_px", "htthbb_py", "htthbb_pz",
         "httfatjet_e", "httfatjet_px", "httfatjet_py", "httfatjet_pz",
+        "nu1_px", "nu1_py", "nu1_pz",
+        "nu2_px", "nu2_py", "nu2_pz",
     ]
 
     continous_features =  [add_prefix(f, f"{data_prefix}_", ignore_code="_") for f in continous_features]

@@ -583,6 +583,7 @@ class ResNetPreactivationBlock(torch.nn.Module):  # noqa: F811
         x = x + skip_connection
         return self.act_fn2(x)
 
+
 class StandardizeLayer(torch.nn.Module):  # noqa: F811
     def __init__(
         self,
@@ -742,31 +743,6 @@ class RotatePhiLayer(torch.nn.Module):  # noqa: F811
     def forward(self, x: torch.FloatTensor) -> torch.FloatTensor:
         ref_phi = self.calc_ref_phi(x)
         return self.rotate_columns(x, ref_phi)
-
-class TwoHeadFactory(torch.nn.Module):
-    def __init__(self, common_base, categorization_head, regression_head):
-        """
-        Small factory to create a model with two heads.
-        All inputs needs to be models of sequential nature, where a single output is expected.
-
-        Args:
-            common_base (torch.nn.Module): Network performing common base task
-            categorization_head (torch.nn.Module): Network performing categorization task
-            regression_head (torch.nn.Module): Network performing regression task
-        """
-        super().__init__()
-        self.base = common_base
-        self.cat_head = categorization_head
-        self.reg_head = regression_head
-
-    def check_shape(self):
-        pass
-
-    def forward(self, x: torch.tensor):
-        base_output = self.base(x)
-        cat_pred = self.cat_head(base_output)
-        reg_pred = self.reg_head(base_output)
-        return cat_pred, reg_pred
 
 class AggregationLayer(torch.nn.Module):
     def __init__(
@@ -1031,8 +1007,12 @@ class LBNFeaturerExtractor(torch.nn.Module):
         self.particles = self.find_particles_components_in_features()
 
     @property
+    def num_particles(self):
+        return len(self._particles)
+
+    @property
     def _particles(self):
-        return ("vis_tau1", "vis_tau2", "bjet1", "bjet2", "met")
+        return ("vis_tau1", "vis_tau2", "bjet1", "bjet2", "met", "nu1", "nu2")
 
     def find_particles_components_in_features(self):
         # returns dictionary with all indicies of the feature components
@@ -1050,14 +1030,17 @@ class LBNFeaturerExtractor(torch.nn.Module):
         indicies = lambda particle, features : [particles_components[particle][f] for f in features]
         particles = {}
 
-        for f in self._particles[:-1]:
+        for f in self._particles[:-3]:
             particles[f] = indicies(f, ("e", "px", "py", "pz"))
         particles["met"] = indicies("met", ("px", "py"))
+
+        particles["nu1"] = indicies("nu1", ("px", "py", "pz"))
+        particles["nu2"] = indicies("nu2", ("px", "py", "pz"))
         return particles
 
     def slice_particles_from_tensor(self, tensor):
         t = []
-        for f in self._particles[:-1]:
+        for f in self._particles[:-3]:
             t.append(tensor[:, self.particles[f]])
 
         # met is special, since we need to reconstruct it: (pt, px, py ,0)
@@ -1067,7 +1050,14 @@ class LBNFeaturerExtractor(torch.nn.Module):
         met_pz = torch.zeros_like(met_pt)
         met = torch.stack((met_pt, met_kinematics[:, 0], met_kinematics[:, 1], met_pz), axis=1)
         t.append(met)
-        t = torch.stack(t, axis=-1) # B, FEATURES (4), particles (5)
+        # add nu, separetley since pt = e: (pt, px, py, pz)
+        for num in (1, 2):
+            nu_kinematics = tensor[:, self.particles[f"nu{num}"]]
+            nu_e = torch.sqrt(torch.sum(nu_kinematics**2, axis=1))
+            nu = torch.stack((nu_e, nu_kinematics[:, 0], nu_kinematics[:, 1], nu_kinematics[:, 2]), axis=1)
+            t.append(nu)
+        # combine everything
+        t = torch.stack(t, axis=-1) # B, FEATURES (4), particles (7)
         return t
 
     def forward(self, x):
@@ -1079,14 +1069,15 @@ class LBN_DNN(torch.nn.Module):
         self,
         continous_features: list[str],
         M: int = 10,
-        N: int = 4,
+        # no N necessary for LBN, getting information from Feature extractor
         weight_init_scale: float | int = 1.0,
         clip_weights: bool = False,
         eps: float = 1.0e-5,
     ):
         super().__init__()
         self.lbn_feature_extractor = LBNFeaturerExtractor(continous_features=continous_features)
-        self.lbn = LBN(M=M, N=N, clip_weights=clip_weights, eps=eps, weight_init_scale=weight_init_scale)
+
+        self.lbn = LBN(M=M, N=self.lbn_feature_extractor.num_particles, clip_weights=clip_weights, eps=eps, weight_init_scale=weight_init_scale)
         self.lbn_batch_norm = torch.nn.BatchNorm1d(self.lbn.ndim())
 
 
@@ -1108,3 +1099,98 @@ class TemperaturCalibrationLayer(torch.nn.Module):
 
     def __call__(self, x):
         return self.activation(x / self.temperature)
+
+class BinningLayer(torch.nn.Module):
+    def __init__(
+        self,
+        init_edges: list[float],
+        kernel_cls,
+        kernel_cfg,
+        *args,
+        **kwargs
+        ):
+        """
+        Args:
+            init_edges (list[float]): _description_
+        """
+        super().__init__(*args, **kwargs)
+        # TODO currently no fusion allowed
+        # TODO maybe good idea, when going below certain threshold
+        self.init_edges = init_edges
+        self.edges = torch.nn.Parameter(init_edges)
+        self.kernel_cls = kernel_cls
+
+        # config allows bin-wise configuration
+        # if bin number (as int) present overwrite general value
+        self.original_kernel_cfg = kernel_cfg
+        # self.kernel_configs = self.build_cfg(self.original_kernel_cfg)
+        self.kernels = self.build_kernels(kernel_cfg=kernel_cfg)
+
+    def get_edges(self):
+        e = self.edges.detach()
+        low, up = e[:-1], e[1:]
+        return [(l,u) for l,u in zip(low,up)]
+
+    def build_cfg(self, base_cfg):
+        config = {}
+        for _bin in range(0, self.num_bins):
+            if _bin in base_cfg.keys():
+                fill_cfg = base_cfg[_bin]
+            else:
+                fill_cfg = base_cfg["general"].copy()
+            fill_cfg["bin_type"] = "normal"
+            config[_bin] = fill_cfg
+
+        config[0]["bin_type"] = "underflow"
+        config[self.num_bins - 1]["bin_type"] = "overflow"
+        return config
+
+    def build_kernels(self, kernel_cfg):
+        edges = self.get_edges()
+        kernels = []
+
+        for bin_index in range(0, self.num_bins):
+            bin_config = kernel_cfg.copy()
+            edge = edges[bin_index]
+
+            if bin_index == 0:
+                bin_config["bin_type"] = "underflow"
+            elif bin_index == (self.num_bins - 1):
+                bin_config["bin_type"] = "overflow"
+            else:
+                bin_config["bin_type"] = "normal"
+
+            kernels.append(self.kernel_cls(edge=edge, **bin_config))
+        return kernels
+
+    # def build_kernels(self,):
+    #     edges = self.get_edges()
+    #     kernels = []
+    #     range(0, self.num_bins):
+    #     for bin_index, cfg in self.kernel_configs.items():
+    #         edge = edges[bin_index]
+    #         kernels.append(self.kernel_cls(edge=edge, **cfg))
+    #     return kernels
+    def __repr__(self):
+        edges = self.get_edges()
+        edges = [(float(l), float(u)) for l,u in edges]
+
+        msg = "Bin Index | Edge Value\n"
+        msg+="\n".join([f"{idx}:{edge}" for idx, edge in enumerate(edges)])
+        return msg
+
+    @property
+    def num_bins(self):
+        return len(self.edges) - 1
+
+    def check(self):
+        # config has to have "general" key
+        assert "general" in self.kernel_cfg.keys()
+
+    def forward(self, x):
+        scaled_x = []
+        for kernel in self.kernels:
+            scale = kernel(x)
+            scaled_x.append(scale * x)
+        binned_x = torch.sum(torch.stack(scaled_x, axis=0), axis=0)
+        return binned_x
