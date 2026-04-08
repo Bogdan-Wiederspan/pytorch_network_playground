@@ -1,20 +1,27 @@
 import torch
 
-from models.layers import (
-    InputLayer, StandardizeLayer, ResNetPreactivationBlock, DenseBlock, PaddingLayer, RotatePhiLayer,
-    DenseNetBlock, LBN_DNN, TemperaturCalibrationLayer
-)
-from utils.utils import EMPTY_INT, EMPTY_FLOAT
-from data.features import expected_embedding_inputs
+import kernel
+from models import layers
+from data import features
+from utils import utils
 
+#TODO shared memory between classes that are connected together! That should AUX define.
+class Aux():
+    x = {}
+    def __init__(self):
+        pass
+
+    def set_aux(self, *args):
+        cls_name = self.__class__.__name__
+        self.x
 
 
 class BNet(torch.nn.Module):
-    def __init__(self, continous_features, categorical_features, config, *args, **kwargs):
+    def __init__(self, continuous_features, categorical_features, config, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.init_layers(config=config, continous_features=continous_features, categorical_features=categorical_features)
+        self.init_layers(config=config, continuous_features=continuous_features, categorical_features=categorical_features)
 
-    def init_layers(self, continous_features, categorical_features, config):
+    def init_layers(self, continuous_features, categorical_features, config):
         # increasing eps helps to stabilize training to counter batch norm and L2 reg counterplay when used together.
         # eps = 0.5e-5
 
@@ -23,36 +30,36 @@ class BNet(torch.nn.Module):
 
         # helper where all layers are defined
         # std layers are filled when statitics are known
-        std_layer = StandardizeLayer(mean=config["mean"], std=config["std"])
+        std_layer = layers.StandardizeLayer(mean=config["mean"], std=config["std"])
 
-        continuous_padding = PaddingLayer(padding_value=0, mask_value=EMPTY_FLOAT)
-        categorical_padding = PaddingLayer(padding_value=config["empty_value"], mask_value=EMPTY_INT)
+        continuous_padding = layers.PaddingLayer(padding_value=0, mask_value=utils.EMPTY_FLOAT)
+        categorical_padding = layers.PaddingLayer(padding_value=config["empty_value"], mask_value=utils.EMPTY_INT)
 
         if config["enable_rotation"]:
-            rotation_layer = RotatePhiLayer(
-                columns=list(map(str, continous_features)),
+            rotation_layer = layers.RotatePhiLayer(
+                columns=list(map(str, continuous_features)),
                 ref_phi_columns=config["ref_phi_columns"],
                 rotate_columns=config["rotate_columns"],
             )
         else:
             rotation_layer = None
 
-        self.input_layer = InputLayer(
-            continuous_inputs=continous_features,
+        self.input_layer = layers.InputLayer(
+            continuous_inputs=continuous_features,
             categorical_inputs=categorical_features,
             embedding_dim=10,
-            expected_categorical_inputs=expected_embedding_inputs(),
+            expected_categorical_inputs=features.expected_embedding_inputs(),
             empty=config["empty_value"],
             std_layer=std_layer,
             rotation_layer=rotation_layer,
             padding_categorical_layer=categorical_padding,
-            padding_continous_layer=continuous_padding,
+            padding_continuous_layer=continuous_padding,
         )
 
-        self.transition_dense_1 = DenseBlock(input_nodes = self.input_layer.ndim, output_nodes = config["nodes"], activation_functions=config["activation_functions"], eps=config["batch_norm_eps"], normalize=normalize) # noqa
-        self.resnet_block_1 = ResNetPreactivationBlock(config["nodes"], config["activation_functions"], config["skip_connection_init"], config["freeze_skip_connection"], eps=config["batch_norm_eps"], normalize=normalize)
-        self.resnet_block_2 = ResNetPreactivationBlock(config["nodes"], config["activation_functions"], config["skip_connection_init"], config["freeze_skip_connection"], eps=config["batch_norm_eps"], normalize=normalize)
-        self.resnet_block_3 = ResNetPreactivationBlock(config["nodes"], config["activation_functions"], config["skip_connection_init"], config["freeze_skip_connection"], eps=config["batch_norm_eps"], normalize=normalize)
+        self.transition_dense_1 = layers.DenseBlock(input_nodes = self.input_layer.ndim, output_nodes = config["nodes"], activation_functions=config["activation_functions"], eps=config["batch_norm_eps"], normalize=normalize) # noqa
+        self.resnet_block_1 = layers.ResNetPreactivationBlock(config["nodes"], config["activation_functions"], config["skip_connection_init"], config["freeze_skip_connection"], eps=config["batch_norm_eps"], normalize=normalize)
+        self.resnet_block_2 = layers.ResNetPreactivationBlock(config["nodes"], config["activation_functions"], config["skip_connection_init"], config["freeze_skip_connection"], eps=config["batch_norm_eps"], normalize=normalize)
+        self.resnet_block_3 = layers.ResNetPreactivationBlock(config["nodes"], config["activation_functions"], config["skip_connection_init"], config["freeze_skip_connection"], eps=config["batch_norm_eps"], normalize=normalize)
         self.last_linear = torch.nn.Linear(config["nodes"], 3)
 
     def forward(self, categorical_inputs, continuous_inputs):
@@ -66,13 +73,13 @@ class BNet(torch.nn.Module):
 
 
 class BNetDenseNet(torch.nn.Module):
-    def __init__(self, continous_features, categorical_features, config, *args, **kwargs):
+    def __init__(self, continuous_features, categorical_features, config, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.init_layers(config=config, continous_features=continous_features, categorical_features=categorical_features)
+        self.init_layers(config=config, continuous_features=continuous_features, categorical_features=categorical_features)
         self.categorical_features = categorical_features
-        self.continous_features = continous_features
+        self.continuous_features = continuous_features
 
-    def init_layers(self, continous_features, categorical_features, config):
+    def init_layers(self, continuous_features, categorical_features, config):
         # increasing eps helps to stabilize training to counter batch norm and L2 reg counterplay when used together.
         eps = 0.001
         # activate weight normalization on linear layer weights
@@ -81,45 +88,45 @@ class BNetDenseNet(torch.nn.Module):
         # helper where all layers are defined
         # std layers are filled when statitics are known
         if config["mean"] is None and config["std"] is None:
-            std_layer = StandardizeLayer(
-                mean = torch.zeros(len(continous_features)),
-                std = torch.ones(len(continous_features))
+            std_layer = layers.StandardizeLayer(
+                mean = torch.zeros(len(continuous_features)),
+                std = torch.ones(len(continuous_features))
             )
         else:
-            std_layer = StandardizeLayer(mean=config["mean"], std=config["std"])
+            std_layer = layers.StandardizeLayer(mean=config["mean"], std=config["std"])
 
 
-        if config["continous_padding_value"] is None:
+        if config["continuous_padding_value"] is None:
             continuous_padding = None
         else:
-            continuous_padding = PaddingLayer(padding_value=-4, mask_value=EMPTY_FLOAT)
+            continuous_padding = layers.PaddingLayer(padding_value=-4, mask_value=utils.EMPTY_FLOAT)
 
 
         if config["categorical_padding_value"] is None:
             categorical_padding = None
         else:
-            categorical_padding = PaddingLayer(padding_value=config["categorical_padding_value"], mask_value=EMPTY_INT)
+            categorical_padding = layers.PaddingLayer(padding_value=config["categorical_padding_value"], mask_value=utils.EMPTY_INT)
 
 
         if config["enable_rotation"]:
-            rotation_layer = RotatePhiLayer(
-                columns=list(map(str, continous_features)),
+            rotation_layer = layers.RotatePhiLayer(
+                columns=list(map(str, continuous_features)),
                 ref_phi_columns=config["ref_phi_columns"],
                 rotate_columns=config["rotate_columns"],
             )
         else:
             rotation_layer = None
 
-        self.input_layer = InputLayer(
-            continuous_inputs=continous_features,
+        self.input_layer = layers.InputLayer(
+            continuous_inputs=continuous_features,
             categorical_inputs=categorical_features,
             embedding_dim=10,
-            expected_categorical_inputs=expected_embedding_inputs(),
+            expected_categorical_inputs=features.expected_embedding_inputs(),
             empty=config["categorical_padding_value"],
             std_layer=std_layer,
             rotation_layer=rotation_layer,
             padding_categorical_layer=categorical_padding,
-            padding_continous_layer=continuous_padding,
+            padding_continuous_layer=continuous_padding,
         )
 
         dense_config = {
@@ -130,12 +137,12 @@ class BNetDenseNet(torch.nn.Module):
             "normalize":False,
         }
 
-        self.transition_dense_1 = DenseBlock(input_nodes = self.input_layer.ndim, output_nodes = config["nodes"], activation_functions=config["activation_functions"], eps=eps, normalize=normalize) # noqa
-        self.dense_block_1 = DenseNetBlock(input_nodes = self.transition_dense_1.output_dim, output_nodes = int((config["nodes"])), **dense_config)
-        self.dense_block_2 = DenseNetBlock(input_nodes = self.dense_block_1.output_dim, output_nodes = int((config["nodes"])), **dense_config)
-        self.dense_block_3 = DenseNetBlock(input_nodes = self.dense_block_2.output_dim, output_nodes = int((config["nodes"])), **dense_config)
-        self.dense_block_4 = DenseNetBlock(input_nodes = self.dense_block_3.output_dim, output_nodes = int((config["nodes"])), **dense_config)
-        self.dense_block_5 = DenseNetBlock(input_nodes = self.dense_block_4.output_dim, output_nodes = int((config["nodes"])), **dense_config)
+        self.transition_dense_1 = layers.DenseBlock(input_nodes = self.input_layer.ndim, output_nodes = config["nodes"], activation_functions=config["activation_functions"], eps=eps, normalize=normalize) # noqa
+        self.dense_block_1 = layers.DenseNetBlock(input_nodes = self.transition_dense_1.output_dim, output_nodes = int((config["nodes"])), **dense_config)
+        self.dense_block_2 = layers.DenseNetBlock(input_nodes = self.dense_block_1.output_dim, output_nodes = int((config["nodes"])), **dense_config)
+        self.dense_block_3 = layers.DenseNetBlock(input_nodes = self.dense_block_2.output_dim, output_nodes = int((config["nodes"])), **dense_config)
+        self.dense_block_4 = layers.DenseNetBlock(input_nodes = self.dense_block_3.output_dim, output_nodes = int((config["nodes"])), **dense_config)
+        self.dense_block_5 = layers.DenseNetBlock(input_nodes = self.dense_block_4.output_dim, output_nodes = int((config["nodes"])), **dense_config)
         self.last_linear = torch.nn.Linear(self.dense_block_5.output_dim, 3)
 
     def forward(self, categorical_inputs, continuous_inputs):
@@ -150,13 +157,18 @@ class BNetDenseNet(torch.nn.Module):
         return x
 
 class BNetLBNDenseNet(torch.nn.Module):
-    def __init__(self, continous_features, categorical_features, config, *args, **kwargs):
+    def __init__(self, continuous_features, categorical_features, config, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.init_layers(config=config, continous_features=continous_features, categorical_features=categorical_features)
+        self.init_layers(config=config, continuous_features=continuous_features, categorical_features=categorical_features)
         self.categorical_features = categorical_features
-        self.continous_features = continous_features
+        self.continuous_features = continuous_features
 
-    def init_layers(self, continous_features, categorical_features, config):
+    # def mark_attributes(self):
+    #     return {attr:getattr(self, attr) for attr in [
+    #         "categorical_features", "continuous_features"
+    #         ]}
+
+    def init_layers(self, continuous_features, categorical_features, config):
         # increasing eps helps to stabilize training to counter batch norm and L2 reg counterplay when used together.
         eps = 0.001
         # activate weight normalization on linear layer weights
@@ -165,50 +177,49 @@ class BNetLBNDenseNet(torch.nn.Module):
         # helper where all layers are defined
         # std layers are filled when statitics are known
         if config["mean"] is None and config["std"] is None:
-            std_layer = StandardizeLayer(
-                mean = torch.zeros(len(continous_features)),
-                std = torch.ones(len(continous_features))
+            std_layer = layers.StandardizeLayer(
+                mean = torch.zeros(len(continuous_features)),
+                std = torch.ones(len(continuous_features))
             )
         else:
-            std_layer = StandardizeLayer(mean=config["mean"], std=config["std"])
+            std_layer = layers.StandardizeLayer(mean=config["mean"], std=config["std"])
 
 
-        if config["continous_padding_value"] is None:
+        if config["continuous_padding_value"] is None:
             continuous_padding = None
         else:
-            continuous_padding = PaddingLayer(padding_value=-4, mask_value=EMPTY_FLOAT)
+            continuous_padding = layers.PaddingLayer(padding_value=-4, mask_value=utils.EMPTY_FLOAT)
 
 
         if config["categorical_padding_value"] is None:
             categorical_padding = None
         else:
-            categorical_padding = PaddingLayer(padding_value=config["categorical_padding_value"], mask_value=EMPTY_INT)
+            categorical_padding = layers.PaddingLayer(padding_value=config["categorical_padding_value"], mask_value=utils.EMPTY_INT)
 
         if config["enable_rotation"]:
-            rotation_layer = RotatePhiLayer(
-                columns=list(map(str, continous_features)),
+            rotation_layer = layers.RotatePhiLayer(
+                columns=list(map(str, continuous_features)),
                 ref_phi_columns=config["ref_phi_columns"],
                 rotate_columns=config["rotate_columns"],
             )
         else:
             rotation_layer = None
 
-        self.input_layer = InputLayer(
-            continuous_inputs=continous_features,
+        self.input_layer = layers.InputLayer(
+            continuous_inputs=continuous_features,
             categorical_inputs=categorical_features,
             embedding_dim=10,
-            expected_categorical_inputs=expected_embedding_inputs(),
+            expected_categorical_inputs=features.expected_embedding_inputs(),
             empty=config["categorical_padding_value"],
             std_layer=std_layer,
             rotation_layer=rotation_layer,
             padding_categorical_layer=categorical_padding,
-            padding_continous_layer=continuous_padding,
+            padding_continuous_layer=continuous_padding,
         )
 
-        self.lbn = LBN_DNN(
-            continous_features = continous_features,
+        self.lbn = layers.LBN_DNN(
+            continuous_features = continuous_features,
             M  = config["LBN_M"],
-            N  = 5,
             weight_init_scale = 1.0,
             clip_weights = False,
             eps = 1.0e-5,
@@ -222,12 +233,12 @@ class BNetLBNDenseNet(torch.nn.Module):
             "normalize":False,
         }
 
-        self.transition_dense_1 = DenseBlock(input_nodes = self.input_layer.ndim + self.lbn.ndim, output_nodes = config["nodes"], activation_functions=config["activation_functions"], eps=eps, normalize=normalize) # noqa
-        self.dense_block_1 = DenseNetBlock(input_nodes = self.transition_dense_1.output_dim, output_nodes = int((config["nodes"])), **dense_config)
-        self.dense_block_2 = DenseNetBlock(input_nodes = self.dense_block_1.output_dim, output_nodes = int((config["nodes"])), **dense_config)
-        self.dense_block_3 = DenseNetBlock(input_nodes = self.dense_block_2.output_dim, output_nodes = int((config["nodes"])), **dense_config)
-        self.dense_block_4 = DenseNetBlock(input_nodes = self.dense_block_3.output_dim, output_nodes = int((config["nodes"])), **dense_config)
-        self.dense_block_5 = DenseNetBlock(input_nodes = self.dense_block_4.output_dim, output_nodes = int((config["nodes"])), **dense_config)
+        self.transition_dense_1 = layers.DenseBlock(input_nodes = self.input_layer.ndim + self.lbn.ndim, output_nodes = config["nodes"], activation_functions=config["activation_functions"], eps=eps, normalize=normalize) # noqa
+        self.dense_block_1 = layers.DenseNetBlock(input_nodes = self.transition_dense_1.output_dim, output_nodes = int((config["nodes"])), **dense_config)
+        self.dense_block_2 = layers.DenseNetBlock(input_nodes = self.dense_block_1.output_dim, output_nodes = int((config["nodes"])), **dense_config)
+        self.dense_block_3 = layers.DenseNetBlock(input_nodes = self.dense_block_2.output_dim, output_nodes = int((config["nodes"])), **dense_config)
+        self.dense_block_4 = layers.DenseNetBlock(input_nodes = self.dense_block_3.output_dim, output_nodes = int((config["nodes"])), **dense_config)
+        self.dense_block_5 = layers.DenseNetBlock(input_nodes = self.dense_block_4.output_dim, output_nodes = int((config["nodes"])), **dense_config)
         self.last_linear = torch.nn.Linear(self.dense_block_5.output_dim, 3)
 
     def forward(self, categorical_inputs, continuous_inputs):
@@ -248,12 +259,30 @@ class BNetLBNDenseNet(torch.nn.Module):
         x = self.last_linear(x)
         return x
 
+class AddBinning(torch.nn.Module):
+    def __init__(self, model, kernel_cls, kernel_cfg, binning_edges, signal_cls=None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.unbinned_model = model
+        self.binning_layer = layers.BinningLayer(
+            init_edges=binning_edges,
+            kernel_cls=kernel_cls,
+            kernel_cfg=kernel_cfg,
+            )
+        self.signal_cls = ... if signal_cls is None else signal_cls # used for class slicing
+        # for attr in self.model.mark_attributes():
+        #     setattr(self, attr)
+
+    def forward(self, categorical_inputs, continuous_inputs):
+        x = self.unbinned_model(categorical_inputs, continuous_inputs)[:, self.signal_cls] # normal prediction as probabilities
+        x = self.binning_layer(x)
+        return x
+
 class AddActFnToModel(torch.nn.Module):
     def __init__(self, model, act_fn, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.model = model
-        self.categorical_features = model.categorical_features
-        self.continous_features = model.continous_features
+        # self.categorical_features = model.categorical_features
+        # self.continuous_features = model.continuous_features
 
         self.act_func = self._get_attr(torch.nn.modules.activation, act_fn)(dim=1)
 
@@ -275,8 +304,8 @@ class AddCalibrationToModel(torch.nn.Module):
         super().__init__(*args, **kwargs)
         self.model = model
         self.categorical_features = model.categorical_features
-        self.continous_features = model.continous_features
-        self.calibration_layer = TemperaturCalibrationLayer()
+        self.continuous_features = model.continuous_features
+        self.calibration_layer = layers.TemperaturCalibrationLayer()
 
 
     def calibrate(self, sampler, num_samples):
@@ -305,7 +334,7 @@ class AddCalibrationToModel(torch.nn.Module):
 class BinnedLBNDenseNet(torch.nn.Module):
     def __init__(
         self,
-        continous_features,
+        continuous_features,
         categorical_features,
         config,
         binning_config=None,
@@ -314,16 +343,16 @@ class BinnedLBNDenseNet(torch.nn.Module):
         super().__init__(*args, **kwargs)
         self.init_layers(
             config=config,
-            continous_features=continous_features,
+            continuous_features=continuous_features,
             categorical_features=categorical_features,
             binning_config=binning_config
             )
         self.categorical_features = categorical_features
-        self.continous_features = continous_features
+        self.continuous_features = continuous_features
         self.config = config
         self.binning_config = binning_config
 
-    def init_layers(self, continous_features, categorical_features, config, binning_config):
+    def init_layers(self, continuous_features, categorical_features, config, binning_config):
         # increasing eps helps to stabilize training to counter batch norm and L2 reg counterplay when used together.
         eps = 0.001
         # activate weight normalization on linear layer weights
@@ -332,48 +361,48 @@ class BinnedLBNDenseNet(torch.nn.Module):
         # helper where all layers are defined
         # std layers are filled when statitics are known
         if config["mean"] is None and config["std"] is None:
-            std_layer = StandardizeLayer(
-                mean = torch.zeros(len(continous_features)),
-                std = torch.ones(len(continous_features))
+            std_layer = layers.StandardizeLayer(
+                mean = torch.zeros(len(continuous_features)),
+                std = torch.ones(len(continuous_features))
             )
         else:
-            std_layer = StandardizeLayer(mean=config["mean"], std=config["std"])
+            std_layer = layers.StandardizeLayer(mean=config["mean"], std=config["std"])
 
 
-        if config["continous_padding_value"] is None:
+        if config["continuous_padding_value"] is None:
             continuous_padding = None
         else:
-            continuous_padding = PaddingLayer(padding_value=-4, mask_value=EMPTY_FLOAT)
+            continuous_padding = layers.PaddingLayer(padding_value=-4, mask_value=utils.EMPTY_FLOAT)
 
 
         if config["categorical_padding_value"] is None:
             categorical_padding = None
         else:
-            categorical_padding = PaddingLayer(padding_value=config["categorical_padding_value"], mask_value=EMPTY_INT)
+            categorical_padding = layers.PaddingLayer(padding_value=config["categorical_padding_value"], mask_value=utils.EMPTY_INT)
 
         if config["enable_rotation"]:
-            rotation_layer = RotatePhiLayer(
-                columns=list(map(str, continous_features)),
+            rotation_layer = layers.RotatePhiLayer(
+                columns=list(map(str, continuous_features)),
                 ref_phi_columns=config["ref_phi_columns"],
                 rotate_columns=config["rotate_columns"],
             )
         else:
             rotation_layer = None
 
-        self.input_layer = InputLayer(
-            continuous_inputs=continous_features,
+        self.input_layer = layers.InputLayer(
+            continuous_inputs=continuous_features,
             categorical_inputs=categorical_features,
             embedding_dim=10,
-            expected_categorical_inputs=expected_embedding_inputs(),
+            expected_categorical_inputs=features.expected_embedding_inputs(),
             empty=config["categorical_padding_value"],
             std_layer=std_layer,
             rotation_layer=rotation_layer,
             padding_categorical_layer=categorical_padding,
-            padding_continous_layer=continuous_padding,
+            padding_continuous_layer=continuous_padding,
         )
 
-        self.lbn = LBN_DNN(
-            continous_features = continous_features,
+        self.lbn = layers.LBN_DNN(
+            continuous_features = continuous_features,
             M  = config["LBN_M"],
             weight_init_scale = 1.0,
             clip_weights = False,
@@ -388,12 +417,12 @@ class BinnedLBNDenseNet(torch.nn.Module):
             "normalize":False,
         }
 
-        self.transition_dense_1 = DenseBlock(input_nodes = self.input_layer.ndim + self.lbn.ndim, output_nodes = config["nodes"], activation_functions=config["activation_functions"], eps=eps, normalize=normalize) # noqa
-        self.dense_block_1 = DenseNetBlock(input_nodes = self.transition_dense_1.output_dim, output_nodes = int((config["nodes"])), **dense_config)
-        self.dense_block_2 = DenseNetBlock(input_nodes = self.dense_block_1.output_dim, output_nodes = int((config["nodes"])), **dense_config)
-        self.dense_block_3 = DenseNetBlock(input_nodes = self.dense_block_2.output_dim, output_nodes = int((config["nodes"])), **dense_config)
-        self.dense_block_4 = DenseNetBlock(input_nodes = self.dense_block_3.output_dim, output_nodes = int((config["nodes"])), **dense_config)
-        self.dense_block_5 = DenseNetBlock(input_nodes = self.dense_block_4.output_dim, output_nodes = int((config["nodes"])), **dense_config)
+        self.transition_dense_1 = layers.DenseBlock(input_nodes = self.input_layer.ndim + self.lbn.ndim, output_nodes = config["nodes"], activation_functions=config["activation_functions"], eps=eps, normalize=normalize) # noqa
+        self.dense_block_1 = layers.DenseNetBlock(input_nodes = self.transition_dense_1.output_dim, output_nodes = int((config["nodes"])), **dense_config)
+        self.dense_block_2 = layers.DenseNetBlock(input_nodes = self.dense_block_1.output_dim, output_nodes = int((config["nodes"])), **dense_config)
+        self.dense_block_3 = layers.DenseNetBlock(input_nodes = self.dense_block_2.output_dim, output_nodes = int((config["nodes"])), **dense_config)
+        self.dense_block_4 = layers.DenseNetBlock(input_nodes = self.dense_block_3.output_dim, output_nodes = int((config["nodes"])), **dense_config)
+        self.dense_block_5 = layers.DenseNetBlock(input_nodes = self.dense_block_4.output_dim, output_nodes = int((config["nodes"])), **dense_config)
         self.last_linear = torch.nn.Linear(self.dense_block_5.output_dim, 3)
 
         # pick correct last activaton function
@@ -407,7 +436,7 @@ class BinnedLBNDenseNet(torch.nn.Module):
         if binning_config is None:
             self.binning_layer = torch.nn.Identity()
         else:
-            self.binning_layer = BinningLayer(
+            self.binning_layer = layers.BinningLayer(
                 init_edges=binning_config["init_edges"],
                 kernel_cls=getattr(kernel, binning_config["kernel_cls"]),
                 kernel_cfg=binning_config["kernel_config"][binning_config["kernel_cls"]],

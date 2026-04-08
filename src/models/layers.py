@@ -1,4 +1,10 @@
 from __future__ import annotations
+import copy
+from typing import Sequence
+
+import torch
+
+from utils import logger, utils
 
 __all__ = [
     "PaddingLayer",
@@ -12,16 +18,11 @@ __all__ = [
     "StandardizeLayer",
     "RotatePhiLayer",
     "AggregationLayer",
-    "LBN"
+    "LBN",
+    "BinningLayer",
 ]
 
-from utils.utils import EMPTY_INT, EMPTY_FLOAT
-
-from typing import Sequence
-import copy
-
-import torch
-
+logger_inst = logger.get_logger(__name__)
 
 class WeightNormalizedLinear(torch.nn.Linear):  # noqa: F811
     def __init__(self ,*args, normalize=False, **kwargs):
@@ -44,7 +45,7 @@ class PaddingLayer(torch.nn.Module):  # noqa: F811
     def __init__(
         self,
         padding_value: float | int = 0,
-        mask_value: float | int = EMPTY_FLOAT,
+        mask_value: float | int = utils.EMPTY_FLOAT,
     ):
         """
         Pads input tensor on indices which equals *mask_value* with given *padding_value*.
@@ -175,12 +176,12 @@ class CategoricalTokenizer(torch.nn.Module):  # noqa: F811
         """
         # reshape to have features in the first dimension
         input_tensor = input_tensor.transpose(0, 1)
-        for i, (categorie, expected_value) in enumerate(self._expected_inputs.items()):
+        for i, (category, expected_value) in enumerate(self._expected_inputs.items()):
             uniques = set(torch.unique(input_tensor[i]).to(torch.int32).tolist())
             expected = set(expected_value)
             if uniques != expected:
                 difference = uniques - expected
-                print(f"{categorie} has values outside the expected range: {difference}")
+                logger_inst.CRITICAL(f"{category} has values outside the expected range: {difference}")
 
     def pad_to_longest(self) -> torch.FloatTensor:
         if not self._expected_inputs:
@@ -188,19 +189,19 @@ class CategoricalTokenizer(torch.nn.Module):  # noqa: F811
         # helper function to pad the input tensor to the longest category
         # first value of the category is used as padding value
         local_max = max([
-            len(input_for_categorie)
-            for input_for_categorie in self._expected_inputs.values()
+            len(input_for_category)
+            for input_for_category in self._expected_inputs.values()
         ])
         # pad with first value of the category, so we guarantee to not introduce new values
         array = torch.stack(
             [
                 torch.nn.functional.pad(
-                    torch.tensor(input_for_categorie),
-                    (0, local_max - len(input_for_categorie)),
+                    torch.tensor(input_for_category),
+                    (0, local_max - len(input_for_category)),
                     mode="constant",
-                    value=input_for_categorie[0],
+                    value=input_for_category[0],
                 )
-                for input_for_categorie in self._expected_inputs.values()
+                for input_for_category in self._expected_inputs.values()
             ],
         )
         return array
@@ -208,7 +209,7 @@ class CategoricalTokenizer(torch.nn.Module):  # noqa: F811
     def LookUpTable(
         self,
         array: torch.FloatTensor,
-        padding_value: int = EMPTY_INT,
+        padding_value: int = utils.EMPTY_INT,
     ) -> tuple[torch.FloatTensor, torch.FloatTensor] | None:
         """
         Maps multiple categories given in *array* into a sparse vectoriced lookuptable.
@@ -235,7 +236,7 @@ class CategoricalTokenizer(torch.nn.Module):  # noqa: F811
 
         # warn for big categories
         if upper_bound > 100:
-            print("Be aware that a large number of categories will result in a large sparse lookup array")
+            logger_inst.CRITICAL("Be aware that a large number of categories will result in a large sparse lookup array")
 
         # create mapping empty
         mapping_array = torch.full(
@@ -333,11 +334,11 @@ class InputLayer(torch.nn.Module):  # noqa: F811
         empty: int = 15,
         std_layer: torch.nn.Module | None = None,
         rotation_layer: torch.nn.Module | None = None,
-        padding_continous_layer: torch.nn.Module | None = None,
+        padding_continuous_layer: torch.nn.Module | None = None,
         padding_categorical_layer: torch.nn.Module | None = None,
     ):
         """
-        Enables the use of categorical and continous features in a single model.
+        Enables the use of categorical and continuous features in a single model.
         A tokenizer and embedding layer are created  is created using and an embedding layer.
         The continuous features are passed through a linear layer and then concatenated with the
         categorical features.
@@ -367,7 +368,7 @@ class InputLayer(torch.nn.Module):  # noqa: F811
 
         self.rotation_layer = self.dummy_identity(rotation_layer)
         self.std_layer = self.dummy_identity(std_layer)
-        self.padding_continous_layer = self.dummy_identity(padding_continous_layer)
+        self.padding_continuous_layer = self.dummy_identity(padding_continuous_layer)
         self.padding_categorical_layer = self.dummy_identity(padding_categorical_layer)
 
 
@@ -376,13 +377,13 @@ class InputLayer(torch.nn.Module):  # noqa: F811
             return torch.nn.Identity()
         return layer
 
-    def cateogrical_preprocessing_pipeline(self, x: torch.FloatTensor) -> torch.FloatTensor:
+    def categorical_preprocessing_pipeline(self, x: torch.FloatTensor) -> torch.FloatTensor:
         x = self.padding_categorical_layer(x)
         return self.embedding_layer(x)
 
-    def continous_preprocessing_pipeline(self, x: torch.FloatTensor) -> torch.FloatTensor:
+    def continuous_preprocessing_pipeline(self, x: torch.FloatTensor) -> torch.FloatTensor:
         # preprocessing
-        x = self.padding_continous_layer(x)
+        x = self.padding_continuous_layer(x)
         x = self.rotation_layer(x)
         x = self.std_layer(x)
         return x
@@ -391,8 +392,8 @@ class InputLayer(torch.nn.Module):  # noqa: F811
         # HINT: When comparing this layer with other compare order of inputs
         x = torch.cat(
             [
-                self.continous_preprocessing_pipeline(continuous_inputs),
-                self.cateogrical_preprocessing_pipeline(categorical_inputs),
+                self.continuous_preprocessing_pipeline(continuous_inputs),
+                self.categorical_preprocessing_pipeline(categorical_inputs),
             ],
             dim=1,
         )
@@ -1000,10 +1001,10 @@ class LBN(torch.nn.Module):
 class LBNFeaturerExtractor(torch.nn.Module):
     def __init__(
         self,
-        continous_features,
+        continuous_features,
     ):
         super().__init__()
-        self.continous_features = continous_features
+        self.continuous_features = continuous_features
         self.particles = self.find_particles_components_in_features()
 
     @property
@@ -1018,7 +1019,7 @@ class LBNFeaturerExtractor(torch.nn.Module):
         # returns dictionary with all indicies of the feature components
         def find_components(particle):
             particle_components = {}
-            for idx, s in enumerate(self.continous_features):
+            for idx, s in enumerate(self.continuous_features):
                 if particle in s:
                     component = s.split("_")[-1]
                     particle_components[component] = idx
@@ -1067,7 +1068,7 @@ class LBNFeaturerExtractor(torch.nn.Module):
 class LBN_DNN(torch.nn.Module):
     def __init__(
         self,
-        continous_features: list[str],
+        continuous_features: list[str],
         M: int = 10,
         # no N necessary for LBN, getting information from Feature extractor
         weight_init_scale: float | int = 1.0,
@@ -1075,7 +1076,7 @@ class LBN_DNN(torch.nn.Module):
         eps: float = 1.0e-5,
     ):
         super().__init__()
-        self.lbn_feature_extractor = LBNFeaturerExtractor(continous_features=continous_features)
+        self.lbn_feature_extractor = LBNFeaturerExtractor(continuous_features=continuous_features)
 
         self.lbn = LBN(M=M, N=self.lbn_feature_extractor.num_particles, clip_weights=clip_weights, eps=eps, weight_init_scale=weight_init_scale)
         self.lbn_batch_norm = torch.nn.BatchNorm1d(self.lbn.ndim())
