@@ -1,14 +1,20 @@
-import torch
-import os
-from pathlib import Path
-from models.create_model import AddActFnToModel
 import inspect
+import pathlib
+import argparse
+import os
+
 from abc import abstractmethod
 
+
+import torch
+import os
+
+from models import create_model
+
+
+
 def torch_export(model, dst_path, input_tensors):
-    from pathlib import Path
-    from models.create_model import AddActFnToModel
-    model = AddActFnToModel(model, "softmax")
+    model = create_model.AddActFnToModel(model, "softmax")
     model = model.eval()
 
     categorical_input, continuous_inputs = input_tensors
@@ -38,20 +44,20 @@ def torch_export(model, dst_path, input_tensors):
         dynamic_shapes=dynamic_shapes,
     )
 
-    p = Path(f"{dst_path}").with_suffix(".pt2")
+    p = pathlib.Path(f"{dst_path}").with_suffix(".pt2")
     torch.export.save(exp, p, pickle_protocol=4)
 
 def torch_export_v2(model, name, fold, base_dir=None, add_softmax=True):
     DEVICE=torch.device("cpu")
     if add_softmax:
-        model = AddActFnToModel(model, "softmax")
+        model = create_model.AddActFnToModel(model, "softmax")
 
     model = model.to(DEVICE)
     model = model.eval()
     # create dummy features from shape
     # batch size 1 is an edge case and overwrites dynamic batch size, thus, inflate input to prevent this
     num_cat = len(model.categorical_features)
-    num_cont = len(model.continous_features)
+    num_cont = len(model.continuous_features)
 
     categorical_input = torch.zeros(2, num_cat).to(torch.int32).to(DEVICE)
     continuous_inputs = torch.zeros(2, num_cont).to(torch.float32).to(DEVICE)
@@ -75,7 +81,7 @@ def torch_export_v2(model, name, fold, base_dir=None, add_softmax=True):
     if base_dir is None:
         base_dir = os.environ["MODELS_DIR"]
 
-    dst = (Path(base_dir) / f"{name}_fold{fold}").with_suffix(".pt2")
+    dst = (pathlib.Path(base_dir) / f"{name}_fold{fold}").with_suffix(".pt2")
     torch.export.save(exp, dst, pickle_protocol=4)
     return dst
 
@@ -96,7 +102,7 @@ class TorchExport():
     def dst(self):
         if self.save_dir is None:
             save_dir = os.environ["MODELS_DIR"]
-        return (Path(save_dir) / f"{self.model_name}_fold{self.fold}").with_suffix(".pt2")
+        return (pathlib.Path(save_dir) / f"{self.model_name}_fold{self.fold}").with_suffix(".pt2")
 
     def export(self):
         model = self.model.to(self.device)
@@ -120,7 +126,7 @@ class TorchExport():
 class TorchExportFullModel(TorchExport):
     def _input(self):
         num_cat = len(model.categorical_features)
-        num_cont = len(model.continous_features)
+        num_cont = len(model.continuous_features)
 
         categorical_input = torch.zeros(2, num_cat).to(torch.int32).to(self.device)
         continuous_inputs = torch.zeros(2, num_cont).to(torch.float32).to(self.device)
@@ -129,7 +135,7 @@ class TorchExportFullModel(TorchExport):
 
 def torch_save(model, name, fold):
     base_dir = os.environ["MODELS_DIR"]
-    dst = (Path(base_dir) / f"{name}_fold{fold}").with_suffix(".pt")
+    dst = (pathlib.Path(base_dir) / f"{name}_fold{fold}").with_suffix(".pt")
     torch.save(model, dst)
 
 
@@ -140,10 +146,6 @@ def run_exported_tensor_model(pt2_path, cat, cont):
 
 
 if __name__ == "__main__":
-    import pathlib
-    import argparse
-    import os
-
     p = argparse.ArgumentParser(description="Export model to torch-export (.pt2) with dynamic batch dim")
     p.add_argument("--model_path", "-m", required=True, help="Path to the model file (file or checkpoint) to load")
     p.add_argument("--fold", "-f", required=True, help="Fold number", default=0)

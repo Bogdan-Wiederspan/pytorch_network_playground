@@ -86,8 +86,8 @@ def clip_gradients(parameters: Iterable[torch.nn.Parameter], clip_value: float =
 
 def export_ensemble_onnx(
     ensemble_wrapper,
-    categoricat_tensor: torch.Tensor,
-    continous_tensor: torch.Tensor,
+    categorical_tensor: torch.Tensor,
+    continuous_tensor: torch.Tensor,
     save_dir: str,
     opset_version: int = None,
 ) -> str:
@@ -97,8 +97,8 @@ def export_ensemble_onnx(
 
     Args:
         ensemble_wrapper (MLEnsembleWrapper): _description_
-        categoricat_tensor (torch.tensor): tensor representing categorical features
-        continous_tensor (torch.tensor): tensor representing categorical features
+        categorical_tensor (torch.tensor): tensor representing categorical features
+        continuous_tensor (torch.tensor): tensor representing categorical features
         save_dir (str): directory where the onnx model will be saved.
         opset_version (int, optional): version of the used operation sets. Defaults to None.
 
@@ -112,8 +112,8 @@ def export_ensemble_onnx(
 
     export_onnx(
         ensemble_wrapper,
-        categoricat_tensor,
-        continous_tensor,
+        categorical_tensor,
+        continuous_tensor,
         save_dir,
         opset_version=opset_version,
     )
@@ -121,14 +121,14 @@ def export_ensemble_onnx(
 
 def export_onnx(
     model: torch.nn.Module,
-    categoricat_tensor: torch.Tensor,
-    continous_tensor: torch.Tensor,
+    categorical_tensor: torch.Tensor,
+    continuous_tensor: torch.Tensor,
     save_dir: str,
     opset_version: int = None,
 ) -> str:
     """
     Function to export a loaded pytorch *model* to onnx format saved in *save_dir*.
-    To successfully export the model, the input tensors *categoricat_tensor* and *continous_tensor* must be provided.
+    To successfully export the model, the input tensors *categorical_tensor* and *continuous_tensor* must be provided.
     For backwards compatibility, an opset_version can be enforced.
     A table about which opsets are available can be found here: https://onnxruntime.ai/docs/reference/compatibility.html
     Some operations are only available in newer opsets, or change behavior inbetween version.
@@ -136,8 +136,8 @@ def export_onnx(
 
     Args:
         model (torch.nn.model): loaded Pytorch model, ready to perform inference.
-        categoricat_tensor (torch.tensor): tensor representing categorical features
-        continous_tensor (torch.tensor): tensor representing categorical features
+        categorical_tensor (torch.tensor): tensor representing categorical features
+        continuous_tensor (torch.tensor): tensor representing categorical features
         save_dir (str): directory where the onnx model will be saved.
         opset_version (int, optional): version of the used operation sets. Defaults to None.
 
@@ -154,15 +154,15 @@ def export_onnx(
     save_path = f"{save_dir}-onnx_{onnx_version}-rt_{runtime_version}-torch{torch_version}.onnx"
 
     # prepare export
-    num_cat_features = categoricat_tensor.shape[-1]
-    num_cont_features = continous_tensor.shape[-1]
+    num_cat_features = categorical_tensor.shape[-1]
+    num_cont_features = continuous_tensor.shape[-1]
 
     # cast to proper format, numpy and float32
-    categoricat_tensor = categoricat_tensor.numpy().astype(np.float32).reshape(-1, num_cat_features)
-    continous_tensor = continous_tensor.numpy().astype(np.float32).reshape(-1, num_cont_features)
+    categorical_tensor = categorical_tensor.numpy().astype(np.float32).reshape(-1, num_cat_features)
+    continuous_tensor = continuous_tensor.numpy().astype(np.float32).reshape(-1, num_cont_features)
 
     # double bracket is necessary since onnx, and our model unpacks the input tuple
-    input_feed = ((categoricat_tensor, continous_tensor),)
+    input_feed = ((categorical_tensor, continuous_tensor),)
 
     torch.onnx.export(
         model,
@@ -189,16 +189,16 @@ def export_onnx(
 def test_run_onnx(
     model_path: str,
     categorical_array: np.ndarray,
-    continous_array: np.ndarray,
+    continuous_array: np.ndarray,
 ) -> np.ndarray:
     """
     Function to run a test inference on a given *model_path*.
-    The *categorical_array* and *continous_array* are expected to be given as numpy arrays.
+    The *categorical_array* and *continuous_array* are expected to be given as numpy arrays.
 
     Args:
         model_path (str): Model path to onnx model
         categorical_array (np.ndarray): Array of categorical features
-        continous_array (np.ndarray): Array of continous features
+        continuous_array (np.ndarray): Array of continuous features
 
     Returns:
         np.ndarray: Prediction of the model
@@ -210,7 +210,7 @@ def test_run_onnx(
     # setup data
     input_feed = {
         first_node.name: categorical_array.reshape(-1, first_node.shape).astype(np.float32),
-        second_node.name: continous_array.reshape(-1, second_node.shape).astype(np.float32),
+        second_node.name: continuous_array.reshape(-1, second_node.shape).astype(np.float32),
     }
 
     output_name = [output.name for output in sess.get_outputs()]

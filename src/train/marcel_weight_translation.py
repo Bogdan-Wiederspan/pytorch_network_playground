@@ -72,7 +72,7 @@ def modify_state_dict_with_marcels_weights(state_dict):
             my_model_state_dict[translation_key] = torch.from_numpy(m_layer_weight)
     return my_model_state_dict
 
-def replace_standardization_layer_state_dict(state_dict, continous_features):
+def replace_standardization_layer_state_dict(state_dict, continuous_features):
     # load standardization layers parameter from jsommn
     # print(f"copy mean and std")
     # with open("/afs/desy.de/user/r/riegerma/public/stats.json") as file:
@@ -131,7 +131,7 @@ def replace_standardization_layer_state_dict(state_dict, continous_features):
 
     f_mean, f_std = [], []
     # stat = stats["stats"]
-    for feature, (mean, std) in zip(continous_features, stats):
+    for feature, (mean, std) in zip(continuous_features, stats):
         f_mean.append(mean)
         f_std.append(std**0.5)
         # f_mean.append(stat[feature]["mean"])
@@ -144,7 +144,7 @@ def replace_standardization_layer_state_dict(state_dict, continous_features):
     state_dict["input_layer.std_layer.std"] = f_std
     return state_dict
 
-def load_marcels_weights(model, continous_features, with_std=True, with_weights=True):
+def load_marcels_weights(model, continuous_features, with_std=True, with_weights=True):
     if with_std == False or with_weights == False:
         print("return unmodified model")
         return model
@@ -155,7 +155,7 @@ def load_marcels_weights(model, continous_features, with_std=True, with_weights=
         m_state = modify_state_dict_with_marcels_weights(m_state)
     if with_std:
         print("loading std stats from marcel")
-        m_state = replace_standardization_layer_state_dict(m_state, continous_features)
+        m_state = replace_standardization_layer_state_dict(m_state, continuous_features)
 
     model.load_state_dict(m_state)
     return model

@@ -7,8 +7,20 @@ import awkward as ak
 import sklearn
 import matplotlib.pyplot as plt
 
-from utils import EMPTY_INT, EMPTY_FLOAT
-# import data.train.metrics
+import utils
+
+
+def dummy_figure() -> tuple[plt.Figures, plt.Axes]:
+    """
+    Dummy figure that should be used as placeholder
+
+    Returns:
+        tuple(plt.Figure, plt.Axes):
+    """
+    fig, ax = plt.subplots(1, 1, figsize=(8, 8))
+    ax.text((0.5, 0.5), "Not existing", fontsize="large", color="red")
+    return fig, ax
+
 
 def plot_input_features(data_map, columns):
     all_data = ak.concatenate([x.data for x in data_map])
@@ -23,7 +35,7 @@ def plot_input_features(data_map, columns):
     for ax, _route in zip(axes.flatten(), columns):
         data = _route.apply(all_data).to_numpy().astype(np.float32)
         # mask NaNs
-        empty_mask = data == EMPTY_FLOAT
+        empty_mask = data == utils.EMPTY_FLOAT
 
         ax.set_xlabel(_route.column)
         ax.set_ylabel("frequency")
@@ -44,54 +56,54 @@ def plot_input_features(data_map, columns):
         _ = ax.hist(np.clip(data, a_min=lower_edge, a_max=None), bins=bins)
     return fig, axes
 
-def network_binary_predictions(y_true, y_pred, target_map, normalize=True, single_legend=False, **kwargs):
-    # create a figure with subplots for each node, where the score is shown
-    # nodes are defined over target_map order
+# def network_binary_predictions(y_true, y_pred, target_map, normalize=True, single_legend=False, **kwargs):
+#     # create a figure with subplots for each node, where the score is shown
+#     # nodes are defined over target_map order
 
-    fig, axes = plt.subplots(1,1, figsize=(8, 8))
-    fig.suptitle(kwargs.pop("title", None))
-    weight = None
-    # get events that are predicted correctly for each class
+#     fig, axes = plt.subplots(1,1, figsize=(8, 8))
+#     fig.suptitle(kwargs.pop("title", None))
+#     weight = None
+#     # get events that are predicted correctly for each class
 
-    y_label = "frequency"
+#     y_label = "frequency"
 
-    if not normalize:
-        axes[0].set_yscale("log")
-        axes[0].set_ylim(top=len(y_pred))
-    else:
-        axes[0].set_yscale("linear")
-        axes[0].set_ylim(top=1.)
-        y_label += " normalized"
+#     if not normalize:
+#         axes[0].set_yscale("log")
+#         axes[0].set_ylim(top=len(y_pred))
+#     else:
+#         axes[0].set_yscale("linear")
+#         axes[0].set_ylim(top=1.)
+#         y_label += " normalized"
 
-    axes[0].set_xlabel("Prediction", )
-    axes[0].set_ylabel(y_label)
-    axes[0].grid()
+#     axes[0].set_xlabel("Prediction", )
+#     axes[0].set_ylabel(y_label)
+#     axes[0].grid()
 
+#     from IPython import embed; embed(header = " line: 70 in plotting.py")
 
-            # get events of specific cls (e.g. hh)
-            correct_cls_mask = y_true[:, data_idx] == 1
-            # get predictions for cls
-            filtered_predictions = y_pred[correct_cls_mask][:, node_idx]
+#     correct_cls_mask = y_true[:, data_idx] == 1
+#     # get predictions for cls
+#     filtered_predictions = y_pred[correct_cls_mask][:, node_idx]
 
-            if normalize:
-                weight = np.full(filtered_predictions.shape, 1 / len(filtered_predictions))
+#     if normalize:
+#         weight = np.full(filtered_predictions.shape, 1 / len(filtered_predictions))
 
-            _ = axes[node_idx].hist(
-                filtered_predictions,
-                bins=kwargs.get("bins", 20),
-                histtype=kwargs.get("histtype", "step"),
-                alpha=kwargs.get("alpha", 0.7),
-                label=data_cls,
-                weights=weight,
-                **kwargs,
-        )
-        if not single_legend:
-            axes[node_idx].legend()
-    if single_legend:
-        lines_labels = [fig.axes[0].get_legend_handles_labels()]
-        lines, labels = [sum(lol, []) for lol in zip(*lines_labels)]
-        fig.legend(lines, labels)
-    return fig, axes
+#     _ = axes[node_idx].hist(
+#         filtered_predictions,
+#         bins=kwargs.get("bins", 20),
+#         histtype=kwargs.get("histtype", "step"),
+#         alpha=kwargs.get("alpha", 0.7),
+#         label=data_cls,
+#         weights=weight,
+#         **kwargs,
+# )
+#         if not single_legend:
+#             axes[node_idx].legend()
+#     if single_legend:
+#         lines_labels = [fig.axes[0].get_legend_handles_labels()]
+#         lines, labels = [sum(lol, []) for lol in zip(*lines_labels)]
+#         fig.legend(lines, labels)
+#     return fig, axes
 
 
 
@@ -145,6 +157,170 @@ def network_predictions(y_true, y_pred, target_map, normalize=True, single_legen
         lines, labels = [sum(lol, []) for lol in zip(*lines_labels)]
         fig.legend(lines, labels)
     return fig, axes
+
+class BinningTimeSeries():
+    def __init__(self):
+        self.bin_edges_per_iteration = {} # iteration: edges
+
+    def __setitem__(self, key, value):
+        self.bin_edges_per_iteration[key] = value
+
+    def plot(self):
+        xlabel="Batch Iteration"
+        ylabel="Bin Population"
+
+        bin_width = 1.0
+        bottom = np.zeros(len(self.bin_edges_per_iteration.keys()))
+        # x = np.array([int(key) for key in self.bin_edges_per_iteration.keys()])
+        x = self.bin_edges_per_iteration.keys()
+        # need to invert data from iteration: edges -> bins : edges
+        y = np.array(self.bin_edges_per_iteration.values()).transpose()
+        bins = {_x:_y for _x,_y in zip(x,y)}
+        fig, ax = plt.subplots()
+
+
+    #     bottom = np.zeros(5)
+    # ...:         bins = {_x:_y for _x,_y in zip(x,y)}
+    # ...:         fig, ax = plt.subplots()
+    # ...:
+    # ...:         for iteration, bin_value in bins.items():
+    # ...:             p = ax.bar(x, bin_value, 50, bottom=bottom)
+    # ...:             bottom = bin_value
+
+
+        for iteration, bin_value in bins.items():
+            p = ax.bar(x, bin_value, bin_width, bottom=bottom)
+            bottom += bin_value
+
+            ax.bar_label(p, label_type='center')
+
+        ax.set_title('Number of penguins by sex')
+        ax.legend()
+
+        plt.show()
+
+def visualize_bins(kernels=None):
+    fig, ax = plt.subplots(1, 1, figsize=(8, 8))
+    # when no kernels exist simply return empty fig
+    if kernels is None:
+        return dummy_figure()
+    x = torch.linspace(-0.2,1.2,200)
+
+    for kernel in kernels:
+        y = kernel(x)
+        ax.plot(x,y)
+
+    ax.set_xlabel("Kernel input", size=25)
+    ax.set_ylabel("Kernel output", size=25)
+    ax.grid()
+    return fig, ax
+
+def network_predictions_hh(y_true, y_pred, target_map, binning_edges, normalize, current_iteration, **kwargs):
+    # create a figure with subplots for hh node in normal and log
+    signal_idx = target_map["hh"]
+
+    num_plots = 3
+    fig, axes = plt.subplots(1, num_plots, figsize=(8 * num_plots, 8))
+    fig.suptitle(kwargs.pop("title", None))
+
+    # identify events uses TRUTH information to create masks
+    masks = {process: (y_true[:, idx] == 1) for process, idx in target_map.items()}
+    # to get node information apply index filtering on PREDICTION
+    hh_node = {process: y_pred[masks[process]][:, signal_idx] for process, idx in target_map.items()}
+    hh_node["background"] = np.concatenate([hh_node["dy"], hh_node["tt"]], axis=0)
+
+    # number of events are not evenly distributed outside of sampler
+    # normalize is a factor that also shows up in the legend
+    # by default weight is set to 1
+    weights = {process: None for process in target_map}
+    if normalize:
+        weights = {process: np.full(value.shape, 1 / len(value)) for process, value in hh_node.items()}
+
+    # plotting
+    # first for the 2 plots with combined background,
+    # last for the one with separated background
+    for ax in axes[:2]:
+        _ = ax.hist(
+            hh_node["hh"],
+            bins=binning_edges, # needs to be given from outside, since this is a dynamic variable
+            histtype=kwargs.get("histtype", "step"),
+            alpha=kwargs.get("alpha", 0.7),
+            label="signal",
+            weights=weights["hh"],
+            hatch="/",
+            **kwargs,
+        )
+
+        _ = ax.hist(
+            hh_node["background"],
+            bins=binning_edges,
+            histtype=kwargs.get("histtype", "step"),
+            alpha=kwargs.get("alpha", 0.7),
+            label="background",
+            weights=weights["background"],
+            hatch="\\",
+            **kwargs,
+        )
+
+    _ = axes[2].hist(
+            hh_node["hh"],
+            bins=binning_edges, # needs to be given from outside, since this is a dynamic variable
+            histtype=kwargs.get("histtype", "step"),
+            alpha=kwargs.get("alpha", 0.7),
+            label="hh",
+            weights=weights["hh"],
+            hatch="/",
+            **kwargs,
+        )
+
+    _ = axes[2].hist(
+            hh_node["dy"],
+            bins=binning_edges,
+            histtype=kwargs.get("histtype", "step"),
+            alpha=kwargs.get("alpha", 0.7),
+            label="dy",
+            weights=weights["dy"],
+            hatch="\\",
+            **kwargs,
+        )
+
+    _ = axes[2].hist(
+            hh_node["tt"],
+            bins=binning_edges,
+            histtype=kwargs.get("histtype", "step"),
+            alpha=kwargs.get("alpha", 0.7),
+            label="tt",
+            weights=weights["tt"],
+            hatch="*",
+            **kwargs,
+            )
+
+    # settings
+    for ax in axes:
+        # legend, adding iteration number and weigh factor
+        lines, labels = ax.get_legend_handles_labels()
+        dummy_line = plt.Line2D([], [], linestyle="", marker="")
+        # current iteration
+        lines.append(dummy_line)
+        labels.append(f"batch: {current_iteration}")
+        # number of events
+        lines.append(dummy_line)
+        labels.append("\n".join([f"{process}: {len(hh_node[process])}" for process in target_map.keys()]))
+        ax.legend(lines, labels)
+
+        y_label = "frequency"
+        x_label = "HH node"
+
+        ax.set_xlabel(x_label, size=25)
+        ax.set_ylabel(y_label, size=25)
+        ax.set_ylim((-0.1,1.1))
+        ax.set_xlim((-0.1,1.1))
+        ax.grid()
+
+    axes[0].set_ylim(None, 1.1)
+    axes[0].set_yscale("log")
+    return fig, axes
+
 
 def confusion_matrix(y_true, y_pred, target_map, sample_weight=None, normalized="true", cmap="Blues", **kwargs):
     """
@@ -311,3 +487,11 @@ def plot_batch(self, input, target, loss, iteration, target_map=None, labels=Non
         cax.annotate(f"iteration {iteration}", (0.75, 0.55))
         cax.legend()
     fig.savefig(f"1d_cats_{iteration}.png")
+
+
+def add_number_legend(ax, string):
+    lines, labels = ax.get_legend_handles_labels()
+    dummy_line = plt.Line2D([], [], linestyle="", marker="")
+    lines.append(dummy_line)
+    labels.append(string)
+    return lines, labels

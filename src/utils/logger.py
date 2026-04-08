@@ -3,6 +3,45 @@ import sys
 import os
 from pathlib import Path
 
+RED_LEVEL = 21
+GREEN_LEVEL = 22
+YELLOW_LEVEL = 23
+BLUE_LEVEL = 24
+MAGENTA_LEVEL = 25
+CYAN_LEVEL = 26
+
+_color_levels_registered = False
+
+# helper function to add log methods for custom levels
+def _make_log_method(level_num):
+    def log_method(self, msg, *args, **kwargs):
+        if self.isEnabledFor(level_num):
+            self._log(level_num, msg, args, **kwargs)
+    return log_method
+
+
+def _register_color_levels():
+    global _color_levels_registered
+    if _color_levels_registered:
+        return
+
+    # color levels mapping that are used in ColoredFormatter, add them to logging and create methods for them
+    color_levels = {
+        RED_LEVEL: "RED",
+        GREEN_LEVEL: "GREEN",
+        YELLOW_LEVEL: "YELLOW",
+        BLUE_LEVEL: "BLUE",
+        MAGENTA_LEVEL: "MAGENTA",
+        CYAN_LEVEL: "CYAN",
+    }
+    # register the levels and add methods to the Logger class
+    for level_num, level_name in color_levels.items():
+        logging.addLevelName(level_num, level_name)
+        setattr(logging.Logger, level_name.lower(), _make_log_method(level_num))
+
+    _color_levels_registered = True
+
+
 def get_logger(name=None):
     logger = logging.getLogger(name)
     if not logger.hasHandlers():
@@ -11,34 +50,48 @@ def get_logger(name=None):
         handler.setFormatter(formatter)
         logger.addHandler(handler)
         logger.setLevel(logging.INFO)
+
+        _register_color_levels()
+
     return logger
 
 
+
 class ColoredFormatter(logging.Formatter):
-    COLORS = {
-        "CRITICAL": "\x1b[95m",  # bright magenta
-        "ERROR":    "\x1b[91m",  # red
-        "WARNING":  "\x1b[93m",  # yellow
-        "INFO":     "\x1b[92m",  # green
-        "DEBUG":    "\x1b[36m",  # cyan
-    }
-    RESET = "\x1b[0m"
+    RESET =     "\x1b[0m"
+
+    # foreground colors
+    RED =       "\x1b[91m"
+    GREEN =     "\x1b[92m"
+    YELLOW =    "\x1b[93m"
+    BLUE =      "\x1b[94m"
+    MAGENTA =   "\x1b[95m"
+    CYAN =      "\x1b[96m"
+
+    # background colors
+    CRITICAL =  "\x1b[45m"  # bright magenta
+    ERROR =     "\x1b[41m"  # red
+    WARNING =   "\x1b[43m"  # yellow
+    INFO =      "\x1b[42m"  # green
+    DEBUG =     "\x1b[46m"  # cyan
 
     def __init__(self, fmt=None, datefmt=None, style="%", use_color=True):
         super().__init__(fmt=fmt, datefmt=datefmt, style=style)
         self.use_color = use_color and sys.stdout.isatty()
 
     def format(self, record):
+        # get the original log message
         message = super().format(record)
         if self.use_color:
-            color = self.COLORS.get(record.levelname, "")
+            color = getattr(self, record.levelname)
+            # color = self.COLORS.get(record.levelname, "")
             return f"{color}{message}{self.RESET}"
         return message
 
 class TensorboardLogger():
-    def __init__(self, name=None):
+    def __init__(self, name=None, path=None):
         self.hash = name.stem
-        self.path = self.logger_path()
+        self.path = self.logger_path() if path is None else self.log_dir / path
         self.writer = self.create_tensorboard_writer(log_dir=self.path)
 
     def log_scalar(self, tag, value, step):
@@ -46,6 +99,9 @@ class TensorboardLogger():
 
     def log_loss(self, values, step):
         self.writer.add_scalars("Loss", values, global_step=step)
+
+    def log_scalar(self, values, step, name):
+        self.writer.add_scalars(name, values, global_step=step)
 
     def log_lr(self, value, step):
         self.writer.add_scalar("Learning_Rate", value, step)

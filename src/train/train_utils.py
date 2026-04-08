@@ -1,9 +1,23 @@
 import torch
+import numpy as np
+
 import plotting
 import metrics
 import train_config
-from loss import ZScore
+
 functions = {}
+
+
+def do_scheduler_step(loss, logger, scheduler_inst, model_inst, optimizer_inst, checkpoint_inst):
+    previous_lr =  optimizer_inst.param_groups[0]["lr"]
+    scheduler_inst.step(loss)
+    current_lr = optimizer_inst.param_groups[0]["lr"]
+    if previous_lr != current_lr:
+        logger.info(f"{previous_lr} -> {current_lr}")
+        logger.info(f"Reload model and optimizer from iteration ")
+        model_inst.load_state_dict(checkpoint_inst.last_checkpoint["model_state_dict"])
+        optimizer_inst.load_state_dict(checkpoint_inst.last_checkpoint["optimizer_state_dict"])
+
 
 def register(fn):
     # helper to register functions in pool of functions
@@ -49,7 +63,7 @@ def training_default(model, loss_fn, optimizer, sampler, sample_from, device):
     optimizer.zero_grad()
 
     events = sampler.sample_batch(sample_from=sample_from, device=device)
-    pred = model(categorical_inputs=events.pop("categorical"), continuous_inputs=events.pop("continous"))
+    pred = model(categorical_inputs=events.pop("categorical"), continuous_inputs=events.pop("continuous"))
 
     # loss = loss_fn(pred, targets.reshape(-1,3), weight, idx)
     targets = events.pop("targets")
@@ -111,7 +125,7 @@ def validation_default(model, loss_fn, sampler, sample_from, device):
             dataset_losses = []
 
             for events in validation_batch_generator:
-                val_pred = model(categorical_inputs=events.pop("categorical"), continuous_inputs=events.pop("continous"))
+                val_pred = model(categorical_inputs=events.pop("categorical"), continuous_inputs=events.pop("continuous"))
                 targets = events.pop("targets")
                 loss = loss_fn(val_pred, targets.reshape(-1,3), events, debug=False)
                 # collect data for metric plots
@@ -154,11 +168,7 @@ def validation_signal_efficiency(model, loss_fn, sampler, sample_from, device):
 
 
             for events in validation_batch_generator:
-
-
-
-
-                val_pred = model(categorical_inputs=events.pop("categorical"), continuous_inputs=events.pop("continous"))
+                val_pred = model(categorical_inputs=events.pop("categorical"), continuous_inputs=events.pop("continuous"))
                 p.append(val_pred)
                 targets = events.pop("targets")
                 t.append(targets)
@@ -195,22 +205,43 @@ def validation_signal_efficiency(model, loss_fn, sampler, sample_from, device):
 
 
 def log_metrics(tensorboard_inst, iteration_step, sampler_output, target_map, mode="train", **data):
+    # outputs of network
+    pred, tar, weights = sampler_output
+
     # general logging
     if (loss := data.get("loss")) is not None:
         tensorboard_inst.log_loss({mode: loss}, step=iteration_step)
 
+    # log crossentropy as metric
+    # weights are EVENT WEIGHTS, but cross entropy want to have cls weights
+    # for this reason reduce is set to false and manual average is calculated
+    cce_metric = torch.nn.functional.cross_entropy(pred, tar, weight=None, reduction="none")
+    cce_metric = torch.mean(cce_metric * weights)
+    tensorboard_inst.log_scalar(values={mode: cce_metric}, step=iteration_step, name=f"{mode} CrossEntropy")
+
     if (lr := data.get("lr")) is not None:
         tensorboard_inst.log_lr(lr, step=iteration_step)
 
-    pred, tar, weights = sampler_output
+    # figure logging
+    # binned_network prediction plot of hh and background
+    pred_fig, pred_ax = plotting.network_predictions_hh(
+        tar,
+        pred,
+        target_map,
+        normalize=True,
+        binning_edges=data["binning_edges"],
+        current_iteration=iteration_step,
+    )
+    tensorboard_inst.log_figure(f"{mode} HH node output", pred_fig, step=iteration_step)
 
-    # network prediction plot
     pred_fig, pred_ax = plotting.network_predictions(
         tar,
         pred,
-        target_map
+        target_map,
+        normalize=True,
     )
     tensorboard_inst.log_figure(f"{mode} node output", pred_fig, step=iteration_step)
+
 
     # confusion matrix plot
     c_mat_fig, c_mat_ax, c_mat = plotting.confusion_matrix(
@@ -230,16 +261,11 @@ def log_metrics(tensorboard_inst, iteration_step, sampler_output, target_map, mo
     )
     tensorboard_inst.log_figure(f"{mode} roc curve one vs rest", roc_fig, step=iteration_step)
 
-    # TODO: metrics calculation
-    # _metrics = metrics.calculate_metrics(
-    #     tar,
-    #     pred,
-    #     label=list(target_map.keys()),
-    #     weights=weights,
-    # )
+    # edge plot
+    kernel_fig, kernel_ax = plotting.visualize_bins(data["kernels"])
+    tensorboard_inst.log_figure("bin edges", kernel_fig, step=iteration_step)
 
-    # tensorboard_inst.log_precision(_metrics, step=iteration_step, mode=mode)
-    # tensorboard_inst.log_sensitivity(_metrics, step=iteration_step, mode=mode)
+
 
 training_fn = functions.get(f"training_{train_config.config["training_fn"]}")
 validation_fn = functions.get(f"validation_{train_config.config["validation_fn"]}")

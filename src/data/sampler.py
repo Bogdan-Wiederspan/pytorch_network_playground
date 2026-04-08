@@ -293,20 +293,20 @@ class ProcessSampler(t_data.Sampler):
         return list(self.process_inst.keys())
 
     def print_sample_rates(self):
-        logger.info(f"Sample rate for Dataset of Era")
+        logger_inst.yellow(f"Sample rate for Dataset of Era")
 
         for dataset_type, uid in self.process_inst.items():
             total_batch = 0
-            logger.info(f"{dataset_type}:")
+            logger_inst.white(f"{dataset_type}:")
             for (pid), ds in uid.items():
-                logger.info(f"\t{pid} | {ds.sample_size}")
+                logger_inst.white(f"\t{pid} | {ds.sample_size}")
                 total_batch += ds.sample_size
-            logger.info(f"\tsum/expected: {total_batch}/{(self.sample_ratio[ds.dataset_type] * self.batch_size).item()}")
+            logger_inst.white(f"\tsum/expected: {total_batch}/{(self.sample_ratio[ds.dataset_type] * self.batch_size).item()}")
 
     def calculate_sample_size(self, process_type, dry=False):
         if self.batch_size == -1:
             raise ValueError("Batch Size < 1 is not supported. Try a number big enough to be representative")
-        logger.info(f"Calculate sample sizes for: {process_type}")
+        logger_inst.yellow(f"Calculate sample sizes for: {process_type}")
         # unpack and convert to tensors for easier handling, get desired_sub_batch_size
         weights = torch.tensor([proc.weights_statistics["normalization_weights"]["whole_sum"] for proc in self.process_inst[process_type].values()])
         min_size = torch.tensor(self.min_size)
@@ -398,7 +398,7 @@ class ProcessSampler(t_data.Sampler):
             for k, w in zip(list(self.process_inst[process_type].keys()), floored_sizes):
                 self.process_inst[process_type][k].sample_size = w.item()
         else:
-            logger.info({k:w.item() for k,w in zip(list(self.process_inst[process_type].keys()), floored_sizes)})
+            logger_inst.white({k:w.item() for k,w in zip(list(self.process_inst[process_type].keys()), floored_sizes)})
 
     def sample_batch(self, sample_from: list[str], device: torch.device=torch.device("cpu")):
         """
@@ -502,7 +502,8 @@ def create_sampler(
             randomize=True,
         )
         process_sampler.add_process_instance(process)
-        logger.info(f"Add {process_type} pid: {process_id}")
+        if verbose:
+            logger.YELLOW(f"Add {process_type} pid: {process_id}")
 
     if train:
         for process_type in process_sampler.keys:

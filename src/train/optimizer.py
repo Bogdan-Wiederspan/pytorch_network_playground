@@ -142,8 +142,8 @@ class SAM(torch.optim.Optimizer):
         super().load_state_dict(state_dict)
         self.base_optimizer.param_groups = self.param_groups
 
-    def sam_training_routine(self, model, categorical_x, continous_x, target, loss_fn):
-        pred = model((categorical_x, continous_x))
+    def sam_training_routine(self, model, categorical_x, continuous_x, target, loss_fn):
+        pred = model((categorical_x, continuous_x))
         loss = loss_fn(pred, target)
 
         loss.backward()
@@ -151,7 +151,7 @@ class SAM(torch.optim.Optimizer):
 
         # second forward step with disabled bachnorm running stats in second forward step
         self.disable_running_stats(model)
-        pred_2 = model(categorical_x, continous_x)
+        pred_2 = model(categorical_x, continuous_x)
         loss_fn(pred_2, target).backward()
         self.second_step(zero_grad=True)
 

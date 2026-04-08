@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import torch
 import kernel
+import binning
 
 class SignalEfficiency(torch.nn.Module):
     def __init__(self, sampler, device, train=True, mode="full", uncertainty=0.1, *args, **kwargs):
@@ -168,22 +169,40 @@ class SignalEfficiency(torch.nn.Module):
         if (s <= 0 or b <= 0):
             from IPython import embed; embed(header = "Either s or b is below 0, which is not physical, starting debugger in Forward of SignalEfficiency loss")
         uncertainty = self._uncertainty(b)
-
         loss = self.loss(s= s, b=b, unc_b=uncertainty)
         if loss == 0:
             return 0
+        if torch.isnan(1 / loss):
+            from IPython import embed; embed(header = "IsNan line: 176 in loss.py")
+
         return 1 / loss
 
 class BinningAwareSignificance(SignalEfficiency):
     def __init__(
         self,
         num_bins,
+        binning_fn,
         *args,
         **kwargs
         ):
         super().__init__(**kwargs)
-        self.edges = torch.linspace(0, 1, num_bins + 1)
-        self.kernels = [kernel.GaussianKernel(low, upper, smooth_width=0.05) for low, upper in zip(self.edges[:-1], self.edges[1:])]
+        # self.edges = torch.linspace(0, 1, num_bins + 1)
+        self.binning_fn = binning_fn
+        _low, _max = 0, .99
+        self.edges = self.binning_fn(_low, _max, num_bins + 1)
+
+        kernels = []
+        for low, upper in zip(self.edges[:-1], self.edges[1:]):
+            if low == _low:
+                bin_type = "underflow"
+            elif low == _max:
+                bin_type = "overflow"
+            else:
+                bin_type = "normal"
+            k = kernel.GaussianKernel((low, upper), smooth_width=torch.tensor(0.01), abs_mode=False, bin_type = bin_type, smooth_zone_value=torch.tensor(0.5))
+            kernels.append(k)
+
+        self.kernels = kernels
 
     def digitize_masks(self, x, bin_edges, include_left_edge = True):
         # create masks for each bin and save them in a mask dictionary, where the key is the bin number
@@ -278,18 +297,7 @@ class BinningAwareSignificance(SignalEfficiency):
         # uncertainty = self._uncertainty(b)
         loss = self.loss(s=s, b=b, unc_b=0)
         loss = loss.sum()
-        from IPython import embed; embed(header = "line: 337 in loss.py")
-        # loss = []
-        # for _s, _b in zip(s, b):
-        #     v = self.loss(s=_s, b=_b, unc_b=0)
-        #     nan_mask = v.isnan()
-        #     eps_mask = (v < 10e-5)
-        #     f_mask = (~nan_mask) & eps_mask
-        #     loss.append(v[f_mask])
-        # loss = torch.stack(loss, axis=1).sum()
-        # if loss == 0:
-        #     return 0
-
+        # from IPython import embed; embed(header = "line: 337 in loss.py")
         return 1 / loss
 
 
@@ -382,7 +390,6 @@ class ZScore(torch.nn.Module):
         background_fraction_score = torch.sum(self.background_scores(background_prediction, background_truth, weight, idx))
 
         max_score = torch.sum(torch.tensor(weight["signal"])) / self.eps**0.5
-        # print(signal_fraction_score, background_fraction_score, max_score)
         coefficient = (max_score - signal_fraction_score) / background_fraction_score
         loss = self.base_loss_inst(pred, truth)
         if torch.isnan(coefficient) or torch.isnan(loss):
