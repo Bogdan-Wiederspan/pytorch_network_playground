@@ -2,14 +2,15 @@ import torch
 import torch.utils.data as t_data
 from collections import defaultdict
 
-from utils.logger import get_logger
-logger = get_logger(__name__)
+from utils import logger
+
+logger_inst = logger.get_logger(__name__)
 
 class Process(t_data.Dataset):
 
     def __init__(
         self,
-        continous: torch.Tensor,
+        continuous: torch.Tensor,
         categorical: torch.Tensor,
         target: torch.Tensor,
         normalization_weights: torch.Tensor,
@@ -24,7 +25,7 @@ class Process(t_data.Dataset):
         A Process Dataset class represents all data connected to a process identified by *process id*.
         Each process is also associated with a *process type* like "tt", "dy, "hh" etc.
         The randomize flag controls whether the data is shuffled at the beginning of each full pass.
-        The process data itself is stored as torch tensors in the attributes *continous*, *categorical* and *targets*.
+        The process data itself is stored as torch tensors in the attributes *continuous*, *categorical* and *targets*.
         A process, knows about its individual *normalization_weights* and *product_of_weights*, but also the total weight of the process type.
 
         The normalization weights represent the scaling from oversampling of the MC generator.
@@ -35,7 +36,7 @@ class Process(t_data.Dataset):
         The *product_of_weights* is the product of all event weights assigned during generation and reconstruction.
 
         Args:
-            continous (torch.Tensor): Tensor with continous features of shape [num_events, num_continous_features]
+            continuous (torch.Tensor): Tensor with continuous features of shape [num_events, num_continuous_features]
             categorical (torch.Tensor): Tensor with categorical features of shape [num_events, num_categorical_features]
             target (torch.Tensor): Tensor with target one-hot encoded of shape [num_events, num_classes]
             normalization_weights (torch.Tensor): Tensor with normalization weights per event of shape [num_events].
@@ -47,7 +48,7 @@ class Process(t_data.Dataset):
             randomize (bool, optional): Defines if a new cycle of a process instance is shuffled. Defaults to True.
         """
 
-        self.continous = continous.to(torch.float32)
+        self.continuous = continuous.to(torch.float32)
         self.categorical = categorical.to(torch.int32)
         self.targets = target.to(torch.float32)
 
@@ -82,7 +83,7 @@ class Process(t_data.Dataset):
         return self.targets.shape[0]
 
     def __getitem__(self, idx):
-        return self.continous[idx], self.continous[idx], self.targets[idx]
+        return self.continuous[idx], self.continuous[idx], self.targets[idx]
 
     def reset(self):
         """
@@ -128,7 +129,7 @@ class Process(t_data.Dataset):
         sampled_events["weights"] = torch.full((len(idx), 1), self.weights_statistics["normalization_weights"]["whole_sum"] / self.sample_size).to(device)
         return sampled_events
 
-        # return self.continous[idx].to(device), self.categorical[idx].to(device), self.targets[idx].to(device)
+        # return self.continuous[idx].to(device), self.categorical[idx].to(device), self.targets[idx].to(device)
 
     def create_sample_generator(self, sample_from, batch_size=-1, device=torch.device("cpu")):
         """
@@ -143,7 +144,7 @@ class Process(t_data.Dataset):
             device (torch.device, optional): Device to which tensors are moved before yielding. Defaults to torch.device("cpu").
 
         Yields:
-            tuple (torch.Tensor): Tuple with 3 torch tensors for categorical, continous and target data of the shape [batch_size, num_features]
+            tuple (torch.Tensor): Tuple with 3 torch tensors for categorical, continuous and target data of the shape [batch_size, num_features]
         """
         # save current state of the sampler to restore after full iteration
         # HINT: Do not mix sample with batch generator, as both manipulate current_idx
@@ -209,7 +210,7 @@ class ProcessSampler(t_data.Sampler):
             "relative_weight", "sample_size",
             "process_type", "create_sample_generator", "evaluation_space_mask",
             "total_process_eval_product_of_weight", "total_process_product_of_weight",
-            "continous", "categorical", "targets", "normalization_weights", "product_of_weights",
+            "continuous", "categorical", "targets", "normalization_weights", "product_of_weights",
             ])
 
     def __getitem__(self, uid):
@@ -402,12 +403,12 @@ class ProcessSampler(t_data.Sampler):
     def sample_batch(self, sample_from: list[str], device: torch.device=torch.device("cpu")):
         """
         This function samples a specific number of events from all datasets instances connected to the sampler.
-        Which attribute is samplet is defined by a list of strings in "sample_from". By default ["continous", "categorical", "target"] is sampled.
+        Which attribute is samplet is defined by a list of strings in "sample_from". By default ["continuous", "categorical", "target"] is sampled.
         In the end all so created tensors are put on *device*
         Returns a dict of tensors with keys coming from *sample_from*.
 
         Args:
-            sample_from (list[str]): List of strings defining which attributes to sample from each dataset. Defaults to ["continous", "categorical", "target"].
+            sample_from (list[str]): List of strings defining which attributes to sample from each dataset. Defaults to ["continuous", "categorical", "target"].
             device (torch.device, optional): _description_. Defaults to torch.device("cpu").
 
         Returns:
@@ -455,7 +456,16 @@ class ProcessSampler(t_data.Sampler):
                 v_process_inst.relative_weight = process_inst.relative_weight
 
 
-def create_sampler(events, weight_aggregator_inst, target_map, batch_size, min_size=1, train=True, sample_ratio={"dy": 0.25, "tt": 0.25, "hh": 0.5}):
+def create_sampler(
+    events,
+    weight_aggregator_inst,
+    target_map,
+    batch_size,
+    min_size=1,
+    train=True,
+    sample_ratio={"dy": 0.25, "tt": 0.25, "hh": 0.5},
+    verbose=False,
+    ):
     # extract data from events and wrap into Datasets
     if not events:
         raise ValueError(f"Sampler is not created due to feeding empty events")
@@ -475,12 +485,12 @@ def create_sampler(events, weight_aggregator_inst, target_map, batch_size, min_s
         arrays = events.pop(uid)
 
         # create target tensor from uid
-        num_events = len(arrays["continous"])
+        num_events = len(arrays["continuous"])
         target_value = target_map[process_type]
         target = torch.zeros(size=(num_events, len(target_map)), dtype=torch.float32)
         target[:, target_value] = 1.
         process = Process(
-            continous=arrays["continous"],
+            continuous=arrays["continuous"],
             categorical=arrays["categorical"],
             target=target,
             normalization_weights=arrays["normalization_weights"],

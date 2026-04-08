@@ -135,7 +135,7 @@ def root_to_numpy(
         cut = []
     final_cut = "&".join(baseline_cuts + cut)
 
-    # load root files and combine the array to continogus arrays
+    # load root files and combine the array to continuous arrays
     if isinstance(files_path, str):
         files_path = [files_path]
 
@@ -281,7 +281,7 @@ def load_data(datasets, columns: Union[list[str],str, None]=None, cuts: Union[li
         return data
 
     def merge_per_pid(data):
-        # helper to merge all process_ids together to continous array
+        # helper to merge all process_ids together to continuous array
         keys = list(data.keys())
 
         logger.info("Start merging arrays per process id")
@@ -296,14 +296,14 @@ def load_data(datasets, columns: Union[list[str],str, None]=None, cuts: Union[li
     return data
 
 
-def handle_weights_and_convert_to_torch(events: np.array, continous_features: list[str], categorical_features: list[str], dtype: torch.dtype=None):
+def handle_weights_and_convert_to_torch(events: np.array, continuous_features: list[str], categorical_features: list[str], dtype: torch.dtype=None):
     """
-    Calculates final weights, extract masks aswell as extract all *continous_features* and *categorical_features* from structured numpy array *events*.
+    Calculates final weights, extract masks aswell as extract all *continuous_features* and *categorical_features* from structured numpy array *events*.
     Converts all arrays to torch tensors and returns a dictionary containing these.
 
     Args:
         events (np.array): _description_
-        continous_features (list[str]): List of continous features to be extracted
+        continuous_features (list[str]): List of continuous features to be extracted
         categorical_features (list[str]): List of categorical features to be extracted
         dtype (torch.dtype, optional): Torch dtype. Defaults to None.
     """
@@ -323,7 +323,7 @@ def handle_weights_and_convert_to_torch(events: np.array, continous_features: li
         arr = events.pop(uid)
 
         # filter all nans out
-        event_mask = filter_nan_mask(arr, continous_features + categorical_features, uid),
+        event_mask = filter_nan_mask(arr, continuous_features + categorical_features, uid),
         arr = arr[event_mask]
 
         # if resulting tensor is empty just skip
@@ -332,9 +332,9 @@ def handle_weights_and_convert_to_torch(events: np.array, continous_features: li
             continue
 
         # combine columns from struct numpy and convert to torch tensor
-        continous_tensor, categorical_tensor = [
+        continuous_tensor, categorical_tensor = [
             torch.from_numpy(np.stack([arr[feature] for feature in features], axis=1))
-            for features in (continous_features,categorical_features)
+            for features in (continuous_features,categorical_features)
             ]
         # handling weights and convert to torch tensors
         # single numbers cant be converted by using from_numpy thus have to be wrapped in array
@@ -355,7 +355,7 @@ def handle_weights_and_convert_to_torch(events: np.array, continous_features: li
         event_id = torch.tensor(np.ascontiguousarray(arr["event"]), dtype=torch.int64)
 
         events[uid] = {
-            "continous": continous_tensor,
+            "continuous": continuous_tensor,
             "categorical": categorical_tensor,
             "event_id" : event_id,
             "normalization_weights" : normalization_weights,
@@ -396,12 +396,12 @@ def get_data(config: dict, _save_cache = False, ignore_cache=False) -> dict[torc
         logger.info("Start loading and filtering of data:")
         events = load_data(
             config["datasets"],
-            columns=config["continous_features"] + config["categorical_features"],
+            columns=config["continuous_features"] + config["categorical_features"],
             cuts=config["cuts"],
         )
         events = handle_weights_and_convert_to_torch(
             events=events,
-            continous_features=config["continous_features"],
+            continuous_features=config["continuous_features"],
             categorical_features=config["categorical_features"],
         )
         logger.info("Done loading data")

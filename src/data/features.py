@@ -1,3 +1,5 @@
+import os
+import pathlib
 
 
 def expand(str_list):
@@ -25,8 +27,6 @@ def add_prefix(string, prefix, ignore_code="_"):
         return prefix + string
 
 def prefix_map():
-    import os
-    import pathlib
     stem = pathlib.Path(os.environ["INPUT_DATA_DIR"]).stem
     stem_to_prefix = {
     "prod14": "res_dnn_pnet",

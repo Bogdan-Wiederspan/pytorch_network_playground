@@ -160,7 +160,7 @@ class FoldAndSplitCoordinator():
         for uid, arrays in events.items():
             arrays = events[uid]
             splitted_events[uid] = {}
-            for key in ("continous", "categorical", "event_id", "normalization_weights", "product_of_weights", "evaluation_mask"):
+            for key in ("continuous", "categorical", "event_id", "normalization_weights", "product_of_weights", "evaluation_mask"):
                 array = arrays[key]
 
                 splitted_array = array[self.indices[uid][which]]
@@ -168,7 +168,7 @@ class FoldAndSplitCoordinator():
         # edge case split results in empty tensors (due to very low event count).
         # just stop applying indices and remove this process from the splitted_events
         for uid in list(splitted_events.keys()):
-            if splitted_events[uid]["continous"].numel() == 0:
+            if splitted_events[uid]["continuous"].numel() == 0:
                 logger.info(f"removed {uid} from {splitted_events} since zero elements left after k-fold split")
                 splitted_events.pop(uid)
         return splitted_events
@@ -216,7 +216,7 @@ def map_categorical_features(expected_inputs, feature_array, categorical_feature
 def get_batch_statistics_from_sampler(sampler, padding_values=None, features=None, return_dummy=False):
     """
     Calculates the weighted mean and standard deviation over all subphase spaces of a process in *sampler*.
-    The data is expected to be of form : {"unique_identifier_tuple": {continous: arr}, {weight}: arr}.
+    The data is expected to be of form : {"unique_identifier_tuple": {continuous: arr}, {weight}: arr}.
     The return value is a dictionary of form {"process": (mean, std)}, where mean and std is a tensor of
     form length [features].
     The statistics are evaluated without *padding_values*.
@@ -229,7 +229,7 @@ def get_batch_statistics_from_sampler(sampler, padding_values=None, features=Non
     """
     # when only dummy values for init are necessary return mean = 0 and std as 1
     if return_dummy:
-        features_dict = sampler.continous()
+        features_dict = sampler.continuous()
         feature_shape = features_dict[list(features_dict.keys())[0]].shape[-1]
         mean = torch.zeros(feature_shape)
         std = torch.ones(feature_shape)
@@ -241,7 +241,7 @@ def get_batch_statistics_from_sampler(sampler, padding_values=None, features=Non
     # filter keys after processes
     weighted_means = []
     weighted_vars = []
-    features_dict = sampler.continous()
+    features_dict = sampler.continuous()
     weights_dict = sampler.relative_weight()
     sum_of_weights = sum(list(weights_dict.values()))
 
@@ -280,15 +280,17 @@ def get_batch_statistics_from_sampler(sampler, padding_values=None, features=Non
     w_avg_var = torch.sum(torch.stack(weighted_vars, axis=0), axis = 0) / sum_of_weights
     if features:
         logger.info("\nStatistics")
+        msg = []
         for f_name, f_mean, f_var in zip(features, w_avg_mean, w_avg_var):
-            logger.info(f"{f_name:<30}: mean:{f_mean:>10.4} var:{f_var:>10.4}")
+            msg.append(f"{f_name:<30}: mean:{f_mean:>10.4} var:{f_var:>10.4}")
+        logger.info("\n" + "\n".join(msg))
     return w_avg_mean, w_avg_var.sqrt()
 
 
 def get_batch_statistics(events=None, padding_value=0):
     """
     Calculates the weighted mean and standard deviation over all subphase spaces of a process in *events*.
-    The data is expected to be of form : {"unique_identifier_tuple": {continous: arr}, {weight}: arr}.
+    The data is expected to be of form : {"unique_identifier_tuple": {continuous: arr}, {weight}: arr}.
     The return value is a dictionary of form {"process": (mean, std)}, where mean and std is a tensor of
     form length [features].
     The statistics are evaluated without *padding_value*.
@@ -305,7 +307,7 @@ def get_batch_statistics(events=None, padding_value=0):
     for uid, arrays in events.items():
         # reshape to feature x events
 
-        arr_features = arrays["continous"].transpose(0,1)
+        arr_features = arrays["continuous"].transpose(0,1)
         weights.append(arrays["weight"])
         # go throught each feature axis and calculate statitic per feature
         f_means, f_stds = [], []
@@ -335,7 +337,7 @@ def get_batch_statistics(events=None, padding_value=0):
 def get_batch_statistics_per_dataset(events, padding_value=0):
     """
     Calculates the weighted mean and standard deviation over all subphase spaces of a process in *events*.
-    The data is expected to be of form : {"unique_identifier_tuple": {continous: arr}, {weight}: arr}.
+    The data is expected to be of form : {"unique_identifier_tuple": {continuous: arr}, {weight}: arr}.
     The return value is a dictionary of form {"process": (mean, std)}, where mean and std is a tensor of
     form length [features].
     The statistics are evaluated without *padding_value*.
@@ -359,7 +361,7 @@ def get_batch_statistics_per_dataset(events, padding_value=0):
         for uid in uids:
             f_means, f_stds = [], []
             # reshape to feature x events
-            arr_features = events[uid]["continous"].transpose(0,1)
+            arr_features = events[uid]["continuous"].transpose(0,1)
             weights.append(events[uid]["weight"])
 
             # go throught each feature axis and calculate statitic per feature
@@ -429,12 +431,12 @@ def split_array_to_train_and_validation(array, trainings_proportion=0.75):
 
 def split_k_fold_into_training_and_validation(events_dict, c_fold, k_fold, seed, train_ratio=0.75, return_test=False):
     """
-    Takes *events_dict* where continous and categorical data and split these into *k_fold* where *c_fold* is the holdout test seed.
+    Takes *events_dict* where continuous and categorical data and split these into *k_fold* where *c_fold* is the holdout test seed.
     A random permutation happens using *seed* and in the end the k-1 folds are split into training
     and validation data using a ration of *train_ratio*.
 
     Args:
-        events_dict (torch.tensor): Dictionary of continous and categorical Tensors
+        events_dict (torch.tensor): Dictionary of continuous and categorical Tensors
         c_fold (int): Current fold, this fold is returned when *test* is True
         k_fold (int): Number of folds
         seed (int): Seeds used for random permutation
@@ -459,7 +461,7 @@ def split_k_fold_into_training_and_validation(events_dict, c_fold, k_fold, seed,
         tv_indices = k_fold_indices(array["event_id"], c_fold, k_fold, seed, test=return_test)
         t_idx, v_idx = split_array_to_train_and_validation(tv_indices, train_ratio)
         # splitt arrays into train and validation
-        for key in ("continous", "categorical", "event_id", "normalization_weights", "product_of_weights", "evaluation_mask"):
+        for key in ("continuous", "categorical", "event_id", "normalization_weights", "product_of_weights", "evaluation_mask"):
 
             arr = array.pop(key)
             # there are multiple masks
@@ -471,7 +473,7 @@ def split_k_fold_into_training_and_validation(events_dict, c_fold, k_fold, seed,
     for uid in list(train.keys()):
         for d in ("train", "valid"):
             dictionary = locals()[d]
-            if (dictionary[uid]["continous"].numel() == 0):
+            if (dictionary[uid]["continuous"].numel() == 0):
                 logger.info(f"removed {uid} from {d} since zero elements left after k-fold split")
                 dictionary.pop(uid)
     return train, valid
@@ -488,7 +490,7 @@ def test_sampler(events, target_map, batch_size, min_size=1, train=True):
     for uid in list(events.keys()):
         (dataset_type, process_id) = uid
         # create target tensor from uid
-        num_events = len(events[uid]["continous"])
+        num_events = len(events[uid]["continuous"])
         target_value = target_map[dataset_type]
         target = torch.zeros(size=(num_events, len(target_map)), dtype=torch.float32)
         target[:, target_value] = 1.
@@ -497,7 +499,7 @@ def test_sampler(events, target_map, batch_size, min_size=1, train=True):
         process_id_tensor = torch.full(size=(num_events,), fill_value=process_id, dtype=torch.int32)
 
         era_dataset = Dataset(
-            continous_tensor=process_id_tensor,
+            continuous_tensor=process_id_tensor,
             categorical_tensor=era_tensor,
             target=target,
             weight=events[uid]["weight"],
