@@ -3,14 +3,7 @@ import sys
 import os
 from pathlib import Path
 
-RED_LEVEL = 21
-GREEN_LEVEL = 22
-YELLOW_LEVEL = 23
-BLUE_LEVEL = 24
-MAGENTA_LEVEL = 25
-CYAN_LEVEL = 26
-
-_color_levels_registered = False
+_custom_levels_registered = False
 
 # helper function to add log methods for custom levels
 def _make_log_method(level_num):
@@ -19,39 +12,70 @@ def _make_log_method(level_num):
             self._log(level_num, msg, args, **kwargs)
     return log_method
 
-
-def _register_color_levels():
-    global _color_levels_registered
-    if _color_levels_registered:
+def _register_custom_log_levels():
+    global _custom_levels_registered
+    if _custom_levels_registered:
         return
 
     # color levels mapping that are used in ColoredFormatter, add them to logging and create methods for them
-    color_levels = {
-        RED_LEVEL: "RED",
-        GREEN_LEVEL: "GREEN",
-        YELLOW_LEVEL: "YELLOW",
-        BLUE_LEVEL: "BLUE",
-        MAGENTA_LEVEL: "MAGENTA",
-        CYAN_LEVEL: "CYAN",
+    custom_levels = {
+        21: "I_INFO",
+        25: "TRAINING",
     }
     # register the levels and add methods to the Logger class
-    for level_num, level_name in color_levels.items():
+    for level_num, level_name in custom_levels.items():
         logging.addLevelName(level_num, level_name)
+        # create logging method with the same name as level name
         setattr(logging.Logger, level_name.lower(), _make_log_method(level_num))
 
-    _color_levels_registered = True
+    _custom_levels_registered = True
 
 
-def get_logger(name=None):
+def get_logger(name:str ="root", file_path=None) -> logging.Logger:
+    """
+    Helper function to create a logger with a specific name and configure it!
+    A good tutorial can be found here: https://realpython.com/python-logging/
+    Args:
+        name (str, optional): Name of the logger. Defaults to root.
+
+    Returns:
+        logging.Logger: A logger instance with the specified name and configuration.
+    """
+    # log level of the console handler, file handler logs everything
+    log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
+    file_log_level = os.environ.get("FILE_LOG_LEVEL", "DEBUG").upper()
+
     logger = logging.getLogger(name)
-    if not logger.hasHandlers():
-        handler = logging.StreamHandler()
-        formatter = ColoredFormatter(fmt="[%(asctime)s] %(levelname)s %(funcName)s: %(message)s", datefmt="%H:%M:%S")
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-        logger.setLevel(logging.INFO)
+    logger.setLevel(log_level)
 
-        _register_color_levels()
+    if not logger.hasHandlers():
+        # stream handler to print logs to console per stderr
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(log_level)
+        # full list of predefined attributes https://docs.python.org/3/library/logging.html#logrecord-attributes
+        # levelname = name of log level
+        # funcName = name of function that called the logger
+        # asctime = time of log message
+        # lineno = line number in the code where the log message was called
+        # message = the log message
+
+        # HINT: f strings are eagerly evaluated, THUS ALWAYS EVALUATED even if log level is not enabled
+        # using % style formatting to overcome this
+        formatter_string = "[%(asctime)s] %(levelname)s L:%(lineno)s-%(funcName)s: %(message)s"
+        # set up formatter that matches log name with a color defined in ColoredFormatter
+        formatter = ColoredFormatter(fmt=formatter_string, datefmt="%H:%M:%S")
+
+        # TODO add file handler to log to a file, maybe in the same directory as the tensorboard logs? Or in a separate logs directory?
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
+
+        if file_path is not None:
+            file_handler = logging.FileHandler(file_path, mode="a", encoding="utf-8")
+            file_handler.setFormatter(formatter) # use same formatter as for streaming
+            file_handler.setLevel(file_log_level)
+            logger.addHandler(file_handler)
+
+        _register_custom_log_levels()
 
     return logger
 
@@ -61,19 +85,29 @@ class ColoredFormatter(logging.Formatter):
     RESET =     "\x1b[0m"
 
     # foreground colors
-    RED =       "\x1b[91m"
-    GREEN =     "\x1b[92m"
-    YELLOW =    "\x1b[93m"
-    BLUE =      "\x1b[94m"
-    MAGENTA =   "\x1b[95m"
-    CYAN =      "\x1b[96m"
+    FG_RED =        "\x1b[91m"
+    FG_GREEN =      "\x1b[92m"
+    FG_YELLOW =     "\x1b[93m"
+    FG_BLUE =       "\x1b[94m"
+    FG_MAGENTA =    "\x1b[95m"
+    FG_CYAN =       "\x1b[96m"
+    WHITE =         "\x1b[97m"
 
-    # background colors
-    CRITICAL =  "\x1b[45m"  # bright magenta
-    ERROR =     "\x1b[41m"  # red
-    WARNING =   "\x1b[43m"  # yellow
-    INFO =      "\x1b[42m"  # green
-    DEBUG =     "\x1b[46m"  # cyan
+    BG_MAGENTA =    "\x1b[45m"  # bright magenta
+    BG_RED =        "\x1b[41m"  # red
+    BG_YELLOW =     "\x1b[43m"  # yellow
+    BG_GREEN =      "\x1b[42m"  # green
+    BG_CYAN =       "\x1b[46m"  # cyan
+    BG_ORANGE =     "\x1b[48;5;208m"  # bright orange
+    BG_YELLOW_FG_RED = "\x1b[31;43m"  # bright yellow background with red foreground
+
+    # log level colors, needs to be the same name as the level name registered in get_logger
+    CRITICAL =  BG_MAGENTA
+    ERROR =     BG_RED
+    WARNING =   BG_ORANGE
+    INFO =      FG_YELLOW
+    I_INFO =    BG_YELLOW_FG_RED
+    TRAINING =  WHITE
 
     def __init__(self, fmt=None, datefmt=None, style="%", use_color=True):
         super().__init__(fmt=fmt, datefmt=datefmt, style=style)
