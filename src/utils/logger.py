@@ -7,8 +7,12 @@ _custom_levels_registered = False
 
 # helper function to add log methods for custom levels
 def _make_log_method(level_num):
-    def log_method(self, msg, *args, **kwargs):
+    def log_method(self, msg, *args, stacklevel=2, **kwargs):
         if self.isEnabledFor(level_num):
+            # if stacklevel is not provided, default to 2 to point to the caller of the log method
+            # otherwise it would point to the log method itself
+            if "stacklevel" not in kwargs:
+                kwargs["stacklevel"] = stacklevel
             self._log(level_num, msg, args, **kwargs)
     return log_method
 
