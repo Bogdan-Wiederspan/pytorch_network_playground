@@ -1,3 +1,11 @@
+import os
+import pathlib
+
+import torch
+from utils.logger import get_logger
+
+logger_inst = get_logger(__name__)
+
 class EarlyStopSignal:
     """
     EarlyStopper signal giver counts how often
@@ -33,7 +41,6 @@ class EarlyStopSignal:
 
     def __call__(self, loss):
         return self.early_stop_signal(loss)
-
 
 class EarlyStopOnPlateau:
 

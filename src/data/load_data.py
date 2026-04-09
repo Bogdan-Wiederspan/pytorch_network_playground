@@ -8,10 +8,10 @@ import pathlib
 from typing import Union
 
 from data.utils import depthCount
-from utils.logger import get_logger
+from utils import logger
 from data.cache import DataCacher
 
-logger = get_logger(__name__)
+logger_inst = logger.get_logger(__name__)
 
 def find_datasets(dataset_patterns: list[str], year_patterns: list[str], *, file_type: str="root", verbose=True):
     """
@@ -28,6 +28,7 @@ def find_datasets(dataset_patterns: list[str], year_patterns: list[str], *, file
         dict: dictionary with dataset names as keys and list of file paths as values
     """
     # precautions: get dir, wrap strings, set pattern
+    logger_inst.info("Start searching for datasets:")
     if (data_dir := os.environ.get("INPUT_DATA_DIR", None)) is None:
         raise ValueError("Environment variable INPUT_DATA_DIR not set! Source setup.sh")
 
@@ -57,11 +58,11 @@ def find_datasets(dataset_patterns: list[str], year_patterns: list[str], *, file
             for dataset in datasets:
                 files = sorted(map(str, pathlib.Path(dataset).glob(file_pattern)))
                 if len(files) == 0:
-                    logger.warning(f"{dataset} has 0 files")
+                    logger_inst.critical(f"{dataset} has 0 files")
                     missing.append(dataset)
                 if verbose:
                     size = round(sum(os.path.getsize(f) for f in files) / (1024**2),2)
-                    logger.info(f"+{len(files)} files | size {size} MB | {year}/{dataset.name}")
+                    logger_inst.debug(f"+{len(files)} files | size {size} MB | {year}/{dataset.name}")
                 data[year][dataset.name] = files
     if not data:
         raise ValueError("No datasets found with given patterns")
@@ -98,8 +99,9 @@ def root_to_numpy(
         ak.Array: awkward array containing all data from the root files
 
     """
+    logger_inst.info("Start loading and conversion of root files:")
     if depthCount(branches) > 1 and branches is not None:
-        raise ValueError("branches must be a flat list")
+        raise ValueError(f"branches must be a flat list but is {depthCount(branches)}-dimensional")
 
     # set of branches that are always extracted from root files
     # purpose -> fields:
@@ -141,7 +143,7 @@ def root_to_numpy(
 
     arrays = []
     for file_path in files_path:
-        logger.info(f"loading: {file_path}")
+        logger_inst.debug(f"loading: {file_path}")
         with uproot.open(file_path, object_cache=None, array_cache=None) as file:
             # loading of data is split into 3 steps: all_common, weights, evaluation phasespace
             # reason for 2 is that weights are not present in all datasets
@@ -277,16 +279,16 @@ def load_data(datasets, columns: Union[list[str],str, None]=None, cuts: Union[li
                 if uid not in data:
                     data[uid] = []
                 data[uid].append(p_array)
-                logger.debug(f"{dataset} | PID: {pid} | {len(p_array)}")
+                logger_inst.debug(f"{dataset} | PID: {pid} | {len(p_array)}")
         return data
 
     def merge_per_pid(data):
         # helper to merge all process_ids together to continuous array
+        logger_inst.info("Start merging arrays per process id")
         keys = list(data.keys())
 
-        logger.info("Start merging arrays per process id")
         for i, uid in enumerate(keys):
-            logger.debug(f"{i}/{len(keys)}: {uid}")
+            logger_inst.debug(f"{i}/{len(keys)}: {uid}")
             arrays = data.pop(uid)
             concat = np.concatenate(arrays, axis=0)
             data[uid] = concat
@@ -316,7 +318,7 @@ def handle_weights_and_convert_to_torch(events: np.array, continuous_features: l
         event_mask = np.logical_or.reduce(masks)
         num_filter = np.sum(event_mask)
         if num_filter:
-            logger.info(f"Filter {num_filter} Nans out form {uid}")
+            logger_inst.warning(f"Filtered {num_filter} Nan events from pid {uid}")
         return ~event_mask
 
     for uid in list(events.keys()):
@@ -328,7 +330,7 @@ def handle_weights_and_convert_to_torch(events: np.array, continuous_features: l
 
         # if resulting tensor is empty just skip
         if arr.size == 0:
-            logger.info(f"Skipping {uid} due to zero elements")
+            logger_inst.warning(f"Skipping {uid} due to zero elements - which can happen after filtering nans")
             continue
 
         # combine columns from struct numpy and convert to torch tensor
@@ -393,18 +395,19 @@ def get_data(config: dict, _save_cache = False, ignore_cache=False) -> dict[torc
     if not ignore_cache and cacher.path.exists():
         events = cacher.load_cache()
     else:
-        logger.info("Start loading and filtering of data:")
+        logger_inst.info("Start loading and filtering of data")
         events = load_data(
             config["datasets"],
             columns=config["continuous_features"] + config["categorical_features"],
             cuts=config["cuts"],
         )
+        logger_inst.info("Start handling weights and conversion to torch tensors")
         events = handle_weights_and_convert_to_torch(
             events=events,
             continuous_features=config["continuous_features"],
             categorical_features=config["categorical_features"],
         )
-        logger.info("Done loading data")
+        logger_inst.info("Done prepareing data")
         if _save_cache:
             try:
                 cacher.save_cache(events)

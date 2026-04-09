@@ -293,20 +293,67 @@ class ProcessSampler(t_data.Sampler):
         return list(self.process_inst.keys())
 
     def print_sample_rates(self):
-        logger_inst.yellow(f"Sample rate for Dataset of Era")
-
+        """
+        Function to print sample rates of
+        """
+        msg = {}
+        sum_batch = {}
         for dataset_type, uid in self.process_inst.items():
-            total_batch = 0
-            logger_inst.white(f"{dataset_type}:")
+            msg[dataset_type] = []
+            _sum_batch = 0
             for (pid), ds in uid.items():
-                logger_inst.white(f"\t{pid} | {ds.sample_size}")
-                total_batch += ds.sample_size
-            logger_inst.white(f"\tsum/expected: {total_batch}/{(self.sample_ratio[ds.dataset_type] * self.batch_size).item()}")
+                msg[dataset_type].append(f"{pid} | {ds.sample_size}")
+                _sum_batch += ds.sample_size
 
-    def calculate_sample_size(self, process_type, dry=False):
+            sum_batch[dataset_type] = (_sum_batch, self.sample_ratio[dataset_type] * self.batch_size.item())
+
+        # print all processes with their sample size
+        _msg = "\n".join([
+            f"{dataset_type.upper()}:\n\t" + f"\n  ".join(uid_with_samples)
+            for dataset_type, uid_with_samples in msg.items()
+            ])
+        logger_inst.debug(
+            f"Sample rates for Dataset of Era (PID | Sample Rate)\n" +
+            _msg
+        )
+        # print summary statistic per dataset type
+        _msg = "\n".join([
+            f"{dataset_type}: {sum_of_batch} | {expected_batch_size}"
+            for dataset_type, (sum_of_batch, expected_batch_size) in self.process_inst.items()
+
+        ])
+        logger_inst.debug(
+            f"Summary statitics:\n" +
+            _msg
+        )
+
+
+    def calculate_sample_size(self, process_type: str):
+        """
+        Calculates the expected Sample Size for each Process ID within a *process_type*.
+
+        How the algorithm works in detail:
+        For example we can have 3 process ID {hh: 1/3, tt: 1/3, dy: 1/3}, thus 1/3 of a batch total size is dy.
+        Dy is build of many subprocesses which share a relative part, proportional to their normalization weight, of the 1/3 * batch size.
+
+        A minimal number of
+        Due to rounding to integer number of events, the resulting batch size can differ from the desired batch size.
+        To minimize this effect, the algorithm first floors the expected numbers per process ID.
+        Then it distributes the remaining events according to the relative contribution of each process ID to the batch, which is calculated by the normalization weights.
+        The result is again floored for process IDs with a relative contribution below the median and ceiled for process IDs with a relative contribution above the median, to minimize the difference to the desired batch size.
+        Finally, if there is still a mismatch between the resulting batch size and the desired batch size, the remaining events are added to the process ID with the biggest relative contribution.
+
+        Args:
+            process_type (str): String defining the process type for which the sample size should be calculated, e.g. "hh", "tt", "dy"
+
+        Raises:
+            ValueError: The batch size is smaller than 1, which is not supported.
+            TypeError: The change of type from float to int changed the value, which should not happen since the algorithm is designed to handle this case.
+        """
+
         if self.batch_size == -1:
             raise ValueError("Batch Size < 1 is not supported. Try a number big enough to be representative")
-        logger_inst.yellow(f"Calculate sample sizes for: {process_type}")
+        logger_inst.info(f"Calculate Sampler sample sizes for subprocesses of {process_type}")
         # unpack and convert to tensors for easier handling, get desired_sub_batch_size
         weights = torch.tensor([proc.weights_statistics["normalization_weights"]["whole_sum"] for proc in self.process_inst[process_type].values()])
         min_size = torch.tensor(self.min_size)
@@ -320,7 +367,6 @@ class ProcessSampler(t_data.Sampler):
         # 2. calculate relative weight of overflow for samples above minimal threshold
         # 3. distribute overflow from 2. by ceil and floor half of the sample according to median
         # 4. reduce  all steps resulting in sub_batch_size batch composition
-
 
         # preperation: calculate batch size according to weight
         total_weight_of_process_type = weights.sum()
@@ -394,11 +440,10 @@ class ProcessSampler(t_data.Sampler):
         #     raise ValueError(f"Resampling failed: Created batch size of size: {floored_sizes.sum()} but should be {sub_batch_size}")
 
         # store batch size per phase space in dataset
-        if not dry:
-            for k, w in zip(list(self.process_inst[process_type].keys()), floored_sizes):
-                self.process_inst[process_type][k].sample_size = w.item()
-        else:
-            logger_inst.white({k:w.item() for k,w in zip(list(self.process_inst[process_type].keys()), floored_sizes)})
+        logger_inst.debug({k:w.item() for k,w in zip(list(self.process_inst[process_type].keys()), floored_sizes)})
+
+        for k, w in zip(list(self.process_inst[process_type].keys()), floored_sizes):
+            self.process_inst[process_type][k].sample_size = w.item()
 
     def sample_batch(self, sample_from: list[str], device: torch.device=torch.device("cpu")):
         """
@@ -464,7 +509,6 @@ def create_sampler(
     min_size=1,
     train=True,
     sample_ratio={"dy": 0.25, "tt": 0.25, "hh": 0.5},
-    verbose=False,
     ):
     # extract data from events and wrap into Datasets
     if not events:
@@ -482,6 +526,12 @@ def create_sampler(
 
     for uid in list(events.keys()):
         (process_type, process_id) = uid
+
+        logger_inst.debug((
+            f"Add {process_type} pid: {process_id} to " +
+            ("Train" if train else "Validation") +
+            " Sampler"
+            ))
         arrays = events.pop(uid)
 
         # create target tensor from uid
@@ -502,8 +552,6 @@ def create_sampler(
             randomize=True,
         )
         process_sampler.add_process_instance(process)
-        if verbose:
-            logger.YELLOW(f"Add {process_type} pid: {process_id}")
 
     if train:
         for process_type in process_sampler.keys:

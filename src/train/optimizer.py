@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import torch
+from utils.logger import get_logger
+
+logger_inst = get_logger(__name__)
 
 def normalized_weight_decay(
     model: torch.nn.Module,
@@ -40,7 +43,7 @@ def normalized_weight_decay(
                         continue
 
                     with_weight_decay.append(parameter)
-                    print(f"add weight decay to: module:{module}//named: {module_name}// paramter:{parameter_name}")
+                    logger_inst.debug(f"\tadd weight decay to: module:{module}//named: {module_name}// parameter:{parameter_name}")
                 else:
                     no_weight_decay.append(parameter)
 
@@ -48,7 +51,7 @@ def normalized_weight_decay(
     num_weight_decay_params = sum([len(weight.flatten()) for weight in with_weight_decay])
     if normalize:
         decay_factor = decay_factor / num_weight_decay_params
-        print(f"Normalize weight decay by number of parameters: {decay_factor}")
+        logger_inst.debug(f"\tNormalize weight decay by number of parameters: {decay_factor}")
     return {"params": no_weight_decay, "weight_decay": 0.0}, {"params": with_weight_decay, "weight_decay": decay_factor}
 
 def prepare_weight_decay(model, optimizer_config) -> None:

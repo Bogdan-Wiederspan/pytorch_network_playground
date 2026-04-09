@@ -23,16 +23,17 @@ DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cp
 def main(**kwargs):
     # prepare logger
     logger_inst = logger.get_logger(__name__)
-    logger_inst.info(f"Running DEVICE is {DEVICE}")
+    logger_inst.info(f"DEVICE: {DEVICE}")
     tensorboard_writer = logger.TensorboardLogger(
         name=cache.hash_config(config),
         path=kwargs["tensorboard_name"]
         )
-    logger_inst.info(f"Tensorboard logs are stored in {tensorboard_writer.path}")
+    # TODO add LOGGER FILEPATH in same directory of tensorboard
+    logger_inst.i_info(f"Tensorboard logs: {tensorboard_writer.path}")
 
     # load data
     for current_fold in (config["train_folds"]):
-        logger_inst.info(f"Start Training of fold {current_fold} from {config["k_fold"] - 1}")
+        logger_inst.info(f"Trainings fold: {current_fold}/{config["k_fold"] - 1}")
         #-----
         ### data loading and preprocessing
         #-----
@@ -58,6 +59,9 @@ def main(**kwargs):
         for key in list(events.keys()):
             del events[key]
 
+        logger_inst.info(f"Start creation of Sampler")
+        logger_inst.debug(f"Train events: {len(train_events)}, Validation events: {len(validation_events)}")
+
         training_sampler = sampler.create_sampler(
             train_events,
             weight_aggregator_inst = weight_aggregator,
@@ -78,8 +82,8 @@ def main(**kwargs):
         )
         # share relative weight from training batch statistic to validation sampler
         training_sampler.share_weights_between_sampler(validation_sampler)
-
         # get weighted mean and std of expected batch composition
+        logger_inst.info(f"Start model building and configuration")
         model_building_config["mean"], model_building_config["std"] = preprocessing.get_batch_statistics_from_sampler(
             training_sampler,
             padding_values=-99999,
@@ -162,6 +166,7 @@ def main(**kwargs):
         #----
         ### training loop
         #----
+        logger_inst.info(f"Start training loop")
         for current_iteration in range(1_000_000):
             t_loss, (t_pred, t_targets) = training_fn(
                 model = model_inst,
@@ -174,14 +179,15 @@ def main(**kwargs):
 
             if current_iteration % config["verbose_interval"] == 0:
                 tensorboard_writer.log_loss({"batch_loss": t_loss.item()}, step=current_iteration)
-                logger_inst.green(f"Training: {current_iteration} - batch loss: {t_loss.item():.2E}")
+                logger_inst.training(f"Training: {current_iteration} - batch loss: {t_loss.item():.2E}")
 
             #----
             #### Evaluation of training and validation data, logging and checkpointing
             #----
             if (current_iteration % config["validation_interval"] == 0) & (current_iteration >= 0):
                 # evaluation of training data
-                print(f"Running evaluation of training data at iteration {current_iteration}...")
+                logger_inst.info(f"Iteration {current_iteration}. Start evaluation of training data.")
+
                 eval_t_loss, (eval_t_pred, eval_t_tar, eval_t_weights) = validation_fn(
                     model_inst,
                     validation_loss_fn,
@@ -202,8 +208,9 @@ def main(**kwargs):
                 #     current_iteration = current_iteration,
                 #     kernels = model_inst.binning_layer.kernels,
                 # )
-                print(f"Running evaluation of validation data at iteration {current_iteration}...")
                 # evaluation of validation
+                logger_inst.info(f"Iteration {current_iteration}. Start evaluation of validation data.")
+
                 eval_v_loss, (eval_v_pred, eval_v_tar, eval_v_weights) = validation_fn(
                     model_inst,
                     validation_loss_fn,
@@ -223,7 +230,7 @@ def main(**kwargs):
                 #     current_iteration = current_iteration,
                 #     kernels=model_inst.binning_layer.kernels,
                 # )
-                print(f"Evaluation: it: {current_iteration} - TLoss: {eval_t_loss:.2E} VLoss: {eval_v_loss:.2E}")
+                logger_inst.training(f"Iteration: {current_iteration} - TLoss: {eval_t_loss:.2E} VLoss: {eval_v_loss:.2E}")
 
                 # if (current_iteration % 1000 == 0) and (current_iteration > 0):
 
@@ -243,8 +250,11 @@ def main(**kwargs):
                 scheduler_inst.step(eval_v_loss)
                 current_lr = optimizer_inst.param_groups[0]["lr"]
                 if previous_lr != current_lr:
-                    logger_inst.info(f"{previous_lr} -> {current_lr}")
-                    logger_inst.info(f"Reload model and optimizer from iteration ")
+                    logger_inst.info(
+                        f"{previous_lr} -> {current_lr}" +
+                        "\nReload model and optimizer from iteration"
+                        f" {checkpoint_inst.last_checkpoint['iteration']}")
+
                     model_inst.load_state_dict(checkpoint_inst.last_checkpoint["model_state_dict"])
                     optimizer_inst.load_state_dict(checkpoint_inst.last_checkpoint["optimizer_state_dict"])
                     # since scheduler and optimizer are coupled

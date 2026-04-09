@@ -4,7 +4,7 @@ import numpy as np
 from collections import defaultdict
 from utils.logger import get_logger
 
-logger = get_logger(__name__)
+logger_inst = get_logger(__name__)
 
 class WeightAggregator():
     def __init__(self, events, indices):
@@ -169,7 +169,7 @@ class FoldAndSplitCoordinator():
         # just stop applying indices and remove this process from the splitted_events
         for uid in list(splitted_events.keys()):
             if splitted_events[uid]["continuous"].numel() == 0:
-                logger.info(f"removed {uid} from {splitted_events} since zero elements left after k-fold split")
+                logger_inst.warning(f"removed {uid} from {splitted_events} since zero elements left after k-fold split")
                 splitted_events.pop(uid)
         return splitted_events
 
@@ -233,11 +233,14 @@ def get_batch_statistics_from_sampler(sampler, padding_values=None, features=Non
         feature_shape = features_dict[list(features_dict.keys())[0]].shape[-1]
         mean = torch.zeros(feature_shape)
         std = torch.ones(feature_shape)
-        logger.info("\nreturning dummy normalization statistics")
+        logger_inst.warning(
+            "\nNo normalization statistics are calculated, since return_dummy is True."
+            "Returning dummy values: mean = 0 and std = 1"
+            )
         return mean, std
 
 
-    logger.info("Calculate mean and std over all subphase spaces")
+    logger_inst.info("Calculate mean and std over all subphase spaces")
     # filter keys after processes
     weighted_means = []
     weighted_vars = []
@@ -250,6 +253,7 @@ def get_batch_statistics_from_sampler(sampler, padding_values=None, features=Non
         # get array of specific process id - [num_events x num_features]
         array = features_dict[pid]
 
+        # no logging mechanism for flushing on the same line
         print(f"\rcalculating stats for {pid}:{current_pid_idx}/{len(features_dict)}\x1b[K",end="", flush=True)
 
         # mean and var calculation should exclude padding values
@@ -274,16 +278,15 @@ def get_batch_statistics_from_sampler(sampler, padding_values=None, features=Non
         pid_weight = weights_dict[pid]
         weighted_means.append(masked_mean * pid_weight)
         weighted_vars.append(masked_var * pid_weight)
-
+    print()
     # calculate weighted average over uid means and var
     w_avg_mean  = torch.sum(torch.stack(weighted_means, axis=0), axis = 0) / sum_of_weights
     w_avg_var = torch.sum(torch.stack(weighted_vars, axis=0), axis = 0) / sum_of_weights
     if features:
-        logger.info("\nStatistics")
         msg = []
         for f_name, f_mean, f_var in zip(features, w_avg_mean, w_avg_var):
             msg.append(f"{f_name:<30}: mean:{f_mean:>10.4} var:{f_var:>10.4}")
-        logger.info("\n" + "\n".join(msg))
+        logger_inst.debug("\n" + "\n".join(msg))
     return w_avg_mean, w_avg_var.sqrt()
 
 
@@ -299,7 +302,7 @@ def get_batch_statistics(events=None, padding_value=0):
         events (dict): Dictionary over datasets
         padding_value (int, optional): Ignored value in the calculation of the statitics. Defaults to 0.
     """
-    logger.info("Calculate mean and std over all subphase spaces")
+    logger_inst.info("Start calcuation of mean and std over all subphase spaces.")
     # filter keys after processes
     means = []
     stds = []
@@ -346,7 +349,7 @@ def get_batch_statistics_per_dataset(events, padding_value=0):
         events (dict): Dictionary over datasets
         padding_value (int, optional): Ignored value in the calculation of the statitics. Defaults to 0.
     """
-    logger.info("Calculate mean and std over all subphase spaces")
+    logger_inst.info("Start calculation of mean and std over all subphase spaces")
     # filter keys after processes
     keys_per_process = defaultdict(list)
     for uid in events.keys():

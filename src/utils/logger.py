@@ -50,7 +50,7 @@ def get_logger(name:str ="root", file_path=None) -> logging.Logger:
 
     if not logger.hasHandlers():
         # stream handler to print logs to console per stderr
-        console_handler = logging.StreamHandler()
+        console_handler = logging.StreamHandler(stream=sys.stderr)
         console_handler.setLevel(log_level)
         # full list of predefined attributes https://docs.python.org/3/library/logging.html#logrecord-attributes
         # levelname = name of log level
@@ -71,7 +71,8 @@ def get_logger(name:str ="root", file_path=None) -> logging.Logger:
 
         if file_path is not None:
             file_handler = logging.FileHandler(file_path, mode="a", encoding="utf-8")
-            file_handler.setFormatter(formatter) # use same formatter as for streaming
+            file_formatter = logging.Formatter(fmt=formatter_string, datefmt="%Y-%m-%d %H:%M:%S")
+            file_handler.setFormatter(file_formatter) # use different formatter to remove coloring
             file_handler.setLevel(file_log_level)
             logger.addHandler(file_handler)
 
@@ -91,7 +92,8 @@ class ColoredFormatter(logging.Formatter):
     FG_BLUE =       "\x1b[94m"
     FG_MAGENTA =    "\x1b[95m"
     FG_CYAN =       "\x1b[96m"
-    WHITE =         "\x1b[97m"
+    FG_WHITE =         "\x1b[97m"
+    FG_DARK_YELLOW =    "\x1b[33m"  # dark yellow for debugging
 
     BG_MAGENTA =    "\x1b[45m"  # bright magenta
     BG_RED =        "\x1b[41m"  # red
@@ -101,14 +103,15 @@ class ColoredFormatter(logging.Formatter):
     BG_ORANGE =     "\x1b[48;5;208m"  # bright orange
     BG_YELLOW_FG_RED = "\x1b[31;43m"  # bright yellow background with red foreground
 
+
     # log level colors, needs to be the same name as the level name registered in get_logger
     CRITICAL =  BG_MAGENTA
     ERROR =     BG_RED
-    WARNING =   BG_ORANGE
-    INFO =      FG_YELLOW
-    I_INFO =    BG_YELLOW_FG_RED
-    TRAINING =  WHITE
-
+    WARNING =   BG_ORANGE           # WARNINGS TO indicate potential problems that are handled for you
+    INFO =      FG_YELLOW           # WHAT DOES THE PROGRAM DO CURRENTLY
+    I_INFO =    BG_YELLOW_FG_RED    # IMPORTANT INFORMATION FOR THE USER
+    TRAINING =  FG_WHITE               # TRAININGS PROCESS
+    DEBUG =     FG_DARK_YELLOW             # DETAILED DEBUGGING INFORMATION FOR DEVELOPERS
     def __init__(self, fmt=None, datefmt=None, style="%", use_color=True):
         super().__init__(fmt=fmt, datefmt=datefmt, style=style)
         self.use_color = use_color and sys.stdout.isatty()

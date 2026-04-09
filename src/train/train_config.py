@@ -2,7 +2,7 @@ import torch
 
 from data import features, load_data
 
-
+# TODO save config in FILE at same place as Tensorboard
 ### data config
 # targets and inputs
 target_map = {"hh" : 0, "tt": 1, "dy": 2}

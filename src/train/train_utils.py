@@ -8,13 +8,15 @@ import train_config
 functions = {}
 
 
-def do_scheduler_step(loss, logger, scheduler_inst, model_inst, optimizer_inst, checkpoint_inst):
+def do_scheduler_step(loss, logger_inst, scheduler_inst, model_inst, optimizer_inst, checkpoint_inst):
     previous_lr =  optimizer_inst.param_groups[0]["lr"]
     scheduler_inst.step(loss)
     current_lr = optimizer_inst.param_groups[0]["lr"]
     if previous_lr != current_lr:
-        logger.info(f"{previous_lr} -> {current_lr}")
-        logger.info(f"Reload model and optimizer from iteration ")
+        logger_inst.info(
+            f"{previous_lr} -> {current_lr}\n"
+            f"Reload model and optimizer from iteration "
+            )
         model_inst.load_state_dict(checkpoint_inst.last_checkpoint["model_state_dict"])
         optimizer_inst.load_state_dict(checkpoint_inst.last_checkpoint["optimizer_state_dict"])
 

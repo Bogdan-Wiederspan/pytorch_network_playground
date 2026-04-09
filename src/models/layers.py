@@ -181,7 +181,10 @@ class CategoricalTokenizer(torch.nn.Module):  # noqa: F811
             expected = set(expected_value)
             if uniques != expected:
                 difference = uniques - expected
-                logger_inst.CRITICAL(f"{category} has values outside the expected range: {difference}")
+                logger_inst.critical(
+                    f"{category} has values outside the expected range: {difference}.\n"
+                    "The tokenizer will return wrong values for these inputs."
+                    )
 
     def pad_to_longest(self) -> torch.FloatTensor:
         if not self._expected_inputs:
@@ -236,7 +239,7 @@ class CategoricalTokenizer(torch.nn.Module):  # noqa: F811
 
         # warn for big categories
         if upper_bound > 100:
-            logger_inst.CRITICAL("Be aware that a large number of categories will result in a large sparse lookup array")
+            logger_inst.warning("Be aware that a large number of categories will result in a large sparse lookup array")
 
         # create mapping empty
         mapping_array = torch.full(

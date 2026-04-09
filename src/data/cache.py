@@ -5,7 +5,7 @@ import pickle
 
 from utils.logger import get_logger
 
-logger = get_logger(__name__)
+logger_inst = get_logger(__name__)
 
 def hash_config(config):
     h = tuple(config.items())
@@ -27,17 +27,17 @@ class DataCacher():
         self.path.mkdir(parents=False, exist=False)
 
     def save_cache(self, data):
-        logger.info(f"Saving cache at {self.path}:")
+        logger_inst.i_info(f"Try saving cache at {self.path}:")
         with open(f"{self.path}", "wb") as file:
             pickle.dump(data, file, protocol=pickle.HIGHEST_PROTOCOL)
-        logger.info(f"Done saving cache in {self.path}")
+        logger_inst.info(f"Done saving cache")
 
     def load_cache(self):
         if not self.path.exists():
             raise FileExistsError(f"Cache path {self.path} does not exist")
 
-        logger.info(f"Loading cache from {self.path}")
+        logger_inst.i_info(f"Loading cache from {self.path}")
         with open(self.path, "rb") as file:
             events = pickle.load(file)
-        logger.info(f"Done loading cache from {self.path}")
+        logger_inst.info(f"Done loading cache")
         return events

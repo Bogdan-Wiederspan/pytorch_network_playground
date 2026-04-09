@@ -4,6 +4,9 @@ import cloudpickle
 import numpy as np
 import json
 import copy
+from utils.logger import get_logger
+
+logger_inst = get_logger(__name__)
 
 def modify_state_dict_with_marcels_weights(state_dict):
     layer_translation = {
@@ -146,15 +149,15 @@ def replace_standardization_layer_state_dict(state_dict, continuous_features):
 
 def load_marcels_weights(model, continuous_features, with_std=True, with_weights=True):
     if with_std == False or with_weights == False:
-        print("return unmodified model")
+        logger_inst.debug("return unmodified model")
         return model
 
     m_state = model.state_dict()
     if with_weights:
-        print("loading weights from marcel")
+        logger_inst.debug("loading weights from marcel")
         m_state = modify_state_dict_with_marcels_weights(m_state)
     if with_std:
-        print("loading std stats from marcel")
+        logger_inst.debug("loading std stats from marcel")
         m_state = replace_standardization_layer_state_dict(m_state, continuous_features)
 
     model.load_state_dict(m_state)

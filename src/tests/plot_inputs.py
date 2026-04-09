@@ -1,27 +1,16 @@
 # standard imports
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-
 import numpy as np
 import math
 import os
 import pathlib
 import torch
 
-
 # project imports
-from data.load_data import get_data
-from data.preprocessing import (
-    create_train_and_validation_sampler, get_batch_statistics, split_k_fold_into_training_and_validation, test_sampler
-    )
-from utils.logger import get_logger, TensorboardLogger
-import train.plotting
-import train.metrics
-from data.cache import hash_config
-import train.optimizer
-from train.train_config import (
-    config, dataset_config, model_building_config, optimizer_config, target_map,
-)
+from data import load_data
+from train import train_config
+
 
 def plot_feature(features, events, ftype):
     path = pathlib.Path(os.environ["PICTURE_DIR"])
@@ -77,7 +66,7 @@ def plot_feature(features, events, ftype):
     return fig, ax
 
 
-events = get_data(dataset_config, ignore_cache=False, _save_cache=True)
+events = load_data.get_data(train_config.dataset_config, ignore_cache=False, _save_cache=True)
 # create k-folds, whe current fold is test fold and leave out
 
 # train_data, validation_data = split_k_fold_into_training_and_validation(
@@ -97,10 +86,10 @@ events = get_data(dataset_config, ignore_cache=False, _save_cache=True)
 #     min_size=1
 # )
 
-cont_f = dataset_config["continous_features"]
-cat_f = dataset_config["categorical_features"]
+cont_f = train_config.dataset_config["continuous_features"]
+cat_f = train_config.dataset_config["categorical_features"]
 
 # plotting input features
 from IPython import embed; embed(header="string - 37 in plot_inputs.py ")
 plot_feature(features=cat_f, events=events, ftype="categorical")
-plot_feature(features=cont_f, events=events, ftype="continous")
+plot_feature(features=cont_f, events=events, ftype="continuous")
