@@ -1,9 +1,11 @@
 # standard imports
 import torch
-
+import numpy as np
 # package imports
 import optimizer
 
+import loss
+import binning
 from models import create_model
 from data import load_data, preprocessing, sampler, cache
 from utils import logger
@@ -19,6 +21,10 @@ import marcel_weight_translation as mwt
 CPU = torch.device("cpu")
 CUDA = torch.device("cuda")
 DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+
+torch.manual_seed(config["seed"])
+np.random.seed(config["seed"])
+
 
 def main(**kwargs):
     # prepare logger
@@ -60,7 +66,6 @@ def main(**kwargs):
             del events[key]
 
         logger_inst.info(f"Start creation of Sampler")
-        logger_inst.debug(f"Train events: {len(train_events)}, Validation events: {len(validation_events)}")
 
         training_sampler = sampler.create_sampler(
             train_events,
@@ -106,20 +111,7 @@ def main(**kwargs):
         else:
             raise ValueError(f"Model choice {config['model_choice']} not recognized, but must be set")
 
-        # # adding activaton fn
-        # model = create_model.AddActFnToModel(model=model, act_fn="softmax")
-
-        # kernel_cfg = {"general": {"smooth_width": torch.tensor(0.05) , "smooth_zone_value":torch.tensor(0.5) , "abs_mode":False}}
-        # model = create_model.AddBinning(
-        #     binning_edges=torch.linspace(0,1,15),
-        #     model=model,
-        #     kernel_cls=kernel.GaussianKernel,
-        #     kernel_cfg=kernel_cfg,
-        #     signal_cls=target_map["hh"],
-        # )
-
         model_inst = model_inst.to(DEVICE).train()
-
 
         # TODO load mean from marcel if activated, probably break for new model
         model_inst = mwt.load_marcels_weights(model_inst, continuous_features=dataset_config["continuous_features"], with_std=config["load_marcel_stats"], with_weights=config["load_marcel_weights"])
@@ -149,19 +141,39 @@ def main(**kwargs):
 
         if config["loss_fn"] == "default":
             train_loss_fn = torch.nn.CrossEntropyLoss(weight=None, size_average=None,label_smoothing=config["label_smoothing"])
-
             validation_loss_fn = torch.nn.CrossEntropyLoss(weight=None, size_average=None,label_smoothing=config["label_smoothing"])
+
         elif config["loss_fn"] == "signal_efficiency":
-            from loss import SignalEfficiency, BinningAwareSignificance
-            import binning
-            train_loss_fn = SignalEfficiency(sampler=training_sampler ,device=DEVICE, train=True, mode=config["loss_mode"], uncertainty=config["loss_uncertainty"])
-            validation_loss_fn = SignalEfficiency(sampler=training_sampler, device=DEVICE, train=False, mode=config["loss_mode"], uncertainty=config["loss_uncertainty"])
-            # train_loss_fn_new = BinningAwareSignificance(
-            #     num_bins=15, sampler=training_sampler ,device=DEVICE, train=True, mode=config["loss_mode"], uncertainty=config["loss_uncertainty"], binning_fn=binning.EqualDistant(),
-            #     )
-            # validation_loss_fn_new = BinningAwareSignificance(
-            #     num_bins=15, sampler=training_sampler, device=DEVICE, train=False, mode=config["loss_mode"], uncertainty=config["loss_uncertainty"], binning_fn=binning.EqualDistant(),
-            # )
+            train_loss_fn = loss.SignalEfficiency(sampler=training_sampler ,device=DEVICE, train=True, mode=config["loss_mode"], uncertainty=config["loss_uncertainty"])
+            validation_loss_fn = loss.SignalEfficiency(sampler=training_sampler, device=DEVICE, train=False, mode=config["loss_mode"], uncertainty=config["loss_uncertainty"])
+
+        elif config["loss_fn"] == "signal_efficiency_binning_aware":
+            # TODO CONFIG for binning aware loss, e.g. which binning fn, num_bins, etc. and add to config file
+            # from IPython import embed; embed(header = " line: 148 in train.py")
+            # binning_fn = getattr(binning, binning_config["binning_fn"])()
+            # if binning_fn is None:
+            #     raise ValueError(f"Binning function {binning_config['binning_fn']} not recognized, but be {binning.__all__}")
+            # bins = binning_fn.call(binning_config["lower_edge"], binning_config["upper_edge"], binning_config["num_bins"])
+            bins = torch.linspace(binning_config["lower_edge"], binning_config["upper_edge"], binning_config["num_bins"] + 1)
+
+            train_loss_fn = loss.BinningAwareSignificance(
+                bins = bins,
+                sampler=training_sampler,
+                device=DEVICE,
+                train=True,
+                mode=config["loss_mode"],
+                uncertainty=config["loss_uncertainty"],
+                binning_cfg=binning_config["kernel_config"][binning_config["kernel_cls"]],
+                )
+            validation_loss_fn = loss.BinningAwareSignificance(
+                bins = bins,
+                sampler=training_sampler,
+                device=DEVICE,
+                train=False,
+                mode=config["loss_mode"],
+                uncertainty=config["loss_uncertainty"],
+                binning_cfg=binning_config["kernel_config"][binning_config["kernel_cls"]],
+            )
 
         #----
         ### training loop
@@ -176,7 +188,6 @@ def main(**kwargs):
                 device=DEVICE,
                 sample_from = config["sample_attributes"],
             )
-
             if current_iteration % config["verbose_interval"] == 0:
                 tensorboard_writer.log_loss({"batch_loss": t_loss.item()}, step=current_iteration)
                 logger_inst.training(f"Training: {current_iteration} - batch loss: {t_loss.item():.2E}")
@@ -196,18 +207,19 @@ def main(**kwargs):
                     device=DEVICE
                     )
                 # TODO when edges should be tracked add this in a way that is universal and does not break for models without binning layer, e.g. add property to model that returns None if no binning layer is present and add check in log_metrics
-                # log_metrics(
-                #     tensorboard_inst = tensorboard_writer,
-                #     iteration_step = current_iteration,
-                #     sampler_output = (eval_t_pred, eval_t_tar, eval_t_weights),
-                #     target_map = target_map,
-                #     mode = "train",
-                #     loss = eval_t_loss.item(),
-                #     lr = optimizer_inst.param_groups[0]["lr"],
-                #     binning_edges = model_inst.binning_layer.edges.detach().cpu(),
-                #     current_iteration = current_iteration,
-                #     kernels = model_inst.binning_layer.kernels,
-                # )
+                log_metrics(
+                    tensorboard_inst = tensorboard_writer,
+                    iteration_step = current_iteration,
+                    sampler_output = (eval_t_pred, eval_t_tar, eval_t_weights),
+                    target_map = target_map,
+                    mode = "train",
+                    loss = eval_t_loss.item(),
+                    lr = optimizer_inst.param_groups[0]["lr"],
+                    # binning_edges = model_inst.binning_layer.edges.detach().cpu(),
+                    binning_edges = bins,
+                    current_iteration = current_iteration,
+                    # kernels = model_inst.binning_layer.kernels,
+                )
                 # evaluation of validation
                 logger_inst.info(f"Iteration {current_iteration}. Start evaluation of validation data.")
 
@@ -219,17 +231,19 @@ def main(**kwargs):
                     device=DEVICE
                     )
                 # TODO when edges should be tracked add this in a way that is universal and does not break for models without binning layer, e.g. add property to model that returns None if no binning layer is present and add check in log_metrics
-                # log_metrics(
-                #     tensorboard_inst = tensorboard_writer,
-                #     iteration_step = current_iteration,
-                #     sampler_output = (eval_v_pred, eval_v_tar, eval_v_weights),
-                #     target_map = target_map,
-                #     mode = "validation",
-                #     loss = eval_v_loss.item(),
-                #     binning_edges = model_inst.binning_layer.edges.detach().cpu(),
-                #     current_iteration = current_iteration,
-                #     kernels=model_inst.binning_layer.kernels,
-                # )
+                log_metrics(
+                    tensorboard_inst = tensorboard_writer,
+                    iteration_step = current_iteration,
+                    sampler_output = (eval_v_pred, eval_v_tar, eval_v_weights),
+                    target_map = target_map,
+                    mode = "validation",
+                    loss = eval_v_loss.item(),
+                    # TODO binning edges and kernels are only defined for BinnedLBN make universal
+                    # binning_edges = model_inst.binning_layer.edges.detach().cpu(),
+                    binning_edges = bins,
+                    current_iteration = current_iteration,
+                    # kernels=model_inst.binning_layer.kernels,
+                )
                 logger_inst.training(f"Iteration: {current_iteration} - TLoss: {eval_t_loss:.2E} VLoss: {eval_v_loss:.2E}")
 
                 # if (current_iteration % 1000 == 0) and (current_iteration > 0):

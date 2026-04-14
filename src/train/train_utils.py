@@ -4,9 +4,10 @@ import numpy as np
 import plotting
 import metrics
 import train_config
-
+from utils import logger
 functions = {}
 
+logger_inst = logger.get_logger(__name__)
 
 def do_scheduler_step(loss, logger_inst, scheduler_inst, model_inst, optimizer_inst, checkpoint_inst):
     previous_lr =  optimizer_inst.param_groups[0]["lr"]
@@ -207,6 +208,7 @@ def validation_signal_efficiency(model, loss_fn, sampler, sample_from, device):
 
 
 def log_metrics(tensorboard_inst, iteration_step, sampler_output, target_map, mode="train", **data):
+    logger_inst.info(f"Start {mode} Logs at iteration {iteration_step}")
     # outputs of network
     pred, tar, weights = sampler_output
 
@@ -264,8 +266,8 @@ def log_metrics(tensorboard_inst, iteration_step, sampler_output, target_map, mo
     tensorboard_inst.log_figure(f"{mode} roc curve one vs rest", roc_fig, step=iteration_step)
 
     # edge plot
-    kernel_fig, kernel_ax = plotting.visualize_bins(data["kernels"])
-    tensorboard_inst.log_figure("bin edges", kernel_fig, step=iteration_step)
+    # kernel_fig, kernel_ax = plotting.visualize_bins(data["kernels"])
+    # tensorboard_inst.log_figure("bin edges", kernel_fig, step=iteration_step)
 
 
 

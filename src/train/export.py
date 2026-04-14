@@ -17,6 +17,7 @@ def torch_export(model, dst_path, input_tensors):
     model = create_model.AddActFnToModel(model, "softmax")
     model = model.eval()
 
+    from IPython import embed; embed(header = " line: 20 in export.py")
     categorical_input, continuous_inputs = input_tensors
 
     continuous_inputs = continuous_inputs.to(torch.float32)
@@ -51,7 +52,7 @@ def torch_export_v2(model, name, fold, base_dir=None, add_softmax=True):
     DEVICE=torch.device("cpu")
     if add_softmax:
         model = create_model.AddActFnToModel(model, "softmax")
-
+    from IPython import embed; embed(header = " line: 55 in export.py")
     model = model.to(DEVICE)
     model = model.eval()
     # create dummy features from shape
@@ -156,8 +157,10 @@ if __name__ == "__main__":
     # if given path is a only a name search for name in enviroment dir
     if len(model_path.parts) == 1:
         model_path = pathlib.Path(os.environ["MODELS_DIR"]).with_stem(args.model_path).with_suffix(".pt2")
-
     model = torch.load(args.model_path, weights_only=False)
+    # model is dict with keys
+    # epoch ,model_inst, model_state_dict, optimizer
+    model = model["model_inst"]
     model.eval()
     torch_export_v2(model, name=str(model_path), fold=args.fold)
     print("Done exporting")

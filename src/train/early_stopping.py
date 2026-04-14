@@ -59,5 +59,54 @@ class EarlyStopOnPlateau:
             return True
         return False
 
+    def load_last_best_model(self, model_inst, device):
+        model_inst, best_model = model_inst.to(device), self.best_model.to(device)
+        return model_inst.load_state_dict(best_model)
+
     def __call__(self, loss, model):
         return self.check(loss, model)
+
+
+class CheckPoint:
+    def __init__(self, checkpoint_name, checkpoint_fold,  patience=0, delta=0, verbose=True):
+        self.fold = checkpoint_fold
+        self.name = checkpoint_name
+
+        self.patience = patience # number of iteration before starting to look again
+        self.delta = delta # minimum threshold that needs to be overcome
+        self.verbose = verbose
+
+        self.best_loss = None
+        self.last_checkpoint = None
+        self.no_improvement_count = 0
+
+    @property
+    def save_path(self):
+        base_dir = os.environ["MODELS_DIR"]
+        dst = (pathlib.Path(base_dir) / f"{self.name}_fold{self.fold}").with_suffix(".pt")
+        return str(dst)
+
+    def check_criteria(self, loss):
+        # when loss is small, save model
+        if self.no_improvement_count >= self.patience:
+            if (self.best_loss is None) or (self.best_loss <= (loss - self.delta)):
+                logger_inst.info(f"Checkpoint criteria trigger started at {loss:6E} - after {self.no_improvement_count} waiting epochs")
+                self.no_improvement_count = 0
+                self.best_loss = loss
+                return True
+        self.no_improvement_count +=1
+        return False
+
+    def create_checkpoint(self, model, optimizer, scheduler, current_iteration):
+        checkpoint = {
+            "epoch": current_iteration,
+            "model_inst" : model,
+            "model_state_dict" : model.state_dict().copy(),
+            "optimizer" : optimizer,
+            "optimizer_state_dict": optimizer.state_dict().copy(),
+            "lr_scheduler": scheduler,
+            "iteration": current_iteration,
+        }
+
+        self.last_checkpoint = checkpoint
+        torch.save(self.last_checkpoint, self.save_path)

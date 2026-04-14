@@ -3,9 +3,22 @@ from __future__ import annotations
 import torch
 import kernel
 import binning
+from utils import logger
+
+logger_inst = logger.get_logger(__name__)
+
 
 class SignalEfficiency(torch.nn.Module):
-    def __init__(self, sampler, device, train=True, mode="full", uncertainty=0.1, *args, **kwargs):
+    def __init__(
+        self,
+        sampler,
+        device,
+        train=True,
+        mode="full",
+        uncertainty=0.1,
+        *args,
+        **kwargs,
+        ):
         """
         This function creates a loss using the Asimov Significance as introduced in https://arxiv.org/abs/1806.00322.
         The loss is calculated as 1 / significance, thus maximizing the significance is equivalent to minimizing the loss.
@@ -16,12 +29,15 @@ class SignalEfficiency(torch.nn.Module):
         The necessary information about phase space and weights is handed over by *sampler*.
         If *uncertainty* is set between 0 and 1 a relative uncertainty of the background yield is calculated, everything above 1 adds a constant uncertainty.
 
-        #TODO
         Args:
-            sampler (_type_): _description_
-            device (_type_): _description_
-            train (bool, optional): _description_. Defaults to True.
-            uncertainty (int, optional): Relative or absolute uncertainty. Defaults to 0.1 (10%).
+            sampler: Sampler instance that provides necessary information about phase space and weights.
+            device: Device on which the tensors are placed.
+            train: Bool to signal if the loss is used in training or validation mode, which changes the way the loss is calculated.
+            mode: String to signal which implementation of the Asimov Significance is used, choose between "full", "no_unc", "approximation".
+            uncertainty: Float to signal the level of uncertainty, if between 0 and 1 a relative uncertainty of
+
+        Returns:
+
         """
         super().__init__()
 
@@ -180,26 +196,28 @@ class SignalEfficiency(torch.nn.Module):
 class BinningAwareSignificance(SignalEfficiency):
     def __init__(
         self,
-        num_bins,
-        binning_fn,
+        bins,
+        binning_cfg=None,
         *args,
         **kwargs
         ):
         super().__init__(**kwargs)
         # self.edges = torch.linspace(0, 1, num_bins + 1)
-        self.binning_fn = binning_fn
-        _low, _max = 0, .99
-        self.edges = self.binning_fn(_low, _max, num_bins + 1)
 
+        self.edges = bins
         kernels = []
-        for low, upper in zip(self.edges[:-1], self.edges[1:]):
-            if low == _low:
+        for bin_num, (low, upper) in enumerate(zip(self.edges[:-1], self.edges[1:])):
+            if bin_num == 0:
                 bin_type = "underflow"
-            elif low == _max:
+            elif bin_num == len(self.edges) - 2:
                 bin_type = "overflow"
             else:
                 bin_type = "normal"
-            k = kernel.GaussianKernel((low, upper), smooth_width=torch.tensor(0.01), abs_mode=False, bin_type = bin_type, smooth_zone_value=torch.tensor(0.5))
+            k = kernel.GaussianKernelV2(
+                initial_edge=(low, upper),
+                bin_type=bin_type,
+                **binning_cfg
+            )
             kernels.append(k)
 
         self.kernels = kernels
@@ -231,7 +249,6 @@ class BinningAwareSignificance(SignalEfficiency):
         The approximation is calculated batchwise and only defined for binary classification, which is calculated is defined by *is_signal*.
         The physics weight information is handed over by *product_of_weights* and *evaluation_phase_space_mask*.
         The actual network output is handed over by *prediction* and *truth*.
-
         Args:
             prediction (torch.tensor): torch tensor coming from model output, containing the predicted probabilities for each class.
             truth (torch.tensor): torch tensor containing the true class labels, one-hot encoded.
@@ -271,8 +288,6 @@ class BinningAwareSignificance(SignalEfficiency):
 
         # since filtered batch is 0 for either signal or background this reduces the sum
         # to be specifically only over signal OR background events
-        # from IPython import embed; embed(header = " line: 315 in loss.py")
-
         binned_yield = []
         for kernel in self.kernels:
             scale = kernel(prediction) # give n-bins of yield. Which needs to summed up per bin
@@ -291,13 +306,19 @@ class BinningAwareSignificance(SignalEfficiency):
 
         s = self.approximation_sb(signal_node_prediction, signal_node_truth, weight["product_of_weights"], weight["evaluation_space_mask"], is_signal=True)
         b = self.approximation_sb(signal_node_prediction, signal_node_truth, weight["product_of_weights"], weight["evaluation_space_mask"], is_signal=False)
-
         # if (s <= 0 or b <= 0):
         #     from IPython import embed; embed(header = "Either s or b is below 0, which is not physical, starting debugger in Forward of SignalEfficiency loss")
         # uncertainty = self._uncertainty(b)
         loss = self.loss(s=s, b=b, unc_b=0)
         loss = loss.sum()
+        # if loss == 0:
+        #     return 0
+        # if torch.isnan(1 / loss):
+        #     from IPython import embed; embed(header = "IsNan line: 176 in loss.py")
+
+
         # from IPython import embed; embed(header = "line: 337 in loss.py")
+        # from IPython import embed; embed(header = " line: 321 in loss.py")
         return 1 / loss
 
 

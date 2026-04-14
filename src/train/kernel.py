@@ -382,41 +382,17 @@ class GaussianKernelV2(BaseKernel):
         # gaussian should not over whole bin
         assert self._left_notch + self._right_notch <= 1, f"Notches should not exceed whole bin, but left notch is {self._left_notch}, right notch is {self._right_notch} and their sum is {self._left_notch + self._right_notch}"
 
-
-    # @property
-    # def gaussian_left_coordinates(self):
-    #     # start and end is shifted by x of FHWM length
-    #     if self.left_notch is None:
-    #         shift = self.smoothing_width / 2
-    #     else:
-    #         shift = self.left_notch
-
-    #     start = self.initial_lower_edge - shift
-    #     end = self.initial_lower_edge + shift
-    #     return start, end
-
-    # @property
-    # def gaussian_right_coordinates(self):
-    #     if self.right_notch is None:
-    #         shift = self.smoothing_width / 2
-    #     else:
-    #         shift = self.right_notch
-
-    #     start = self.initial_upper_edge - shift
-    #     end = self.initial_upper_edge + shift
-    #     return start, end
-
-    # @property
-    # def middle_coordinates(self):
-    #     shift = self.smooth_width / 2
-    #     start = self.initial_lower_edge + shift
-    #     end = self.initial_upper_edge - shift
-    #     return start, end
-
     @property
     def coordinates(self):
-        transition_point_left = self.initial_lower_edge + self.left_notch
-        transition_point_right = self.initial_upper_edge + self.right_notch
+        if self.bin_type == "overflow":
+            transition_point_left = self.initial_lower_edge + self.left_notch
+            transition_point_right = self.initial_upper_edge
+        elif self.bin_type == "underflow":
+            transition_point_left = self.initial_lower_edge
+            transition_point_right = self.initial_upper_edge - self.right_notch
+        else:
+            transition_point_left = self.initial_lower_edge + self.left_notch
+            transition_point_right = self.initial_upper_edge - self.right_notch
         return transition_point_left, transition_point_right
 
     def shifted_gaussian(self, x: torch.tensor, shift: torch.tensor) -> torch.tensor:
@@ -432,26 +408,6 @@ class GaussianKernelV2(BaseKernel):
         """
         x, shift, smooth_std = self.wrap_tensors(x, shift, self.std)
         return torch.exp(-(1/2) * ((x - shift) / (smooth_std))**2)
-
-    # def arg_for_y(self,y, shift, std):
-    #     # returns x for given y
-    #     y, shift, std = wrap_tensors(y, shift, std)
-    #     return shift + (2 * std) * torch.sqrt(-torch.log(y))
-
-    # def std_for_given_smooth_width(self, smooth_width, value_after_passing_smooth_width = 0.5) -> torch.tensor:
-    #     """
-    #     Calculates the standard deviation so that the *value_at_width* is reached after a given *smooth_width* going from the peak of the gaussian.
-    #     This means that a steeper gaussian is used when a smaller smooth width or smaller values reached are used.
-
-    #     Args:
-    #         smooth_width (float): Width of the smoothing zone.
-    #         value_after_passing_smooth_width (float, optional): The value of the scaling factor after passing the smooth width
-
-    #     Returns:
-    #         torch.tensor: Std to model the gaussian
-    #     """
-    #     smooth_width, value_after_passing_smooth_width = wrap_tensors(smooth_width, value_after_passing_smooth_width)
-    #     return (smooth_width / (2 * torch.sqrt(-torch.log(value_after_passing_smooth_width))))
 
     @property
     def FW50M(self):
@@ -479,13 +435,6 @@ class GaussianKernelV2(BaseKernel):
             0.1 : torch.tensor(4.29193), # 2 * torch.sqrt(2 * torch.log(10)) exact calculation
         }
         return (2 * half_width) / constants[percentage]
-
-
-    # def overflow_kernel(self, x):
-
-    # def underflow_kernel(self, x):
-
-    # def normal_kernel(self, x):
 
     def kernel(self, x: torch.tensor) -> torch.tensor:
         """
@@ -550,7 +499,7 @@ class GaussianKernelV2(BaseKernel):
 
 
     def __call__(self, *args, **kwds):
-        return self.kernel(*args, **kwds) / self.normalization
+        return self.kernel(*args, **kwds) #/ self.normalization
 
 
 if __name__ == "__main__":
@@ -560,9 +509,45 @@ if __name__ == "__main__":
     kernel_cfg = {"smooth_width": torch.tensor(0.1), }
     #GaussianKernel((torch.tensor(0.2), torch.tensor(0.4)), torch.tensor(0.0999), torch.tensor(0.5), abs_mode=True).control_plot(x)
     #plt.savefig("test.png")
-    from IPython import embed; embed(header = " line: 130 in kernel.py")
-    g = GaussianKernel((torch.tensor(0.4), torch.tensor(0.5)), torch.tensor(0.5), bin_type="normal")
-    g.control_plot(torch.linspace(0,1,200))
+
+    normal = GaussianKernelV2(
+        initial_edge = (torch.tensor(0.4), torch.tensor(0.5)),
+        left_notch =  0.1,
+        right_notch = 0.1,
+        smoothing_width = 0.2,
+        abs_mode = False,
+        bin_type = "normal",
+        bin_height = 1,
+    )
+
+    underflow = GaussianKernelV2(
+        initial_edge = (torch.tensor(0.0), torch.tensor(0.3)),
+        left_notch =  0.0,
+        right_notch = 0.1,
+        smoothing_width = 0.2,
+        abs_mode = False,
+        bin_type = "underflow",
+        bin_height = 1,
+    )
+
+
+    overflow = GaussianKernelV2(
+        initial_edge = (torch.tensor(0.7), torch.tensor(1)),
+        left_notch =  0.0,
+        right_notch = 0.1,
+        smoothing_width = 0.2,
+        abs_mode = False,
+        bin_type = "overflow",
+        bin_height = 1,
+    )
+
+
+    normal.control_plot(torch.linspace(0,1,400))
+    overflow.control_plot(torch.linspace(0,1,400))
+    underflow.control_plot(torch.linspace(0,1,400))
     plt.savefig("test.png");
+
     from IPython import embed; embed(header = " line: 130 in kernel.py")
-    a = create_kernels(bin_edges, kernel_cls=GaussianKernel, kernel_cfg=kernel_cfg)
+
+    # from IPython import embed; embed(header = " line: 130 in kernel.py")
+    # a = create_kernels(bin_edges, kernel_cls=GaussianKernel, kernel_cfg=kernel_cfg)

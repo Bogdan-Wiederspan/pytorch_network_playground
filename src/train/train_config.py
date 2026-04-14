@@ -50,42 +50,57 @@ model_building_config = {
 
 config = {
     "model_choice": "bnet_lbn", # "binned_lbn" or "bnet_lbn"
+    # "model_choice": "binned_lbn", # "binned_lbn" or "bnet_lbn"
+    # "loss_fn" : "signal_efficiency",
+    "loss_fn" : "signal_efficiency_binning_aware",
 
     "max_train_iteration" : 60000,
-    "verbose_interval" : 5,
-    "validation_interval" : 200,
+    "verbose_interval" : 5, # number of iterations between two logger outputs of training loss
+    "validation_interval" : 100, # number of iterations between two validation passes / plots are done during validation
     "gamma":0.5,
     "label_smoothing":0,
-    "train_folds" : (0,),
-    "k_fold" : 5,
-    "seed" : 1,
-    "train_ratio" : 0.75,
+    "train_folds" : (0,), # which training folds to use
+    "k_fold" : 5, # number of folds for k-fold cross validation
+    "seed" : 1, # set torch and numpy seed for reproducibility
+    "train_ratio" : 0.75, # split ratio for k-fold data into train and validation
     "v_batch_size" : -1, # for signal efficiency a validation pass needs to have whole WEIGHTs
     "t_batch_size" : 4096 * 10,
     "sample_ratio" : {"dy": 1/3, "tt": 1/3, "hh": 1/3},
-    "sample_attributes" : ["continuous", "categorical", "targets"] + ["product_of_weights", "evaluation_space_mask"], # continuous, categorical, targets should always be present
-    "min_events_in_batch": 1,
+    "sample_attributes" : (
+        ["continuous", "categorical", "targets"] + ["product_of_weights", "evaluation_space_mask"]
+        ), # what to sample from sampler - ATTENTION: continuous, categorical, targets needs to be always present
+    "min_events_in_batch": 1, # minimal number of events of a subprocess in a batch
     "save_model_name" : "test_binning",
+
+    "training_fn" : "default", # chooses the training function
+    "validation_fn" : "signal_efficiency",
+
+    "loss_mode" : "no_unc", # "full", "no_unc", "approximation" only relevant if signal_efficiency loss is chosen, determines which formula is used for the asimov calculation
+    "loss_uncertainty" : 0.0, # only relevant if signal_efficiency loss is chosen, determines the background uncertainty used in the asimov calculation
+
+    # DEBUG options
     "get_batch_statistic_return_dummy" : False,
     "load_marcel_stats" : False,
     "load_marcel_weights" : False,
-    "training_fn" : "default", # chooses the training function
-    "validation_fn" : "signal_efficiency",
-    "loss_fn" : "signal_efficiency",
-    "loss_mode" : "no_unc", # "full", "no_unc", "approximation" only relevant if signal_efficiency loss is chosen, determines which formula is used for the asimov calculation
-    "loss_uncertainty" : 0.0, # only relevant if signal_efficiency loss is chosen, determines the background uncertainty used in the asimov calculation
 }
 
 # Config for the binning neural network, only relevant if model_choice is "binned_lbn"
 # TODO since this is model relevant and new model hash should be created
 binning_config = {
-    "init_edges": torch.linspace(.1,0.9, 25),
-    "kernel_cls": "GaussianKernel",
+    # Binning Config
+    # "init_edges": torch.linspace(.1,0.9, 25),
+    "num_bins": 20,
+    "lower_edge": 0,
+    "upper_edge": 1,
+    "binning_fn": "EqualDistant", # EqualDistant, Decompress, or function defined in binning.__all__
+    # Kernels Config
+    "kernel_cls": "GaussianKernelV2",
     "kernel_config": {
-        "GaussianKernel": {
-            "smoothing_width": 0.0500,
-            # "smooth_zone_value": 0.5000,
-            # "abs_mode": False,
+        "GaussianKernelV2": {
+            "smoothing_width": 0.3,
+            "abs_mode": False,
+            "left_notch": 0.1,
+            "right_notch": 0.1,
             },
         },
     }

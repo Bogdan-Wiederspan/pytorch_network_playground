@@ -1164,7 +1164,7 @@ class BinningLayer(torch.nn.Module):
             else:
                 bin_config["bin_type"] = "normal"
 
-            kernels.append(self.kernel_cls(edge=edge, **bin_config))
+            kernels.append(self.kernel_cls(edge, **bin_config))
         return kernels
 
     # def build_kernels(self,):
