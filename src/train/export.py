@@ -1,80 +1,58 @@
-import inspect
 import pathlib
 import argparse
 import os
 
-from abc import abstractmethod
-
-
 import torch
-import os
 
 from models import create_model
 
 
+def torch_export(
+    model_inst: torch.nn.Module,
+    name: str,
+    fold: str,
+    base_dir: str | None=None,
+    add_softmax: bool =True) -> str:
+    """
+    Takes *model*
 
-def torch_export(model, dst_path, input_tensors):
-    model = create_model.AddActFnToModel(model, "softmax")
-    model = model.eval()
+    Args:
+        model_inst (torch.nn.Module): PyTorch model instance, no path.
+        name (str): Name of the model, used to name the result.
+        fold (str): Current fold of the model. Is part of the naming scheme
+        base_dir (str | None, optional): Directory where model is stored, if None take from MODELS_DIR environment. Defaults to None.
+        add_softmax (bool, optional): Adds Softmax as last layer. Defaults to True.
 
-    from IPython import embed; embed(header = " line: 20 in export.py")
-    categorical_input, continuous_inputs = input_tensors
-
-    continuous_inputs = continuous_inputs.to(torch.float32)
-    categorical_input = categorical_input.to(torch.int32)
-
-    # batch size 1 is an edge case and overwrites dynamic batch size, thus, inflate input to prevent this
-    if categorical_input.shape[0] == 1:
-        continuous_inputs = torch.concatenate((continuous_inputs, continuous_inputs))
-        categorical_input = torch.concatenate((categorical_input, categorical_input))
-
-    # HINT: input is chosen since model takes a tuple of inputs, normally name of inputs is used
-    # dim = torch.export.dynamic_shapes.Dim.AUTO
-    dim = torch.export.Dim("batch")
-
-    dynamic_shapes = {
-        # "categorical_inputs": (dim, categorical_input.shape[-1]),
-        # "continuous_inputs" : (dim, continuous_inputs.shape[-1]),
-        "categorical_inputs": {0:dim, 1:categorical_input.shape[-1]},
-        "continuous_inputs" : {0:dim, 1:continuous_inputs.shape[-1]},
-    }
-
-    exp = torch.export.export(
-        model,
-        args=(categorical_input, continuous_inputs),
-        dynamic_shapes=dynamic_shapes,
-    )
-
-    p = pathlib.Path(f"{dst_path}").with_suffix(".pt2")
-    torch.export.save(exp, p, pickle_protocol=4)
-
-def torch_export_v2(model, name, fold, base_dir=None, add_softmax=True):
+    Returns:
+        str: Path to exported pt2 model.
+    """
+    # by default set CPU device, to enable most compatible export.
     DEVICE=torch.device("cpu")
-    if add_softmax:
-        model = create_model.AddActFnToModel(model, "softmax")
-    from IPython import embed; embed(header = " line: 55 in export.py")
-    model = model.to(DEVICE)
-    model = model.eval()
-    # create dummy features from shape
-    # batch size 1 is an edge case and overwrites dynamic batch size, thus, inflate input to prevent this
-    num_cat = len(model.categorical_features)
-    num_cont = len(model.continuous_features)
 
+    if add_softmax:
+        model_inst = create_model.AddActFnToModel(model_inst, "softmax")
+
+    # prepare model_inst
+    model_inst = model_inst.to(DEVICE)
+    model_inst = model_inst.eval()
+    # prepare model input signature, which requires the exact shape - using dummy inputs
+    num_cat = len(model_inst.categorical_features)
+    num_cont = len(model_inst.continuous_features)
+
+    # HINT: batch size 1 is an edge case and overwrites dynamic batch size
+    # batch size is set to 2 instead to prevent this.
     categorical_input = torch.zeros(2, num_cat).to(torch.int32).to(DEVICE)
     continuous_inputs = torch.zeros(2, num_cont).to(torch.float32).to(DEVICE)
 
-
-    # HINT: input is chosen since model takes a tuple of inputs, normally name of inputs is used
-    # dim = torch.export.dynamic_shapes.Dim.AUTO
     dim = torch.export.Dim("batch")
-
     dynamic_shapes = {
         "categorical_inputs": {0:dim, 1:categorical_input.shape[-1]},
         "continuous_inputs" : {0:dim, 1:continuous_inputs.shape[-1]},
     }
 
+    # do actual export and saving
     exp = torch.export.export(
-        model,
+        model_inst,
         args=(categorical_input, continuous_inputs),
         dynamic_shapes=dynamic_shapes,
     )
@@ -87,60 +65,42 @@ def torch_export_v2(model, name, fold, base_dir=None, add_softmax=True):
     return dst
 
 
-class TorchExport():
-    def __init__(self, model_inst, model_name, fold=0, device="cpu", save_dir=None):
-        self.device = torch.device(device)
-        self.model = model_inst
-        self.save_dir = save_dir
-        self.model_name = model_name
-        self.fold = fold
+def torch_save(
+    model: torch.nn.Module,
+    name: str,
+    fold: str,
+    base_dir: str | None) -> None:
+    """
+    Small wrapper to save *model_inst* with *name* and *fold* number in *base_dir*.
+    If *base_dir* is None a default location defined in MODELS_DIR environment is used.
 
-    @abstractmethod
-    def _input(self):
-        """ Should return a tuple of tensors that can be used to run the model """
-        pass
-
-    def dst(self):
-        if self.save_dir is None:
-            save_dir = os.environ["MODELS_DIR"]
-        return (pathlib.Path(save_dir) / f"{self.model_name}_fold{self.fold}").with_suffix(".pt2")
-
-    def export(self):
-        model = self.model.to(self.device)
-        model = model.eval()
-
-        forward_signature = list(inspect.signature(model.forward).parameters.keys())
-        _input = self._input()
-
-        dim = torch.export.Dim("batch")
-        dynamic_shapes = {forward_arg: {0: dim, 1: _inp_tensor.shape[-1]} for forward_arg, _inp_tensor in zip(forward_signature, _input)}
-
-        exp = torch.export.export(
-            model,
-            args=_input,
-            dynamic_shapes=dynamic_shapes,
-        )
-
-        torch.export.save(exp, self.dst(), pickle_protocol=4)
-        print(f"successfully export to {self.dst()}")
-
-class TorchExportFullModel(TorchExport):
-    def _input(self):
-        num_cat = len(model.categorical_features)
-        num_cont = len(model.continuous_features)
-
-        categorical_input = torch.zeros(2, num_cat).to(torch.int32).to(self.device)
-        continuous_inputs = torch.zeros(2, num_cont).to(torch.float32).to(self.device)
-        return categorical_input, continuous_inputs
-
-
-def torch_save(model, name, fold):
+    Args:
+        model (torch.nn.Module): Pytorch model instance.
+        name (str): Name of the saved model.
+        fold (str): Fold number of the saved model.
+        base_dir (str | None): Path to directory where model is saved.
+    """
     base_dir = os.environ["MODELS_DIR"]
     dst = (pathlib.Path(base_dir) / f"{name}_fold{fold}").with_suffix(".pt")
     torch.save(model, dst)
 
 
-def run_exported_tensor_model(pt2_path, cat, cont):
+def run_exported_tensor_model(
+    pt2_path: str,
+    cat: torch.tensor,
+    cont: torch.tensor) -> torch.tensor:
+    """
+    Run a given model stored at *pt2_path* with *cat* and *cont* tensors.
+    This is a method to check if exporting the model resulted in same results.
+
+    Args:
+        pt2_path (str): Path to Pt2 file.
+        cat (torch.tensor): Tensor with categorical features.
+        cont (torch.tensor): Tensor with continuous features.
+
+    Returns:
+        torch.tensor: Tensor with model output.
+    """
     exp = torch.export.load(pt2_path)
     scores = exp.module()(cat, cont)
     return scores
@@ -154,13 +114,15 @@ if __name__ == "__main__":
     args = p.parse_args()
 
     model_path = pathlib.Path(args.model_path)
+    fold = args.fold
     # if given path is a only a name search for name in enviroment dir
     if len(model_path.parts) == 1:
         model_path = pathlib.Path(os.environ["MODELS_DIR"]).with_stem(args.model_path).with_suffix(".pt2")
+
     model = torch.load(args.model_path, weights_only=False)
     # model is dict with keys
     # epoch ,model_inst, model_state_dict, optimizer
     model = model["model_inst"]
     model.eval()
-    torch_export_v2(model, name=str(model_path), fold=args.fold)
+    torch_export(model, name=str(model_path), fold=fold)
     print("Done exporting")
