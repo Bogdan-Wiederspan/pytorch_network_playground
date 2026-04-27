@@ -31,9 +31,9 @@ setup_env() {
             # >/dev etc. just silence the output
             if ! command -v pyenv >/dev/null 2>&1; then
                 pyenv_activate
+            fi
             pyenv activate "${ML_ENV}"
             echo "activate virtualenv ${ML_ENV}"
-            fi
         else
             echo "can' activate pyenv due too wrong PYEV_ROOT or not set ML_ENV"
             return 1
@@ -58,11 +58,6 @@ setup_env() {
         echo "VENV_MODE can only be cf or pyenv, but got ${VENV_MODE}"
         return 3
     fi
-    # extend PS1 if environment is set properly
-    # Show only the last part of the virtualenv path (env name) in the prompt
-    export PS1="[${VIRTUAL_ENV##*/}] ${PS1}"
-    # include source of project as root for python
-    export PYTHONPATH=$"(pwd)/src"
     return 0
 }
 
@@ -77,13 +72,20 @@ setup() {
     # BASH_SOURCE[0] = path of current script, get dir and resolve absolute path
     local LOCAL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     source "$LOCAL_DIR/config.sh"
+
+    # run env and check status if run correctly change python path and venv marker
     setup_env
+    SETUP_DONE=$?
 
-    if [ "${SETUP_DONE}" = 0 ]; then
+    if [ "${SETUP_DONE}" -eq 0 ]; then
         echo "Ready to go"
-        #export SETUP_COMPLETE=1
+        export SETUP_COMPLETE=1
+        # extend PS1 if environment is set properly
+        # Show only the last part of the virtualenv path (env name) in the prompt
+        export PS1="[${VIRTUAL_ENV##*/}] ${PS1}"
+        # include source of project as root for python
+        export PYTHONPATH="${PYTHONPATH}:$(pwd)/src"
     fi
-
     return 0
 }
 
