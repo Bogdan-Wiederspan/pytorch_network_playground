@@ -131,7 +131,7 @@ class ColoredFormatter(logging.Formatter):
 
 class TensorboardLogger():
     def __init__(self, name=None, path=None):
-        self.hash = name.stem
+        self.hash = name
         self.path = self.logger_path() if path is None else self.log_dir / path
         self.writer = self.create_tensorboard_writer(log_dir=self.path)
 

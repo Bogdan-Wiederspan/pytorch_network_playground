@@ -1,58 +1,57 @@
 # standard imports
-import torch
-import numpy as np
+import dataclasses
+
 # package imports
 import optimizer
+import numpy as np
+import torch
 
 import loss
 import binning
+import export
 from models import create_model
 from data import load_data, preprocessing, sampler, cache
 from utils import logger
 
-from train_config import (
-    config, dataset_config, model_building_config, optimizer_config, target_map, scheduler_config, binning_config
-)
-from train_utils import training_fn, validation_fn, log_metrics
+from train_config_dataclasses import full_config
+from train_utils import TrainingLoop, ValidationLoop, log_metrics
 from early_stopping import EarlyStopOnPlateau, CheckPoint
-from export import torch_save, torch_export_v2
 import marcel_weight_translation as mwt
 
 CPU = torch.device("cpu")
 CUDA = torch.device("cuda")
 DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-torch.manual_seed(config["seed"])
-np.random.seed(config["seed"])
-
+torch.manual_seed(full_config.training_config.seed)
+np.random.seed(full_config.training_config.seed)
 
 def main(**kwargs):
     # prepare logger
     logger_inst = logger.get_logger(__name__)
     logger_inst.info(f"DEVICE: {DEVICE}")
     tensorboard_writer = logger.TensorboardLogger(
-        name=cache.hash_config(config),
-        path=kwargs["tensorboard_name"]
+        name=cache.hash_dictionary(dataclasses.asdict(full_config.training_config)),
+        path=kwargs["tensorboard_name"],
         )
     # TODO add LOGGER FILEPATH in same directory of tensorboard
     logger_inst.i_info(f"Tensorboard logs: {tensorboard_writer.path}")
 
     # load data
-    for current_fold in (config["train_folds"]):
-        logger_inst.info(f"Trainings fold: {current_fold}/{config["k_fold"] - 1}")
+    for current_fold in (full_config.training_config.train_folds):
+        logger_inst.info(f"Trainings fold: {current_fold}/{full_config.training_config.k_fold - 1}")
         #-----
         ### data loading and preprocessing
         #-----
         # HINT: order matters, due to memory constraints views are moved in and out of dictionaries
         # load data from cache is necessary or from root files
         # events is of form : {uid : {"continuous","categorical", "weight": torch tensor}}
-        events = load_data.get_data(dataset_config, ignore_cache=kwargs["ignore_cache"], _save_cache=kwargs["save_cache"])
+        events = load_data.get_data(full_config.dataset_config, ignore_cache=kwargs["ignore_cache"], _save_cache=kwargs["save_cache"])
 
         fold_split_coordinator = preprocessing.FoldAndSplitCoordinator(
             events=events,
             c_fold=current_fold,
-            k_fold=config["k_fold"],
-            seed=config["seed"],
+            k_fold=full_config.training_config.k_fold,
+            seed=full_config.training_config.seed,
             training_percentage=0.75,
             randomize=True,
         )
@@ -70,109 +69,113 @@ def main(**kwargs):
         training_sampler = sampler.create_sampler(
             train_events,
             weight_aggregator_inst = weight_aggregator,
-            target_map = target_map,
-            min_size=config["min_events_in_batch"],
-            batch_size=config["t_batch_size"],
+            target_map = full_config.dataset_config.target_map,
+            min_size=full_config.training_config.min_events_in_batch,
+            batch_size=full_config.training_config.t_batch_size,
             train=True,
-            sample_ratio=config["sample_ratio"],
+            sample_ratio=full_config.training_config.sample_ratio,
         )
         validation_sampler = sampler.create_sampler(
             validation_events,
             weight_aggregator_inst = weight_aggregator,
-            target_map = target_map,
-            min_size=config["min_events_in_batch"],
-            batch_size=config["v_batch_size"],
+            target_map = full_config.dataset_config.target_map,
+            min_size=full_config.training_config.min_events_in_batch,
+            batch_size=full_config.training_config.v_batch_size,
             train=False,
-            sample_ratio=config["sample_ratio"],
+            sample_ratio=full_config.training_config.sample_ratio,
         )
         # share relative weight from training batch statistic to validation sampler
         training_sampler.share_weights_between_sampler(validation_sampler)
         # get weighted mean and std of expected batch composition
         logger_inst.info(f"Start model building and configuration")
-        model_building_config["mean"], model_building_config["std"] = preprocessing.get_batch_statistics_from_sampler(
+
+        full_config.model_building_config.mean, full_config.model_building_config.std = preprocessing.get_batch_statistics_from_sampler(
             training_sampler,
             padding_values=-99999,
-            features=dataset_config["continuous_features"],
-            return_dummy=config["get_batch_statistic_return_dummy"],
+            features=full_config.dataset_config.continuous_features,
+            return_dummy=full_config.debug_config.get_batch_statistic_return_dummy,
         )
         #----
         ### model build and configuration, including optimizer, scheduler, early stopping and loss function
         #----
-        if config["model_choice"] == "binned_lbn":
-            model_inst = create_model.BinnedLBNDenseNet(
-                dataset_config["continuous_features"],
-                dataset_config["categorical_features"],
-                config=model_building_config,
-                binning_config=binning_config,
-                )
+        if full_config.training_config.model_choice == "binned_lbn":
+            model_inst = create_model.BinnedLBNDenseNet(full_config)
             model_inst.set_learning_mode("default")
-        elif config["model_choice"] == "bnet_lbn":
-            model_inst = create_model.BNetLBNDenseNet(dataset_config["continuous_features"], dataset_config["categorical_features"], config=model_building_config)
+        elif full_config.training_config.model_choice == "bnet_lbn":
+            model_inst = create_model.LBNDenseNet(full_config)
         else:
-            raise ValueError(f"Model choice {config['model_choice']} not recognized, but must be set")
+            raise ValueError(f"Model choice {full_config.training_config.model_choice} not recognized, but must be set")
 
         model_inst = model_inst.to(DEVICE).train()
 
         # TODO load mean from marcel if activated, probably break for new model
-        model_inst = mwt.load_marcels_weights(model_inst, continuous_features=dataset_config["continuous_features"], with_std=config["load_marcel_stats"], with_weights=config["load_marcel_weights"])
+        model_inst = mwt.load_marcels_weights(
+            model_inst,
+            continuous_features=full_config.dataset_config.continuous_features,
+            with_std=full_config.debug_config.load_marcel_stats,
+            with_weights=full_config.debug_config.load_marcel_weights
+            )
 
         # only linear layers contribute to weight decay, prepare config that separates them for the optimizer
-        weight_decay_parameters = optimizer.prepare_weight_decay(model_inst, optimizer_config)
+        weight_decay_parameters = optimizer.prepare_weight_decay(model_inst, full_config.optimizer_config)
 
-        if config["training_fn"] == "default":
-            optimizer_inst = torch.optim.AdamW(list(weight_decay_parameters.values()), lr=optimizer_config["lr"])
-        elif config["training_fn"] == "sam":
-            optimizer_inst = optimizer.SAM(list(weight_decay_parameters.values()), torch.optim.AdamW, lr=optimizer_config["lr"], rho = 2.0, adaptive=True)
+        training_loop = TrainingLoop(which_fn=full_config.training_config.training_fn)
+        validation_loop = ValidationLoop(which_fn=full_config.training_config.validation_fn)
+
+        if full_config.training_config.training_fn == "default":
+            optimizer_inst = torch.optim.AdamW(list(weight_decay_parameters.values()), lr=full_config.optimizer_config.lr)
+        elif full_config.training_config.training_fn == "sam":
+            optimizer_inst = optimizer.SAM(list(weight_decay_parameters.values()), torch.optim.AdamW, lr=full_config.optimizer_config.lr, rho = 2.0, adaptive=True)
 
         scheduler_inst = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer=optimizer_inst,
             mode='min',
-            factor=scheduler_config["factor"],
-            patience=scheduler_config["patience"],
-            threshold=scheduler_config["min_delta"],
-            threshold_mode=scheduler_config["threshold_mode"],
+            factor=full_config.scheduler_config.factor,
+            patience=full_config.scheduler_config.patience,
+            threshold=full_config.scheduler_config.min_delta,
+            threshold_mode=full_config.scheduler_config.threshold_mode,
             cooldown=0,
             min_lr=0,
             eps=1e-08
         )
 
         early_stopper_inst = EarlyStopOnPlateau()
-        checkpoint_inst = CheckPoint(checkpoint_name=config["save_model_name"], checkpoint_fold=current_fold)
+        checkpoint_inst = CheckPoint(checkpoint_name=full_config.training_config.save_model_name, checkpoint_fold=current_fold)
 
-        if config["loss_fn"] == "default":
-            train_loss_fn = torch.nn.CrossEntropyLoss(weight=None, size_average=None,label_smoothing=config["label_smoothing"])
-            validation_loss_fn = torch.nn.CrossEntropyLoss(weight=None, size_average=None,label_smoothing=config["label_smoothing"])
+        if full_config.training_config.loss_fn == "default":
+            train_loss_fn = torch.nn.CrossEntropyLoss(weight=None, size_average=None,label_smoothing=full_config.training_config.label_smoothing)
+            validation_loss_fn = torch.nn.CrossEntropyLoss(weight=None, size_average=None,label_smoothing=full_config.training_config.label_smoothing)
 
-        elif config["loss_fn"] == "signal_efficiency":
-            train_loss_fn = loss.SignalEfficiency(sampler=training_sampler ,device=DEVICE, train=True, mode=config["loss_mode"], uncertainty=config["loss_uncertainty"])
-            validation_loss_fn = loss.SignalEfficiency(sampler=training_sampler, device=DEVICE, train=False, mode=config["loss_mode"], uncertainty=config["loss_uncertainty"])
+        elif full_config.training_config.loss_fn == "signal_efficiency":
+            train_loss_fn = loss.SignalEfficiency(sampler_inst=training_sampler ,device=DEVICE, train=True, mode=full_config.training_config.loss_mode, uncertainty=full_config.training_config.loss_uncertainty)
+            validation_loss_fn = loss.SignalEfficiency(sampler_inst=training_sampler, device=DEVICE, train=False, mode=full_config.training_config.loss_mode, uncertainty=full_config.training_config.loss_uncertainty)
 
-        elif config["loss_fn"] == "signal_efficiency_binning_aware":
+        elif full_config.training_config.loss_fn == "signal_efficiency_binning_aware":
             # TODO CONFIG for binning aware loss, e.g. which binning fn, num_bins, etc. and add to config file
             # from IPython import embed; embed(header = " line: 148 in train.py")
-            # binning_fn = getattr(binning, binning_config["binning_fn"])()
+            # binning_fn = getattr(binning, full_config.binning_config.binning_fn)()
             # if binning_fn is None:
-            #     raise ValueError(f"Binning function {binning_config['binning_fn']} not recognized, but be {binning.__all__}")
-            # bins = binning_fn.call(binning_config["lower_edge"], binning_config["upper_edge"], binning_config["num_bins"])
-            bins = torch.linspace(binning_config["lower_edge"], binning_config["upper_edge"], binning_config["num_bins"] + 1)
+            #     raise ValueError(f"Binning function {full_config.binning_config.binning_fn} not recognized, but be {binning.__all__}")
+            # bins = binning_fn.call(full_config.binning_config.lower_edge, full_config.binning_config.upper_edge, full_config.binning_config.num_bins)
+            bins = torch.linspace(full_config.binning_config.lower_edge, full_config.binning_config.upper_edge, full_config.binning_config.num_bins + 1)
 
             train_loss_fn = loss.BinningAwareSignificance(
                 bins = bins,
-                sampler=training_sampler,
+                sampler_inst=training_sampler,
                 device=DEVICE,
                 train=True,
-                mode=config["loss_mode"],
-                uncertainty=config["loss_uncertainty"],
-                binning_cfg=binning_config["kernel_config"][binning_config["kernel_cls"]],
+                mode=full_config.training_config.loss_mode,
+                uncertainty=full_config.training_config.loss_uncertainty,
+                binning_cfg=full_config.binning_config.kernel_config[full_config.binning_config.kernel_cls],
                 )
             validation_loss_fn = loss.BinningAwareSignificance(
                 bins = bins,
-                sampler=training_sampler,
+                sampler_inst=training_sampler,
                 device=DEVICE,
                 train=False,
-                mode=config["loss_mode"],
-                uncertainty=config["loss_uncertainty"],
-                binning_cfg=binning_config["kernel_config"][binning_config["kernel_cls"]],
+                mode=full_config.training_config.loss_mode,
+                uncertainty=full_config.training_config.loss_uncertainty,
+                binning_cfg=full_config.binning_config.kernel_config[full_config.binning_config.kernel_cls],
             )
 
         #----
@@ -180,30 +183,29 @@ def main(**kwargs):
         #----
         logger_inst.info(f"Start training loop")
         for current_iteration in range(1_000_000):
-            t_loss, (t_pred, t_targets) = training_fn(
+            t_loss, (t_pred, t_targets) = training_loop(
                 model = model_inst,
                 loss_fn = train_loss_fn,
                 optimizer = optimizer_inst,
                 sampler = training_sampler,
                 device=DEVICE,
-                sample_from = config["sample_attributes"],
+                sample_from = full_config.training_config.sample_attributes,
             )
-            if current_iteration % config["verbose_interval"] == 0:
+            if current_iteration % full_config.training_config.verbose_interval == 0:
                 tensorboard_writer.log_loss({"batch_loss": t_loss.item()}, step=current_iteration)
                 logger_inst.training(f"Training: {current_iteration} - batch loss: {t_loss.item():.2E}")
-
             #----
             #### Evaluation of training and validation data, logging and checkpointing
             #----
-            if (current_iteration % config["validation_interval"] == 0) & (current_iteration >= 0):
+            if (current_iteration % full_config.training_config.validation_interval == 0) & (current_iteration >= 0):
                 # evaluation of training data
                 logger_inst.info(f"Iteration {current_iteration}. Start evaluation of training data.")
 
-                eval_t_loss, (eval_t_pred, eval_t_tar, eval_t_weights) = validation_fn(
+                eval_t_loss, (eval_t_pred, eval_t_tar, eval_t_weights) = validation_loop(
                     model_inst,
                     validation_loss_fn,
                     training_sampler,
-                    sample_from=config["sample_attributes"],
+                    sample_from=full_config.training_config.sample_attributes,
                     device=DEVICE
                     )
                 # TODO when edges should be tracked add this in a way that is universal and does not break for models without binning layer, e.g. add property to model that returns None if no binning layer is present and add check in log_metrics
@@ -211,7 +213,7 @@ def main(**kwargs):
                     tensorboard_inst = tensorboard_writer,
                     iteration_step = current_iteration,
                     sampler_output = (eval_t_pred, eval_t_tar, eval_t_weights),
-                    target_map = target_map,
+                    target_map = full_config.dataset_config.target_map,
                     mode = "train",
                     loss = eval_t_loss.item(),
                     lr = optimizer_inst.param_groups[0]["lr"],
@@ -223,11 +225,11 @@ def main(**kwargs):
                 # evaluation of validation
                 logger_inst.info(f"Iteration {current_iteration}. Start evaluation of validation data.")
 
-                eval_v_loss, (eval_v_pred, eval_v_tar, eval_v_weights) = validation_fn(
+                eval_v_loss, (eval_v_pred, eval_v_tar, eval_v_weights) = validation_loop(
                     model_inst,
                     validation_loss_fn,
                     validation_sampler,
-                    sample_from=config["sample_attributes"],
+                    sample_from=full_config.training_config.sample_attributes,
                     device=DEVICE
                     )
                 # TODO when edges should be tracked add this in a way that is universal and does not break for models without binning layer, e.g. add property to model that returns None if no binning layer is present and add check in log_metrics
@@ -235,7 +237,7 @@ def main(**kwargs):
                     tensorboard_inst = tensorboard_writer,
                     iteration_step = current_iteration,
                     sampler_output = (eval_v_pred, eval_v_tar, eval_v_weights),
-                    target_map = target_map,
+                    target_map = full_config.dataset_config.target_map,
                     mode = "validation",
                     loss = eval_v_loss.item(),
                     # TODO binning edges and kernels are only defined for BinnedLBN make universal
@@ -276,7 +278,7 @@ def main(**kwargs):
                     optimizer_inst.param_groups[0]["lr"] = current_lr
 
                 # TODO release DATA from previous RUN
-                if (current_iteration % config["max_train_iteration"] == 0) & (current_iteration > 0):
+                if (current_iteration % full_config.training_config.max_train_iteration == 0) & (current_iteration > 0):
                     from IPython import embed; embed(
                         header=f"Current break at {current_iteration} if you wanna continue press y else save")
 

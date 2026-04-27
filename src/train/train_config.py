@@ -57,11 +57,10 @@ config = {
     "max_train_iteration" : 60000,
     "verbose_interval" : 5, # number of iterations between two logger outputs of training loss
     "validation_interval" : 100, # number of iterations between two validation passes / plots are done during validation
-    "gamma":0.5,
-    "label_smoothing":0,
+    "gamma":0.5,    "label_smoothing":0,
     "train_folds" : (0,), # which training folds to use
     "k_fold" : 5, # number of folds for k-fold cross validation
-    "seed" : 1, # set torch and numpy seed for reproducibility
+    "seed" : 100, # set torch and numpy seed for reproducibility
     "train_ratio" : 0.75, # split ratio for k-fold data into train and validation
     "v_batch_size" : -1, # for signal efficiency a validation pass needs to have whole WEIGHTs
     "t_batch_size" : 4096 * 10,
@@ -89,14 +88,14 @@ config = {
 binning_config = {
     # Binning Config
     # "init_edges": torch.linspace(.1,0.9, 25),
-    "num_bins": 20,
+    "num_bins": 10,
     "lower_edge": 0,
     "upper_edge": 1,
-    "binning_fn": "EqualDistant", # EqualDistant, Decompress, or function defined in binning.__all__
+    "binning_fn": torch.linspace, # EqualDistant, Decompress, or function defined in binning.__all__
     # Kernels Config
-    "kernel_cls": "GaussianKernelV2",
+    "kernel_cls": "GaussianKernelV3",
     "kernel_config": {
-        "GaussianKernelV2": {
+        "GaussianKernelV3": {
             "smoothing_width": 0.3,
             "abs_mode": False,
             "left_notch": 0.1,
@@ -107,7 +106,7 @@ binning_config = {
 
 # Config for the learning rate scheduler
 scheduler_config = {
-    "patience" : 0, # marcel : 10
+    "patience" : 4, # marcel : 10
     "min_delta" : 0.00, # marcel : 0
     "threshold_mode" : "abs", # marcel : abs
     "factor" : 0.5,

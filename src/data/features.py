@@ -52,6 +52,7 @@ def expected_embedding_inputs():
     }
     return embedding_expected_inputs
 
+
 def input_features(debug=False, debug_length=3):
     data_prefix = prefix_map()
     categorical_features: list[str] = [
@@ -90,3 +91,38 @@ def input_features(debug=False, debug_length=3):
         continous_features = continous_features[:debug_length]
         categorical_features = categorical_features[:debug_length]
     return continous_features, categorical_features
+
+def feature(feature):
+    data_prefix = prefix_map()
+    feature =  [add_prefix(f, f"{data_prefix}_", ignore_code="_") for f in feature]
+    return tuple(feature)
+
+categorical_features = feature([
+        "pair_type",
+        # "_channel_id",
+        "dm1",
+        "dm2",
+        "vis_tau1_charge",
+        "vis_tau2_charge",
+        "has_jet_pair",
+        "has_fatjet",
+])
+
+
+continuous_features = feature([
+    "met_px", "met_py",
+    "met_cov00", "met_cov01", "met_cov11",
+    "vis_tau1_px", "vis_tau1_py", "vis_tau1_pz", "vis_tau1_e",
+    "vis_tau2_px", "vis_tau2_py", "vis_tau2_pz", "vis_tau2_e",
+    "bjet1_px", "bjet1_py", "bjet1_pz", "bjet1_e",
+    "bjet1_tag_b", "bjet1_tag_cvsb", "bjet1_tag_cvsl", "bjet1_hhbtag",
+    "bjet2_px", "bjet2_py", "bjet2_pz", "bjet2_e",
+    "bjet2_tag_b", "bjet2_tag_cvsb", "bjet2_tag_cvsl", "bjet2_hhbtag",
+    "fatjet_px", "fatjet_py", "fatjet_pz", "fatjet_e",
+    "htt_e", "htt_px", "htt_py", "htt_pz",
+    "hbb_e", "hbb_px", "hbb_py", "hbb_pz",
+    "htthbb_e", "htthbb_px", "htthbb_py", "htthbb_pz",
+    "httfatjet_e", "httfatjet_px", "httfatjet_py", "httfatjet_pz",
+    "nu1_px", "nu1_py", "nu1_pz",
+    "nu2_px", "nu2_py", "nu2_pz",
+])

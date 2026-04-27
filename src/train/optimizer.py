@@ -9,7 +9,6 @@ def normalized_weight_decay(
     model: torch.nn.Module,
     decay_factor: float = 1e-1,
     normalize: bool = True,
-    apply_to: str = "weight",
 ) -> tuple[dict, dict]:
     """
     Weight decay should only be applied to the linear layers or convolutional layers.
@@ -29,7 +28,9 @@ def normalized_weight_decay(
             - The first dictionary contains parameters that should not have weight decay applied.
             - The second dictionary contains parameters that should have weight decay applied.
     """
-    # get list of parameters that should have weight decay applied, and those that should not
+    ### PROBLEM: https://discuss.pytorch.org/t/weight-decay-only-for-weights-of-nn-linear-and-nn-conv/114348/2
+    # weight filtering after modules is bad
+
     with_weight_decay = []
     no_weight_decay = []
     # only add weight decay to linear layers! everything else should run normally.
@@ -58,10 +59,8 @@ def prepare_weight_decay(model, optimizer_config) -> None:
     # define which layers should contribute to the weight decay
     no_weight_decay_parameters, weight_decay_parameters = normalized_weight_decay(
         model,
-        decay_factor=optimizer_config["decay_factor"],
-        normalize=optimizer_config["normalize"],
-        # apply_to="weight.original0",
-        apply_to=optimizer_config["apply_to"],
+        decay_factor=optimizer_config.decay_factor,
+        normalize=optimizer_config.normalize,
     )
     return {"no_weight_decay_params": no_weight_decay_parameters, "weight_decay_params": weight_decay_parameters}
 
@@ -69,7 +68,7 @@ def init_optimizer(optimizer, optimizer_config) -> None:
     no_weight_decay_param, weight_decay_param = prepare_weight_decay(optimizer_config)
     optimizer = optimizer(
         (no_weight_decay_param, weight_decay_param),
-        lr=optimizer_config["learning_rate"],
+        lr=optimizer_config.learning_rate,
     )
 
 class SAM(torch.optim.Optimizer):

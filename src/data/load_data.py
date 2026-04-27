@@ -377,12 +377,12 @@ def handle_weights_and_convert_to_torch(events: np.array, continuous_features: l
     return events
 
 
-def get_data(config: dict, _save_cache = False, ignore_cache=False) -> dict[torch.Tensor]:
+def get_data(config , _save_cache = False, ignore_cache=False) -> dict[torch.Tensor]:
     """
     Main function to combine all steps from loading root files to filter by process ids and finally convert to torch
 
     Args:
-        config (dict): Config as defined in train_config.py
+        config (DataClass): Config as defined in train_config.py
         _save_cache (bool, optional): Save the result of this function as cache, using config as hash. Defaults to False.
         ignore_cache (bool, optional): Rerun loading of data if true, ignoring existing cache. Defaults to False.
 
@@ -397,15 +397,15 @@ def get_data(config: dict, _save_cache = False, ignore_cache=False) -> dict[torc
     else:
         logger_inst.info("Start loading and filtering of data")
         events = load_data(
-            config["datasets"],
-            columns=config["continuous_features"] + config["categorical_features"],
-            cuts=config["cuts"],
+            config.datasets,
+            columns=config.continuous_features + config.categorical_features,
+            cuts=config.cuts,
         )
         logger_inst.info("Start handling weights and conversion to torch tensors")
         events = handle_weights_and_convert_to_torch(
             events=events,
-            continuous_features=config["continuous_features"],
-            categorical_features=config["categorical_features"],
+            continuous_features=config.continuous_features,
+            categorical_features=config.categorical_features,
         )
         logger_inst.info("Done prepareing data")
         if _save_cache:

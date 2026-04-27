@@ -1,4 +1,7 @@
+from functools import wraps
+
 import torch
+
 
 import plotting
 import train_config
@@ -7,7 +10,26 @@ from utils import logger
 functions = {}
 logger_inst = logger.get_logger(__name__)
 
-def do_scheduler_step(loss, logger_inst, scheduler_inst, model_inst, optimizer_inst, checkpoint_inst):
+def do_scheduler_step(
+    loss: torch.tensor,
+    logger_inst: logger.logging.Logger,
+    scheduler_inst: torch.optim.lr_scheduler,
+    model_inst: torch.nn.Module,
+    optimizer_inst: torch.optim.Optimizer,
+    checkpoint_inst: dict[torch.tensor]) -> None:
+    """
+    Perform with given *scheduler_inst* a scheduler step, under the conditions of the given *scheduler_inst*.
+    If a step is performed be vebose using *logger_inst* and reload the last best state for *model_inst* and *optimizer_inst* from
+    *checkpoint_inst*.
+
+    Args:
+        loss (torch.tensor): The current validation loss.
+        logger_inst (logger.logging.Logger): Instance of the used Logger
+        scheduler_inst (torch.optim.lr_scheduler): Instance of a Learning Rate Scheduler
+        model_inst (torch.nn.Module): Instance of the Model
+        optimizer_inst (torch.optim.Optimizer): Instance of an Optimizer
+        checkpoint_inst (dict[torch.tensor]): Dictionary containing the learning rate, model state dict and optimizer state dict.
+    """
     previous_lr =  optimizer_inst.param_groups[0]["lr"]
     scheduler_inst.step(loss)
     current_lr = optimizer_inst.param_groups[0]["lr"]
@@ -19,27 +41,175 @@ def do_scheduler_step(loss, logger_inst, scheduler_inst, model_inst, optimizer_i
         model_inst.load_state_dict(checkpoint_inst.last_checkpoint["model_state_dict"])
         optimizer_inst.load_state_dict(checkpoint_inst.last_checkpoint["optimizer_state_dict"])
 
-
-def register(fn, functions=functions):
+def register(fn):
     # helper to register functions in pool of functions
     functions[fn.__name__] = fn
     return fn
 
+class BaseLoop():
+    registered_loops = {"training": {}, "validation": {}}
+
+    def __init__(self, mode, which_fn):
+        self.mode = mode
+        self.which_fn = which_fn
+        # register all Loop Functions in registered_loops for checking purpose
+        self._register_loop_methods()
+
+    @staticmethod
+    def register(fn):
+        fn._is_loop_method = True
+        return staticmethod(fn)
+
+    def _register_loop_methods(self):
+        for name, fn in type(self).__dict__.items():
+            # only add methods if is part of self
+            if getattr(fn, "_is_loop_method", False):
+                self.registered_loops[self.mode][name] = fn
+
+    def __call__(self, *args, **kwargs):
+        fn = getattr(self, self.which_fn)
+        return fn(*args, **kwargs)
+
+
+class TrainingLoop(BaseLoop):
+    def __init__(self, which_fn, *args, **kwargs):
+        super().__init__(mode="training", which_fn=which_fn, *args, **kwargs)
+
+    @BaseLoop.register
+    def sam_optimizer(model, loss_fn, optimizer, sampler, device):
+        optimizer.zero_grad()
+
+        cont, cat, targets = sampler.sample_batch(device=device)
+        pred = model(categorical_inputs=cat, continuous_inputs=cont)
+
+        loss = loss_fn(pred, targets)
+        loss.backward()
+        optimizer.first_step(zero_grad=True)
+
+        # second forward step with disabled bachnorm running stats in second forward step
+        optimizer.disable_running_stats(model)
+        pred_2 = model(categorical_inputs=cat, continuous_inputs=cont)
+        loss_fn(pred_2, targets).backward()
+
+        optimizer.second_step(zero_grad=True)
+
+        optimizer.enable_running_stats(model)  # <- this is the important line
+        return loss, (pred, targets)
+
+    @BaseLoop.register
+    def default(model, loss_fn, optimizer, sampler, sample_from, device):
+        optimizer.zero_grad()
+
+        events = sampler.sample_batch(sample_from=sample_from, device=device)
+        pred = model(categorical_inputs=events.pop("categorical"), continuous_inputs=events.pop("continuous"))
+
+        targets = events.pop("targets")
+        loss = loss_fn(pred, targets.reshape(-1,3), events)
+        loss.backward()
+        optimizer.step()
+        return loss, (pred, targets)
+
+class ValidationLoop(BaseLoop):
+    def __init__(self, which_fn, *args, **kwargs):
+        super().__init__(mode="validation", which_fn=which_fn, *args, **kwargs)
+
+    @BaseLoop.register
+    def default(model, loss_fn, sampler, sample_from, device):
+        with torch.no_grad():
+            val_loss = []
+            model.eval()
+            predictions = []
+            truth = []
+            weights = []
+
+            for uid, validation_batch_generator in sampler.create_sample_generator(
+                batch_size=sampler.batch_size, # do validation over whole dataset at once
+                sample_from=sample_from,
+                device=device).items():
+                dataset_losses = []
+
+                for events in validation_batch_generator:
+                    val_pred = model(categorical_inputs=events.pop("categorical"), continuous_inputs=events.pop("continuous"))
+                    targets = events.pop("targets")
+                    loss = loss_fn(val_pred, targets.reshape(-1,3), events, debug=False)
+                    # collect data for metric plots
+                    dataset_losses.append(loss)
+                    predictions.append(torch.softmax(val_pred, dim=1).cpu())
+                    truth.append(targets.cpu())
+                    weights.append(torch.full(size=(val_pred.shape[0], 1), fill_value=sampler[uid].relative_weight).cpu())
+
+                process_contribution = sampler[uid].relative_weight
+                average_val = sum(dataset_losses) / len(dataset_losses) * process_contribution
+                val_loss.append(average_val)
+
+            final_validation_loss = sum(val_loss).cpu()#/ len(val_loss)
+            model.train()
+
+            truth = torch.concatenate(truth, dim=0)
+            predictions = torch.concatenate(predictions, dim=0)
+            weights = torch.flatten(torch.concatenate(weights, dim=0))
+            return final_validation_loss, (predictions, truth, weights)
+
+
+    @BaseLoop.register
+    def signal_efficiency(model, loss_fn, sampler, sample_from, device):
+        with torch.no_grad():
+            val_loss = []
+            model.eval()
+            predictions = []
+            truth = []
+            weights = []
+
+            # get constant process factors and filter signal or background out
+            p, t = [], []
+            e = {"product_of_weights" : [], "evaluation_space_mask" : []}
+            for uid, validation_batch_generator in sampler.create_sample_generator(
+                batch_size=sampler.batch_size, # do validation over whole dataset at once
+                sample_from=sample_from,
+                device=device).items():
+                dataset_losses = []
+
+
+
+                for events in validation_batch_generator:
+                    val_pred = model(categorical_inputs=events.pop("categorical"), continuous_inputs=events.pop("continuous"))
+                    p.append(val_pred)
+                    targets = events.pop("targets")
+                    t.append(targets)
+                    e["product_of_weights"].append(events.pop("product_of_weights"))
+                    e["evaluation_space_mask"].append(events.pop("evaluation_space_mask"))
+
+                    # collect data for metric plots
+
+                    predictions.append(torch.softmax(val_pred, dim=1).cpu())
+                    truth.append(targets.cpu())
+                    weights.append(torch.full(size=(val_pred.shape[0], 1), fill_value=sampler[uid].relative_weight).cpu())
+
+            p = torch.concatenate(p)
+            t = torch.concatenate(t)
+            e["product_of_weights"] = torch.concatenate(e["product_of_weights"])
+            e["evaluation_space_mask"] = torch.concatenate(e["evaluation_space_mask"])
+            loss = loss_fn(p, t.reshape(-1,3), e, debug=False)
+            # loss = loss_fn(val_pred, targets.reshape(-1,3), events, debug=False)
+            dataset_losses.append(loss)
+
+            # from IPython import embed; embed(header = "VALID LOSS line: 182 in train_utils.py")
+            # process_contribution = sampler[uid].relative_weight
+            # average_val = sum(dataset_losses) / len(dataset_losses) * process_contribution
+            # val_loss.append(average_val)
+
+            # final_validation_loss = sum(val_loss).cpu()#/ len(val_loss)
+            final_validation_loss = loss.cpu()#/ len(val_loss)
+            model.train()
+
+            truth = torch.concatenate(truth, dim=0)
+            predictions = torch.concatenate(predictions, dim=0)
+            weights = torch.flatten(torch.concatenate(weights, dim=0))
+            return final_validation_loss, (predictions, truth, weights)
+
+
 @register
-def training_defaultV2(model, loss_fn, optimizer, sampler, device):
-    optimizer.zero_grad()
-
-    cont, cat, targets = sampler.sample_batch(device=device)
-
-    pred = model(categorical_inputs=cat, continuous_inputs=cont)
-
-    loss = loss_fn(pred, targets.reshape(-1,3))
-    loss.backward()
-    optimizer.step()
-    return loss, (pred, targets)
-
-@register
-def training_sam(model, loss_fn, optimizer, sampler, device):
+def trainings_loop_sam(model, loss_fn, optimizer, sampler, device):
     optimizer.zero_grad()
 
     cont, cat, targets = sampler.sample_batch(device=device)
@@ -60,7 +230,7 @@ def training_sam(model, loss_fn, optimizer, sampler, device):
     return loss, (pred, targets)
 
 @register
-def training_default(model, loss_fn, optimizer, sampler, sample_from, device):
+def trainings_loop_default(model, loss_fn, optimizer, sampler, sample_from, device):
     optimizer.zero_grad()
 
     events = sampler.sample_batch(sample_from=sample_from, device=device)
@@ -313,5 +483,8 @@ def log_metrics(
 
 
 
-training_fn = functions.get(f"training_{train_config.config["training_fn"]}")
+training_fn = functions.get(f"trainings_loop_{train_config.config["training_fn"]}")
 validation_fn = functions.get(f"validation_{train_config.config["validation_fn"]}")
+
+if __name__ == "__main__":
+    from IPython import embed; embed(header="MESSAGE Line 383 | File: train_utils.py")
