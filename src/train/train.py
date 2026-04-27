@@ -13,10 +13,11 @@ from models import create_model
 from data import load_data, preprocessing, sampler, cache
 from utils import logger
 
-from train_config_dataclasses import full_config
+from train_config import full_config
 from train_utils import TrainingLoop, ValidationLoop, log_metrics
 from early_stopping import EarlyStopOnPlateau, CheckPoint
 import marcel_weight_translation as mwt
+from IPython import embed; embed(header="MESSAGE Line 20 | File: train.py")
 
 CPU = torch.device("cpu")
 CUDA = torch.device("cuda")
@@ -117,7 +118,7 @@ def main(**kwargs):
             )
 
         # only linear layers contribute to weight decay, prepare config that separates them for the optimizer
-        weight_decay_parameters = optimizer.prepare_weight_decay(model_inst, full_config.optimizer_config)
+        weight_decay_parameters = optimizer.weight_decay.prepare_weight_decay(model_inst, full_config.optimizer_config)
 
         training_loop = TrainingLoop(which_fn=full_config.training_config.training_fn)
         validation_loop = ValidationLoop(which_fn=full_config.training_config.validation_fn)

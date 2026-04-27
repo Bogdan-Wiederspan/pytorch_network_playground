@@ -1,10 +1,7 @@
-from functools import wraps
-
 import torch
 
-
 import plotting
-import train_config
+from train_config import full_config
 from utils import logger
 
 functions = {}
@@ -483,8 +480,5 @@ def log_metrics(
 
 
 
-training_fn = functions.get(f"trainings_loop_{train_config.config["training_fn"]}")
-validation_fn = functions.get(f"validation_{train_config.config["validation_fn"]}")
-
-if __name__ == "__main__":
-    from IPython import embed; embed(header="MESSAGE Line 383 | File: train_utils.py")
+training_fn = functions.get(f"trainings_loop_{full_config.training_config.training_fn}")
+validation_fn = functions.get(f"validation_{full_config.training_config.validation_fn}")
