@@ -68,7 +68,8 @@ def find_datasets(dataset_patterns: list[str], year_patterns: list[str], *, file
         raise ValueError("No datasets found with given patterns")
 
     if missing:
-        raise ValueError(f"following datasets has 0 files:\n{"\n\t".join(missing)}")
+        missing_msg = '\n\t'.join(missing)
+        raise ValueError(f"following datasets has 0 files:\n{missing_msg}")
 
     # merge over years era information is not needed
     merged_over_era_data = {}

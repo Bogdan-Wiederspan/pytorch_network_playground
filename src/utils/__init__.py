@@ -1,14 +1,8 @@
-"""Utilities package exports.
+from utils.lazy_loader import lazy_import
 
-Expose commonly used symbols here so callers can do:
+def __getattr__(name):
+    return lazy_import(__name__, globals(), name)
 
-	from src.utils import EMPTY_FLOAT, get_logger
-
-or (if your PYTHONPATH points to project root):
-
-	from utils import EMPTY_FLOAT, get_logger
-
-"""
 from .utils import EMPTY_INT, EMPTY_FLOAT  # re-export constants
 from .logger import get_logger
 
