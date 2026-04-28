@@ -1,0 +1,6 @@
+torch==2.8.0
+numpy==2.3.3
+matplotlib==3.10.6
+awkward==2.8.8
+awkward_cpp==49
+tqdm==4.67.1
