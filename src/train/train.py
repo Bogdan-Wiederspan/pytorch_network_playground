@@ -288,19 +288,13 @@ def main(**kwargs):
         from IPython import embed; embed(header="END - 89 in train.py ")
 
 if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Train model runner")
-    parser.add_argument("--ignore_cache", "-ic", action="store_true", default=False, help="Ignore cache when running the program (default: False)")
-    parser.add_argument("--save-cache", "-s", dest="save_cache", action="store_true", default=False, help="Save cache (default: False)")
-    parser.add_argument("--tensorboard_name", "-tn", dest="tensorboard_name", action="store", default=None, help="Name of the tensorboard, if given, turns off generated name (default: None)")
-
-    args = parser.parse_args()
+    from utils.parser import ParserBuilder
+    parser = ParserBuilder("tensorboard", "cache")
 
     # call main with parsed args
     main(
-        ignore_cache=args.ignore_cache,
-        save_cache=args.save_cache,
-        tensorboard_name=args.tensorboard_name
+        ignore_cache=parser.args.ignore_cache,
+        save_cache=parser.args.save_cache,
+        tensorboard_name=parser.args.tensorboard_name
 
         )
