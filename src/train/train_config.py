@@ -190,7 +190,7 @@ class FullConfig:
 
     def __post_init__(self):
         # when using optimizer sam specific training routine needs to be used
-        if (self.training_config.training_fn != "sam") & (self.optimizer_config.optimizer_choice=="SAM"):
+        if (self.training_config.training_fn != "sam") & (self.optimizer_config.optimizer_choice=="sam"):
             raise ValueError(f"When using Optimizer SAM, training_fn needs to be set to 'sam', is currently:{self.training_config.training_fn}).")
 
 
