@@ -10,7 +10,7 @@ import torch
 import awkward as ak
 
 def choice_check(selected, choices):
-    is_inside = any([selected in for choice in choices])
+    is_inside = any([selected in choices for choice in choices])
     if not is_inside:
         raise ValueError(f"Selected ({selected}) is not part of valid choices {choices}")
 

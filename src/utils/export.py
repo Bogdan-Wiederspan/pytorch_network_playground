@@ -117,7 +117,7 @@ if __name__ == "__main__":
 
     model_path = pathlib.Path(args.model_path)
     fold = args.fold
-    # if given path is a only a name search for name in enviroment dir
+    # if given path is a only a name search for name in environment dir
     if len(model_path.parts) == 1:
         model_path = pathlib.Path(os.environ["MODELS_DIR"]).with_stem(args.model_path).with_suffix(".pt2")
 

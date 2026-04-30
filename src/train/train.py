@@ -8,7 +8,8 @@ import dataclasses
 import numpy as np
 import torch
 
-from train import loss
+import loss
+
 from models import create_model
 from data import load_data, preprocessing, sampler, cache
 from utils import logger
@@ -134,14 +135,14 @@ def main(**kwargs):
             validation_loss_fn = torch.nn.CrossEntropyLoss(weight=None, size_average=None,label_smoothing=full_config.training_config.label_smoothing)
 
         elif full_config.training_config.loss_fn == "signal_efficiency":
-            train_loss_fn = loss.SignalEfficiency(sampler_inst=training_sampler ,device=DEVICE, train=True, mode=full_config.training_config.loss_mode, uncertainty=full_config.training_config.loss_uncertainty)
-            validation_loss_fn = loss.SignalEfficiency(sampler_inst=training_sampler, device=DEVICE, train=False, mode=full_config.training_config.loss_mode, uncertainty=full_config.training_config.loss_uncertainty)
+            train_loss_fn = loss.loss_functions.SignalEfficiency(sampler_inst=training_sampler ,device=DEVICE, train=True, mode=full_config.training_config.loss_mode, uncertainty=full_config.training_config.loss_uncertainty)
+            validation_loss_fn = loss.loss_functions.SignalEfficiency(sampler_inst=training_sampler, device=DEVICE, train=False, mode=full_config.training_config.loss_mode, uncertainty=full_config.training_config.loss_uncertainty)
 
         elif full_config.training_config.loss_fn == "signal_efficiency_binning_aware":
 
             bins = torch.linspace(full_config.binning_config.lower_edge, full_config.binning_config.upper_edge, full_config.binning_config.num_bins + 1)
 
-            train_loss_fn = loss.BinningAwareSignificance(
+            train_loss_fn = loss.loss_functions.BinningAwareSignificance(
                 bins = bins,
                 sampler_inst=training_sampler,
                 device=DEVICE,
@@ -150,7 +151,7 @@ def main(**kwargs):
                 uncertainty=full_config.training_config.loss_uncertainty,
                 binning_cfg=full_config.binning_config.kernel_config[full_config.binning_config.kernel_cls],
                 )
-            validation_loss_fn = loss.BinningAwareSignificance(
+            validation_loss_fn = loss.loss_functions.BinningAwareSignificance(
                 bins = bins,
                 sampler_inst=training_sampler,
                 device=DEVICE,
