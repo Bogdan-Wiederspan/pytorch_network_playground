@@ -213,7 +213,7 @@ def map_categorical_features(expected_inputs, feature_array, categorical_feature
             feature_array[:, idx][mask] = new_value
     return feature_array
 
-def get_batch_statistics_from_sampler(sampler, padding_values=None, features=None, return_dummy=False):
+def get_batch_statistics_from_sampler(sampler=None, padding_values=None, features=None, return_dummy=False):
     """
     Calculates the weighted mean and standard deviation over all subphase spaces of a process in *sampler*.
     The data is expected to be of form : {"unique_identifier_tuple": {continuous: arr}, {weight}: arr}.
@@ -229,10 +229,9 @@ def get_batch_statistics_from_sampler(sampler, padding_values=None, features=Non
     """
     # when only dummy values for init are necessary return mean = 0 and std as 1
     if return_dummy:
-        features_dict = sampler.continuous()
-        feature_shape = features_dict[list(features_dict.keys())[0]].shape[-1]
-        mean = torch.zeros(feature_shape)
-        std = torch.ones(feature_shape)
+        num_f = len(features)
+        mean = torch.zeros(num_f)
+        std = torch.ones(num_f)
         logger_inst.warning(
             "\nNo normalization statistics are calculated, since return_dummy is True."
             "Returning dummy values: mean = 0 and std = 1"
