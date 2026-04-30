@@ -16,11 +16,13 @@ from data import load_data, preprocessing, sampler, cache
 from utils import logger
 
 from optimizer.utils import init_optimizer
+from optimizer.early_stopping import EarlyStopOnPlateau, CheckPoint
+
 from loss.utils import init_loss
+from models.utils import init_model
 
 from train.train_config import full_config
 from train.train_utils import TrainingLoop, ValidationLoop, log_metrics
-from train.early_stopping import EarlyStopOnPlateau, CheckPoint
 
 CPU = torch.device("cpu")
 CUDA = torch.device("cuda")
@@ -70,23 +72,23 @@ def main(**kwargs):
 
         logger_inst.info(f"Start creation of Sampler")
 
+        _sampler_config = {
+            "weight_aggregator_inst" : weight_aggregator,
+            "target_map" : full_config.dataset_config.target_map,
+            "min_size" : full_config.training_config.min_events_in_batch,
+            "batch_size" : full_config.training_config.t_batch_size,
+            "sample_ratio" : full_config.training_config.sample_ratio,
+        }
+
         training_sampler = sampler.create_sampler(
             train_events,
-            weight_aggregator_inst = weight_aggregator,
-            target_map = full_config.dataset_config.target_map,
-            min_size=full_config.training_config.min_events_in_batch,
-            batch_size=full_config.training_config.t_batch_size,
             train=True,
-            sample_ratio=full_config.training_config.sample_ratio,
+            **_sampler_config,
         )
         validation_sampler = sampler.create_sampler(
             validation_events,
-            weight_aggregator_inst = weight_aggregator,
-            target_map = full_config.dataset_config.target_map,
-            min_size=full_config.training_config.min_events_in_batch,
-            batch_size=full_config.training_config.v_batch_size,
             train=False,
-            sample_ratio=full_config.training_config.sample_ratio,
+            **_sampler_config,
         )
         # share relative weight from training batch statistic to validation sampler
         training_sampler.share_weights_between_sampler(validation_sampler)
@@ -102,14 +104,7 @@ def main(**kwargs):
         #----
         ### model build and configuration, including optimizer, scheduler, early stopping and loss function
         #----
-        if full_config.training_config.model_choice == "binned_lbn":
-            model_inst = create_model.BinnedLBNDenseNet(full_config)
-            model_inst.set_learning_mode("default")
-        elif full_config.training_config.model_choice == "bnet_lbn":
-            model_inst = create_model.LBNDenseNet(full_config)
-        else:
-            raise ValueError(f"Model choice {full_config.training_config.model_choice} not recognized, but must be set")
-
+        model_inst = init_model(full_config=full_config)
         model_inst = model_inst.to(DEVICE).train()
 
 
