@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import torch
-import kernel
-import binning
+
+import src.train.kernel as kernel
+import src.train.binning as binning
 from utils import logger
 
 logger_inst = logger.get_logger(__name__)

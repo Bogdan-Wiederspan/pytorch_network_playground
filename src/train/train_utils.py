@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import torch
 
-import plotting
-from train_config import full_config
+from train import plotting
+from train.train_config import full_config
 from utils import logger
 
 functions = {}
