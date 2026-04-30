@@ -11,11 +11,11 @@ from data import features, load_data
 ERAS_CHOICE = Literal["22pre", "22post", "23pre", "23post"]
 LAST_ACTIVATION_CHOICE = Literal["Softmax", "Sigmoid", None]
 KERNEL_CHOICE = Literal["GaussianKernelV3"]
-OPTIMIZER_CHOICE = Literal["ADAMW", "SAM"]
+OPTIMIZER_CHOICE = Literal["adamw", "sam"]
 
 MODEL_CHOICE = Literal["binned_lbn", "bnet_lbn"]
 LOSS_CHOICE = Literal["signal_efficiency", "signal_efficiency_binning_aware"]
-TRAINING_LOOP_CHOICE = Literal["default"]
+TRAINING_LOOP_CHOICE = Literal["default", "sam"]
 VALIDATION_LOOP_CHOICE = Literal["signal_efficiency"]
 SIGNAL_EFFICIENCY_LOSS_MODE = Literal["full", "no_unc", "approximation"]
 
@@ -75,7 +75,7 @@ class ModelBuildingConfig:
     expected_embedding_inputs: Optional[dict[Tuple[int]]] = field(init=False)
 
     eps_batchnorm: int = 0.001 # epsilon of batch norm layers
-    normalize_linear: bool = False # activate weight normalization of linear layer
+    normalize_linear: bool = False # activate weight normalization of linear layer, TODO currently BUGGED, leave at False
 
 
     def __post_init__(self):
@@ -147,7 +147,7 @@ class SchedulerConfig:
 
 @dataclass
 class OptimizerConfig:
-    optimizer_choice: OPTIMIZER_CHOICE = "ADAMW"
+    optimizer_choice: OPTIMIZER_CHOICE = "adamw"
 
     @dataclass
     class ADAMWConfig():
@@ -161,9 +161,9 @@ class OptimizerConfig:
 
     def __post_init__(self):
         # move optimizer attribute to top level
-        if self.optimizer_choice == "ADAMW":
+        if self.optimizer_choice == "adamw":
             choice_config = self.ADAMWConfig()
-        elif self.optimizer_choice == "SAM":
+        elif self.optimizer_choice == "sam":
             choice_config = self.SAMConfig()
 
         for _key, _attr in choice_config.__dict__.items():
@@ -187,5 +187,11 @@ class FullConfig:
     scheduler_config: SchedulerConfig = field(default_factory=SchedulerConfig)
     optimizer_config: OptimizerConfig = field(default_factory=OptimizerConfig)
     debug_config: DebugConfig = field(default_factory=DebugConfig)
+
+    def __post_init__(self):
+        # when using optimizer sam specific training routine needs to be used
+        if (self.training_config.training_fn != "sam") & (self.optimizer_config.optimizer_choice=="SAM"):
+            raise ValueError(f"When using Optimizer SAM, training_fn needs to be set to 'sam', is currently:{self.training_config.training_fn}).")
+
 
 full_config = FullConfig()

@@ -8,7 +8,7 @@ logger_inst = logger.get_logger(__name__)
 def normalized_weight_decay(
     model: torch.nn.Module,
     decay_factor: float = 1e-1,
-    normalize: bool = True,
+    normalize_decay_factor: bool = True,
 ) -> tuple[dict, dict]:
     """
     Weight decay should only be applied to the linear layers or convolutional layers.
@@ -24,7 +24,7 @@ def normalized_weight_decay(
 
     Returns:
 
-        tuple: A tuple containing two dictionaries where:
+        tuple: A tup    le containing two dictionaries where:
             - The first dictionary contains parameters that should not have weight decay applied.
             - The second dictionary contains parameters that should have weight decay applied.
     """
@@ -33,58 +33,38 @@ def normalized_weight_decay(
 
     with_weight_decay = []
     no_weight_decay = []
-    linear_layers = []
-    non_linear_layers = []
 
+    # from IPython import embed; embed(header="MESSAGE Line 38 | File: weight_decay.py")
     # filter linear layers out to separate task into code chunks
-    for module_tuple in model.named_modules():
-        module_name, module = module_tuple
-        if (isinstance(module, torch.nn.Linear)) and ("last_linear" not in module_name):
-            linear_layers.append(module_tuple)
-        else:
-            non_linear_layers.append(module_tuple)
+    for module_name, module in model.named_modules():
+        # recurse false is necessary with out the same parameters are iterated multiple times
+        for parameter_name, parameter in module.named_parameters(recurse=False):
+            # when linear and not last linear layer add weight decay
+            is_linear = isinstance(module, torch.nn.Linear)
+            is_not_last_linear = "last_linear" not in module_name
+            is_weight = "weight" in parameter_name
+            not_parametrized = torch.nn.utils.parametrize.is_parametrized(module)
 
-    # for linear layer original weight and bias are always accessible with weight and bias
-    # even when parametrization created other parameters (see weight_norm as example)
-
-    for module_name, module in linear_layers:
-        # linear layer always have weight and bias
-        # parametrization renaming is avoided and original weight is taken
-        # from IPython import embed; embed(header="MESSAGE Line 50 | File: optimizer.py")
-        for parameter_name, parameter in module.named_parameters():
-            with_weight_decay.append(parameter)
-        # with_weight_decay.append(module.bias)
-        # no_weight_decay.append(module.bias)
-        logger_inst.debug(f"add weight - name{module_name} -> module:{module}\n")
-
-    # for non linear layers any parameters are collected
-    for module_name, module in non_linear_layers:
-        for parameter_name, parameter in module.named_parameters():
-            no_weight_decay.append(parameter)
-
-    a = {"no_weight_decay_params" : {"params": no_weight_decay, "weight_decay": 0.0}, "weight_decay_params" : {"params": with_weight_decay, "weight_decay": decay_factor}}
-
-    optimizer_inst = torch.optim.AdamW(list(a.values()), lr=1e-5)
-    from IPython import embed; embed(header="MESSAGE Line 60 | File: optimizer.py")
+            if is_linear and is_not_last_linear and is_weight:
+                with_weight_decay.append((parameter_name, parameter))
+                logger_inst.debug(f"add weight decay - parameter: {parameter_name} of layer: {module_name}\n")
+            else:
+                no_weight_decay.append((parameter_name, parameter))
     # decouple lambda choice from number of parameters, by normalizing the decay factor
-    num_weight_decay_params = sum([len(weight.flatten()) for weight in with_weight_decay])
-    if normalize:
+    num_weight_decay_params = sum([len(weight.flatten()) for name, weight in with_weight_decay])
+    if normalize_decay_factor:
         decay_factor = decay_factor / num_weight_decay_params
         logger_inst.debug(f"\tNormalize weight decay by number of parameters: {decay_factor}")
-    return {"params": no_weight_decay, "weight_decay": 0.0}, {"params": with_weight_decay, "weight_decay": decay_factor}
 
-def prepare_weight_decay(model, optimizer_config) -> None:
-    # define which layers should contribute to the weight decay
-    no_weight_decay_parameters, weight_decay_parameters = normalized_weight_decay(
-        model,
-        decay_factor=optimizer_config.decay_factor,
-        normalize=optimizer_config.normalize,
-    )
-    return {"no_weight_decay_params": no_weight_decay_parameters, "weight_decay_params": weight_decay_parameters}
+    return {
+        "no_weight_decay_params" :{"params": no_weight_decay, "weight_decay": 0.0},
+        "weight_decay_params":{"params": with_weight_decay, "weight_decay": decay_factor}
+            }
 
-def init_optimizer(optimizer, optimizer_config) -> None:
-    no_weight_decay_param, weight_decay_param = prepare_weight_decay(optimizer_config)
-    optimizer = optimizer(
-        (no_weight_decay_param, weight_decay_param),
-        lr=optimizer_config.learning_rate,
-    )
+
+# def init_optimizer(optimizer, optimizer_config) -> None:
+#     no_weight_decay_param, weight_decay_param = prepare_weight_decay(optimizer_config)
+#     optimizer = optimizer(
+#         (no_weight_decay_param, weight_decay_param),
+#         lr=optimizer_config.learning_rate,
+#     )

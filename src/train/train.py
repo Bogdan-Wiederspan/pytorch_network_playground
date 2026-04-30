@@ -4,22 +4,20 @@ from __future__ import annotations
 import dataclasses
 
 # package imports
-import optimizer
+
 import numpy as np
 import torch
 
-import loss
-import binning
-import export
+from train import loss
 from models import create_model
 from data import load_data, preprocessing, sampler, cache
 from utils import logger
 
-from train_config import full_config
-from train_utils import TrainingLoop, ValidationLoop, log_metrics
-from early_stopping import EarlyStopOnPlateau, CheckPoint
-import marcel_weight_translation as mwt
-from IPython import embed; embed(header="MESSAGE Line 20 | File: train.py")
+from optimizer.utils import init_optimizer
+
+from train.train_config import full_config
+from train.train_utils import TrainingLoop, ValidationLoop, log_metrics
+from train.early_stopping import EarlyStopOnPlateau, CheckPoint
 
 CPU = torch.device("cpu")
 CUDA = torch.device("cuda")
@@ -111,24 +109,11 @@ def main(**kwargs):
 
         model_inst = model_inst.to(DEVICE).train()
 
-        # TODO load mean from marcel if activated, probably break for new model
-        model_inst = mwt.load_marcels_weights(
-            model_inst,
-            continuous_features=full_config.dataset_config.continuous_features,
-            with_std=full_config.debug_config.load_marcel_stats,
-            with_weights=full_config.debug_config.load_marcel_weights
-            )
-
-        # only linear layers contribute to weight decay, prepare config that separates them for the optimizer
-        weight_decay_parameters = optimizer.weight_decay.prepare_weight_decay(model_inst, full_config.optimizer_config)
 
         training_loop = TrainingLoop(which_fn=full_config.training_config.training_fn)
         validation_loop = ValidationLoop(which_fn=full_config.training_config.validation_fn)
 
-        if full_config.training_config.training_fn == "default":
-            optimizer_inst = torch.optim.AdamW(list(weight_decay_parameters.values()), lr=full_config.optimizer_config.lr)
-        elif full_config.training_config.training_fn == "sam":
-            optimizer_inst = optimizer.SAM(list(weight_decay_parameters.values()), torch.optim.AdamW, lr=full_config.optimizer_config.lr, rho = 2.0, adaptive=True)
+        optimizer_inst = init_optimizer(full_config=full_config, model_inst=model_inst)
 
         scheduler_inst = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer=optimizer_inst,
@@ -142,7 +127,6 @@ def main(**kwargs):
             eps=1e-08
         )
 
-        early_stopper_inst = EarlyStopOnPlateau()
         checkpoint_inst = CheckPoint(checkpoint_name=full_config.training_config.save_model_name, checkpoint_fold=current_fold)
 
         if full_config.training_config.loss_fn == "default":
@@ -154,12 +138,7 @@ def main(**kwargs):
             validation_loss_fn = loss.SignalEfficiency(sampler_inst=training_sampler, device=DEVICE, train=False, mode=full_config.training_config.loss_mode, uncertainty=full_config.training_config.loss_uncertainty)
 
         elif full_config.training_config.loss_fn == "signal_efficiency_binning_aware":
-            # TODO CONFIG for binning aware loss, e.g. which binning fn, num_bins, etc. and add to config file
-            # from IPython import embed; embed(header = " line: 148 in train.py")
-            # binning_fn = getattr(binning, full_config.binning_config.binning_fn)()
-            # if binning_fn is None:
-            #     raise ValueError(f"Binning function {full_config.binning_config.binning_fn} not recognized, but be {binning.__all__}")
-            # bins = binning_fn.call(full_config.binning_config.lower_edge, full_config.binning_config.upper_edge, full_config.binning_config.num_bins)
+
             bins = torch.linspace(full_config.binning_config.lower_edge, full_config.binning_config.upper_edge, full_config.binning_config.num_bins + 1)
 
             train_loss_fn = loss.BinningAwareSignificance(
@@ -251,10 +230,8 @@ def main(**kwargs):
                 )
                 logger_inst.training(f"Iteration: {current_iteration} - TLoss: {eval_t_loss:.2E} VLoss: {eval_v_loss:.2E}")
 
-                # if (current_iteration % 1000 == 0) and (current_iteration > 0):
 
                 ### checkpoint criteria checks and saving
-
                 if checkpoint_inst.check_criteria(eval_v_loss):
                     checkpoint_inst.create_checkpoint(
                         model=model_inst,
@@ -280,12 +257,7 @@ def main(**kwargs):
                     # overwrite old lr in checkpoint with lr after scheduler step
                     optimizer_inst.param_groups[0]["lr"] = current_lr
 
-                # TODO release DATA from previous RUN
-                if (current_iteration % full_config.training_config.max_train_iteration == 0) & (current_iteration > 0):
-                    from IPython import embed; embed(
-                        header=f"Current break at {current_iteration} if you wanna continue press y else save")
-
-        from IPython import embed; embed(header="END - 89 in train.py ")
+        from IPython import embed; embed(header="Training ends: Check if everything is as you thought it would be")
 
 if __name__ == "__main__":
     from utils.parser import ParserBuilder
