@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import typing
+
 from collections import defaultdict
 from collections.abc import Iterable
 
@@ -10,6 +12,7 @@ import torch
 import awkward as ak
 
 def choice_check(selected, choices):
+    choices = typing.get_args(choices)
     is_inside = any([selected in choices for choice in choices])
     if not is_inside:
         raise ValueError(f"Selected ({selected}) is not part of valid choices {choices}")

@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import torch
 
-import src.train.kernel as kernel
-import src.train.binning as binning
+from loss import kernel, binning
 from utils import logger
 
 logger_inst = logger.get_logger(__name__)

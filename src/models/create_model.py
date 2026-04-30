@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import torch
 
-from train import kernel
+from loss import kernel
 from models import layers
 from data import features
 from utils import utils

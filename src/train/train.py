@@ -11,10 +11,12 @@ import torch
 import loss
 
 from models import create_model
+
 from data import load_data, preprocessing, sampler, cache
 from utils import logger
 
 from optimizer.utils import init_optimizer
+from loss.utils import init_loss
 
 from train.train_config import full_config
 from train.train_utils import TrainingLoop, ValidationLoop, log_metrics
@@ -115,6 +117,7 @@ def main(**kwargs):
         validation_loop = ValidationLoop(which_fn=full_config.training_config.validation_fn)
 
         optimizer_inst = init_optimizer(full_config=full_config, model_inst=model_inst)
+        training_loss_inst, validation_loss_inst = init_loss(full_config=full_config, device=DEVICE, training_sampler=training_sampler)
 
         scheduler_inst = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer=optimizer_inst,
@@ -130,37 +133,6 @@ def main(**kwargs):
 
         checkpoint_inst = CheckPoint(checkpoint_name=full_config.training_config.save_model_name, checkpoint_fold=current_fold)
 
-        if full_config.training_config.loss_fn == "default":
-            train_loss_fn = torch.nn.CrossEntropyLoss(weight=None, size_average=None,label_smoothing=full_config.training_config.label_smoothing)
-            validation_loss_fn = torch.nn.CrossEntropyLoss(weight=None, size_average=None,label_smoothing=full_config.training_config.label_smoothing)
-
-        elif full_config.training_config.loss_fn == "signal_efficiency":
-            train_loss_fn = loss.loss_functions.SignalEfficiency(sampler_inst=training_sampler ,device=DEVICE, train=True, mode=full_config.training_config.loss_mode, uncertainty=full_config.training_config.loss_uncertainty)
-            validation_loss_fn = loss.loss_functions.SignalEfficiency(sampler_inst=training_sampler, device=DEVICE, train=False, mode=full_config.training_config.loss_mode, uncertainty=full_config.training_config.loss_uncertainty)
-
-        elif full_config.training_config.loss_fn == "signal_efficiency_binning_aware":
-
-            bins = torch.linspace(full_config.binning_config.lower_edge, full_config.binning_config.upper_edge, full_config.binning_config.num_bins + 1)
-
-            train_loss_fn = loss.loss_functions.BinningAwareSignificance(
-                bins = bins,
-                sampler_inst=training_sampler,
-                device=DEVICE,
-                train=True,
-                mode=full_config.training_config.loss_mode,
-                uncertainty=full_config.training_config.loss_uncertainty,
-                binning_cfg=full_config.binning_config.kernel_config[full_config.binning_config.kernel_cls],
-                )
-            validation_loss_fn = loss.loss_functions.BinningAwareSignificance(
-                bins = bins,
-                sampler_inst=training_sampler,
-                device=DEVICE,
-                train=False,
-                mode=full_config.training_config.loss_mode,
-                uncertainty=full_config.training_config.loss_uncertainty,
-                binning_cfg=full_config.binning_config.kernel_config[full_config.binning_config.kernel_cls],
-            )
-
         #----
         ### training loop
         #----
@@ -168,7 +140,7 @@ def main(**kwargs):
         for current_iteration in range(1_000_000):
             t_loss, (t_pred, t_targets) = training_loop(
                 model = model_inst,
-                loss_fn = train_loss_fn,
+                loss_fn = training_loss_inst,
                 optimizer = optimizer_inst,
                 sampler = training_sampler,
                 device=DEVICE,
@@ -186,7 +158,7 @@ def main(**kwargs):
 
                 eval_t_loss, (eval_t_pred, eval_t_tar, eval_t_weights) = validation_loop(
                     model_inst,
-                    validation_loss_fn,
+                    validation_loss_inst,
                     training_sampler,
                     sample_from=full_config.training_config.sample_attributes,
                     device=DEVICE
@@ -210,7 +182,7 @@ def main(**kwargs):
 
                 eval_v_loss, (eval_v_pred, eval_v_tar, eval_v_weights) = validation_loop(
                     model_inst,
-                    validation_loss_fn,
+                    validation_loss_inst,
                     validation_sampler,
                     sample_from=full_config.training_config.sample_attributes,
                     device=DEVICE
@@ -225,7 +197,7 @@ def main(**kwargs):
                     loss = eval_v_loss.item(),
                     # TODO binning edges and kernels are only defined for BinnedLBN make universal
                     # binning_edges = model_inst.binning_layer.edges.detach().cpu(),
-                    binning_edges = bins,
+                    binning_edges = full_config.binning_config.num_bins,
                     current_iteration = current_iteration,
                     # kernels=model_inst.binning_layer.kernels,
                 )
