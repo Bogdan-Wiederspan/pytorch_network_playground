@@ -9,6 +9,10 @@ EMPTY_FLOAT = -99999.0
 import torch
 import awkward as ak
 
+def choice_check(selected, choices):
+    is_inside = any([selected in for choice in choices])
+    if not is_inside:
+        raise ValueError(f"Selected ({selected}) is not part of valid choices {choices}")
 
 def clip_gradients(parameters: Iterable[torch.nn.Parameter], clip_value: float = 1.0):
     for p in parameters:

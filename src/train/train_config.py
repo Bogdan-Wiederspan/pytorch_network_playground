@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Tuple, Literal, Any
 import torch
 
 from data import features, load_data
+from utils.utils import choice_check
 
 # some values only accept certain values, not runtime check is performed!
 ERAS_CHOICE = Literal["22pre", "22post", "23pre", "23post"]
@@ -14,7 +15,7 @@ KERNEL_CHOICE = Literal["GaussianKernelV3"]
 OPTIMIZER_CHOICE = Literal["adamw", "sam"]
 
 MODEL_CHOICE = Literal["binned_lbn", "bnet_lbn"]
-LOSS_CHOICE = Literal["signal_efficiency", "signal_efficiency_binning_aware"]
+LOSS_CHOICE = Literal["cross_entropy", "signal_efficiency", "signal_efficiency_binning_aware"]
 TRAINING_LOOP_CHOICE = Literal["default", "sam"]
 VALIDATION_LOOP_CHOICE = Literal["signal_efficiency"]
 SIGNAL_EFFICIENCY_LOSS_MODE = Literal["full", "no_unc", "approximation"]
@@ -41,6 +42,7 @@ class DataConfig:
         # a dictionary of all files corresponding to a certain dataset
         self.datasets = load_data.find_datasets(self.dataset_pattern, self.eras, file_type="root", verbose=False)
     # TODO HASH ?
+
 
 
 @dataclass
@@ -80,6 +82,7 @@ class ModelBuildingConfig:
 
     def __post_init__(self):
         self.expected_embedding_inputs = features.expected_embedding_inputs()
+        choice_check(self.last_activation_fn, LAST_ACTIVATION_CHOICE)
 
 
 @dataclass
@@ -99,6 +102,8 @@ class BinningConfig:
             }
         }
     )
+    def __post_init__(self):
+        choice_check(self.kernel_cls, KERNEL_CHOICE)
 
 @dataclass
 class TrainingConfig:
@@ -136,6 +141,13 @@ class TrainingConfig:
         necessary_field = ("continuous", "categorical", "targets")
         if not set(necessary_field).issubset(set(self.sample_attributes)):
             raise ValueError(f"Sample Attributes need to contain: {necessary_field}" )
+        choice_check(self.training_fn, TRAINING_LOOP_CHOICE)
+        choice_check(self.validation_fn, VALIDATION_LOOP_CHOICE)
+        choice_check(self.loss_mode, SIGNAL_EFFICIENCY_LOSS_MODE)
+        choice_check(self.loss_fn, LOSS_CHOICE)
+        choice_check(self.model_choice, MODEL_CHOICE)
+
+
 
 @dataclass
 class SchedulerConfig:
@@ -168,6 +180,8 @@ class OptimizerConfig:
 
         for _key, _attr in choice_config.__dict__.items():
             setattr(self, _key, _attr)
+
+        choice_check(self.optimizer_choice, OPTIMIZER_CHOICE)
 
 
 @dataclass
