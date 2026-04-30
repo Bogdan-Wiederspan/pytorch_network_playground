@@ -24,12 +24,10 @@ class DataCacher():
         h = hash_dictionary(config)
         p = pathlib.Path(os.environ["CACHE_DIR"])
 
-        if not p.parent.exists():
-            raise FileExistsError("Cache dir parent does not exist, ensure path exist")
-
         target = p / h
         # create dir if not exist
-        target.mkdir(exist_ok=True)
+        if not target.exists():
+            target.mkdir(parents=False)
         return target
 
     def save_cache(self, data):
