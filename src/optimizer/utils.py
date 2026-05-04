@@ -14,10 +14,14 @@ def init_optimizer(full_config, model_inst):
     weight_decay_parameters = list(weight_decay_parameters.values())
     name = full_config.optimizer_config.optimizer_choice
 
+    global_weight_decay_default = 0
+
+    # pick correct optimizer
     if name == "adamw":
         optimizer_inst = torch.optim.AdamW(
             weight_decay_parameters,
-            lr=full_config.optimizer_config.lr
+            lr=full_config.optimizer_config.lr,
+            weight_decay=global_weight_decay_default,
             )
     elif name == "sam":
         optimizer_inst = SAM(
@@ -25,7 +29,8 @@ def init_optimizer(full_config, model_inst):
             torch.optim.AdamW,
             lr=full_config.optimizer_config.lr,
             rho = 2.0,
-            adaptive=True
+            adaptive=True,
+            weight_decay=global_weight_decay_default,
         )
     else:
         raise ValueError(f"Chosen Optimizer {name} does not exist")

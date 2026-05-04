@@ -84,6 +84,11 @@ class ModelBuildingConfig:
         self.expected_embedding_inputs = features.expected_embedding_inputs()
         choice_check(self.last_activation_fn, LAST_ACTIVATION_CHOICE)
 
+        # currently parametrization and l2 maybe buggy
+        if self.normalize_linear is True:
+            raise ValueError("Norm of Linear Layer is currently buggy and is therefore disabled for now")
+
+
 
 @dataclass
 class BinningConfig:
