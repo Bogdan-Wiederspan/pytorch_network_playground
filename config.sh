@@ -14,8 +14,9 @@ export INPUT_DATA_DIR="/data/dust/user/riegerma/hh2bbtautau/run3_training_data/p
 #export INPUT_DATA_DIR="/data/dust/user/riegerma/hh2bbtautau/run3_training_data/prod14"
 
 # virtualenv handling
-export VENV_MODE="pyenv" # pyenv or cf, handles switch
-export ML_ENV="ml_pytorch" # venv name of virtualenv
+export VENV_MODE="venv" # pyenv, venv or cf, handles switch
+export ML_ENV="ml_torch" # venv name of virtualenv
 # export ML_ENV="ML_CF" # venv name of virtualenv
+export VENV_ROOT="/data/dust/user/wiedersb/pyenv_virtualenvs/"
 export CF_SANDBOX="venv_hbt_dev" #  sandbox name in columnflow
 export PYENV_ROOT="/afs/desy.de/user/w/wiedersb/.pyenv/" # root of pyenv installation

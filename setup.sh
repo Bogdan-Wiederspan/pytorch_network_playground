@@ -1,6 +1,14 @@
 
 #!/bin/bash
 
+activate_venv(){
+    _path=${VENV_ROOT}/${ML_ENV}/bin/
+    # activate but without prompt change
+    VIRTUAL_ENV_DISABLE_PROMPT=1 source ${_path}/activate
+    # set currently VENV as most important
+    #export PATH="${_path}:${PATH}";
+}
+
 pyenv_activate ()
 {
     # bootstrap pyenv to be activate for current bash session
@@ -54,6 +62,9 @@ setup_env() {
             return 2
         fi
 
+    elif [ "${VENV_MODE}" = "venv" ]; then
+        echo "Sourcing VENV Sandbox"
+        activate_venv
     else
         echo "VENV_MODE can only be cf or pyenv, but got ${VENV_MODE}"
         return 3
