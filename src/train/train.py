@@ -168,7 +168,7 @@ def main(**kwargs):
                     loss = eval_t_loss.item(),
                     lr = optimizer_inst.param_groups[0]["lr"],
                     # binning_edges = model_inst.binning_layer.edges.detach().cpu(),
-                    binning_edges = bins,
+                    # binning_edges = ,
                     current_iteration = current_iteration,
                     # kernels = model_inst.binning_layer.kernels,
                 )

@@ -7,6 +7,7 @@ import models.create_model as create_model
 #from models import create_model
 from data import load_data, preprocessing, sampler, cache
 from utils import logger
+from optimizer.utils import init_optimizer
 
 from train.train_config import full_config
 
@@ -34,12 +35,14 @@ def main(parser_args):
     else:
         raise ValueError(f"Model choice {full_config.training_config.model_choice} not recognized, but must be set")
 
-    # only linear layers contribute to weight decay, prepare config that separates them for the optimizer
-    weight_decay_parameters = optimizer.weight_decay.normalized_weight_decay(
-            model_inst,
-            full_config.optimizer_config.decay_factor,
-            full_config.optimizer_config.normalize,
-            )
+    optimizer_inst = init_optimizer(full_config=full_config, model_inst=model_inst)
+
+    # # only linear layers contribute to weight decay, prepare config that separates them for the optimizer
+    # weight_decay_parameters = optimizer.weight_decay.normalized_weight_decay(
+    #         model_inst,
+    #         full_config.optimizer_config.decay_factor,
+    #         full_config.optimizer_config.normalize,
+    #         )
 
 
 if __name__ == "__main__":
