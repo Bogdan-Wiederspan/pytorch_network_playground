@@ -90,7 +90,7 @@ class SignalEfficiency(torch.nn.Module):
 
     def asimov_no_uncertainty(self, s, b, epsilon=0, *args, **kwargs):
         # approximation coming from asimov for no background uncertainty: https://arxiv.org/abs/1806.00322 3.2
-        return torch.sqrt( (2 * ((s + b) * torch.log(1 + s / b) - s)))
+        return torch.sqrt(2 * ((s + b) * torch.log(1 + s / b) - s))
 
     def asimov_full(self, s, b, unc_b, *args, **kwargs):
         # full asimov formula with background uncertainty: https://arxiv.org/abs/1806.00322 3.1
@@ -343,7 +343,7 @@ class BinningAwareSignificance(SignalEfficiency):
             weight["product_of_weights"],
             weight["evaluation_space_mask"],
             is_signal=True,
-            epsilon=1e-3
+            epsilon=1e-4
             )
         # background cant be 0 -> inf
         b = self.approximation_sb(
@@ -352,7 +352,7 @@ class BinningAwareSignificance(SignalEfficiency):
             weight["product_of_weights"],
             weight["evaluation_space_mask"],
             is_signal=False,
-            epsilon=1e-3
+            epsilon=1e-4
             )
         loss = self.loss(s=s, b=b, unc_b=0, epsilon=1e-2)
         loss = loss.sum()

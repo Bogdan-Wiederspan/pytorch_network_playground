@@ -114,6 +114,8 @@ class ValidationLoop(BaseLoop):
 
     @BaseLoop.register
     def default(model, loss_fn, sampler, sample_from, device):
+
+        # TODO: MAYBE BUGGED
         with torch.no_grad():
             val_loss = []
             model.eval()
@@ -133,7 +135,8 @@ class ValidationLoop(BaseLoop):
                     loss = loss_fn(val_pred, targets.reshape(-1,3), events, debug=False)
                     # collect data for metric plots
                     dataset_losses.append(loss)
-                    predictions.append(torch.softmax(val_pred, dim=1).cpu())
+                    # predictions.append(torch.softmax(val_pred, dim=1).cpu())
+                    predictions.append(val_pred).cpu()
                     truth.append(targets.cpu())
                     weights.append(torch.full(size=(val_pred.shape[0], 1), fill_value=sampler[uid].relative_weight).cpu())
 
@@ -153,7 +156,6 @@ class ValidationLoop(BaseLoop):
     @BaseLoop.register
     def signal_efficiency(model, loss_fn, sampler, sample_from, device):
         with torch.no_grad():
-            val_loss = []
             model.eval()
             predictions = []
             truth = []
@@ -180,9 +182,9 @@ class ValidationLoop(BaseLoop):
 
                     # collect data for metric plots
 
-                    predictions.append(torch.softmax(val_pred, dim=1).cpu())
-                    truth.append(targets.cpu())
-                    weights.append(torch.full(size=(val_pred.shape[0], 1), fill_value=sampler[uid].relative_weight).cpu())
+                    predictions.append(torch.softmax(val_pred, dim=1))
+                    truth.append(targets)
+                    weights.append(torch.full(size=(val_pred.shape[0], 1), fill_value=sampler[uid].relative_weight))
 
             p = torch.concatenate(p)
             t = torch.concatenate(t)
@@ -204,7 +206,7 @@ class ValidationLoop(BaseLoop):
             truth = torch.concatenate(truth, dim=0)
             predictions = torch.concatenate(predictions, dim=0)
             weights = torch.flatten(torch.concatenate(weights, dim=0))
-            return final_validation_loss, (predictions, truth, weights)
+            return final_validation_loss, (predictions.cpu(), truth.cpu(), weights.cpu())
 
 
 @register
@@ -300,9 +302,9 @@ def validation_default(model, loss_fn, sampler, sample_from, device):
                 loss = loss_fn(val_pred, targets.reshape(-1,3), events, debug=False)
                 # collect data for metric plots
                 dataset_losses.append(loss)
-                predictions.append(torch.softmax(val_pred, dim=1).cpu())
-                truth.append(targets.cpu())
-                weights.append(torch.full(size=(val_pred.shape[0], 1), fill_value=sampler[uid].relative_weight).cpu())
+                predictions.append(torch.softmax(val_pred, dim=1))
+                truth.append(targets)
+                weights.append(torch.full(size=(val_pred.shape[0], 1), fill_value=sampler[uid].relative_weight))
 
             process_contribution = sampler[uid].relative_weight
             average_val = sum(dataset_losses) / len(dataset_losses) * process_contribution
@@ -311,9 +313,9 @@ def validation_default(model, loss_fn, sampler, sample_from, device):
         final_validation_loss = sum(val_loss).cpu()#/ len(val_loss)
         model.train()
 
-        truth = torch.concatenate(truth, dim=0)
-        predictions = torch.concatenate(predictions, dim=0)
-        weights = torch.flatten(torch.concatenate(weights, dim=0))
+        truth = torch.concatenate(truth, dim=0).cpu()
+        predictions = torch.concatenate(predictions, dim=0).cpu()
+        weights = torch.flatten(torch.concatenate(weights, dim=0)).cpu()
         return final_validation_loss, (predictions, truth, weights)
 
 

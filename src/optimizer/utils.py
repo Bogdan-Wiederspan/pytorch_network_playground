@@ -4,7 +4,6 @@ from optimizer.SAM import SAM
 
 def init_optimizer(full_config, model_inst):
     # only linear layers contribute to weight decay, prepare config that separates them for the optimizer
-
     weight_decay_parameters = weight_decay.normalized_weight_decay(
         model_inst,
         full_config.optimizer_config.decay_factor,
