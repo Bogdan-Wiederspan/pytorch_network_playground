@@ -7,140 +7,54 @@ from models import layers
 from data import features
 from utils import utils
 
-#TODO shared memory between classes that are connected together! That should AUX define.
-class Aux():
-    x = {}
-    def __init__(self):
-        pass
 
-    def set_aux(self, *args):
-        cls_name = self.__class__.__name__
-        self.x
-
-class AddBinning(torch.nn.Module):
-    def __init__(self, model, kernel_cls, kernel_cfg, binning_edges, signal_cls=None, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.unbinned_model = model
-        self.binning_layer = layers.BinningLayer(
-            init_edges=binning_edges,
-            kernel_cls=kernel_cls,
-            kernel_cfg=kernel_cfg,
-            )
-        self.signal_cls = ... if signal_cls is None else signal_cls # used for class slicing
-        # for attr in self.model.mark_attributes():
-        #     setattr(self, attr)
-
-    def forward(self, categorical_inputs, continuous_inputs):
-        x = self.unbinned_model(categorical_inputs, continuous_inputs)[:, self.signal_cls] # normal prediction as probabilities
-        x = self.binning_layer(x)
-        return x
-
-
-class AddActFnToModel(torch.nn.Module):
-    def __init__(self, model, act_fn, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.model = model
-        # self.categorical_features = model.categorical_features
-        # self.continuous_features = model.continuous_features
-
-        self.act_func = self._get_attr(torch.nn.modules.activation, act_fn)(dim=1)
-        self.categorical_features = model.categorical_features
-        self.continuous_features = model.continuous_features
-        # for attr in self.model.mark_attributes():
-        #     setattr(self, attr)
-
-    def _get_attr(self, obj, attr):
-        for o in dir(obj):
-            if o.lower() == attr.lower():
-                return getattr(obj, o)
-        else:
-            raise AttributeError(f"Object has no attribute '{attr}'")
-
-    def forward(self, categorical_inputs, continuous_inputs):
-        x = self.model(categorical_inputs, continuous_inputs)
-        x = self.act_func(x)
-        return x
-
-
-class ResidualDNN(torch.nn.Module):
-    def __init__(self, continuous_features, categorical_features, config, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.init_layers(config=config, continuous_features=continuous_features, categorical_features=categorical_features)
-
-    def init_layers(self, continuous_features, categorical_features, config):
-        # increasing eps helps to stabilize training to counter batch norm and L2 reg counterplay when used together.
-        # eps = 0.5e-5
-
-        # activate weight normalization on linear layer weights
-        normalize = False
-
-        # helper where all layers are defined
-        # std layers are filled when statitics are known
-        std_layer = layers.StandardizeLayer(mean=config.mean, std=config.std)
-
-        continuous_padding = layers.PaddingLayer(padding_value=0, mask_value=utils.EMPTY_FLOAT)
-        categorical_padding = layers.PaddingLayer(padding_value=config.empty_value, mask_value=utils.EMPTY_INT)
-
-        if config.enable_rotation:
-            rotation_layer = layers.RotatePhiLayer(
-                columns=list(map(str, continuous_features)),
-                ref_phi_columns=config.ref_phi_columns,
-                rotate_columns=config.rotate_columns,
-            )
-        else:
-            rotation_layer = None
-
-        self.input_layer = layers.InputLayer(
-            continuous_inputs=continuous_features,
-            categorical_inputs=categorical_features,
-            embedding_dim=10,
-            expected_categorical_inputs=features.expected_embedding_inputs(),
-            empty=config.empty_value,
-            std_layer=std_layer,
-            rotation_layer=rotation_layer,
-            padding_categorical_layer=categorical_padding,
-            padding_continuous_layer=continuous_padding,
-        )
-
-        self.transition_dense_1 = layers.DenseBlock(input_nodes = self.input_layer.ndim, output_nodes = config.nodes, activation_functions=config.activation_functions, eps=config.batch_norm_eps, normalize=normalize) # noqa
-        self.resnet_block_1 = layers.ResNetPreactivationBlock(config.nodes, config.activation_functions, config.skip_connection_init, config.freeze_skip_connection, eps=config.batch_norm_eps, normalize=normalize)
-        self.resnet_block_2 = layers.ResNetPreactivationBlock(config.nodes, config.activation_functions, config.skip_connection_init, config.freeze_skip_connection, eps=config.batch_norm_eps, normalize=normalize)
-        self.resnet_block_3 = layers.ResNetPreactivationBlock(config.nodes, config.activation_functions, config.skip_connection_init, config.freeze_skip_connection, eps=config.batch_norm_eps, normalize=normalize)
-        self.last_linear = torch.nn.Linear(config.nodes, 3)
-
-    def forward(self, categorical_inputs, continuous_inputs):
-        x = self.input_layer(categorical_inputs=categorical_inputs, continuous_inputs=continuous_inputs)
-        x = self.transition_dense_1(x)
-        x = self.resnet_block_1(x)
-        x = self.resnet_block_2(x)
-        x = self.resnet_block_3(x)
-        x = self.last_linear(x)
-        return x
-
-
-class DenseNet(torch.nn.Module):
+class BaseModel(torch.nn.Module):
     def __init__(self, full_config, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # extract configs from combined dataclass config
         self.model_building_config = full_config.model_building_config
         self.dataset_config = full_config.dataset_config
         self.binning_config = full_config.binning_config
 
-        # init layers
-        self.dense_config = {
-            "skip_connection_init" : self.model_building_config.skip_connection_init,
-            "freeze_skip_connection" : self.model_building_config.freeze_skip_connection,
-            "activation_functions" : self.model_building_config.activation_functions,
-            "eps": self.model_building_config.eps_batchnorm, # increasing eps helps to stabilize training, to counter batch norm and L2 reg counter play when used together
-            "normalize" : self.model_building_config.normalize_linear, # activate weight normalization on linear layer weights
-        }
-        self.init_layers()
         self.categorical_features = self.dataset_config.categorical_features
         self.continuous_features = self.dataset_config.continuous_features
 
+        # use the last activation function when it exist. Can be deactivated
+        self.use_last_activation = self.model_building_config.last_activation_fn
 
+    def init_layers(self):
+        raise NotImplementedError("init_layers needs to be implemented in child class, where all layers of the model are defined")
 
-    def init_rotation_layer(self):
+    @property
+    def is_parametrized(self) -> bool:
+        """
+        If any layer is parametrized, the whole model is considered parametrized.
+        Parametrization can break some operations, like serialization, e.g. torch.save(model_instance).
+
+        Returns:
+            bool: Boolean that indicates if the model is parametrized, which is the case if any layer is parametrized.
+        """
+        for name, module in self.named_modules():
+            if torch.nn.utils.parametrize.is_parametrized(module):
+                return True
+        return False
+
+    def set_last_fn_mode(self, on=True):
+        """
+        Activate/Deactivate the last activation function. Use full if one wants the logits.
+
+        Args:
+            on (bool, optional): Bool to determine if one uses the last activation function. Defaults to True.
+        """
+        self.use_last_activation = on
+
+    def init_rotation_layer(self) -> torch.nn.Module | None:
+        """
+        Helper to initialize a rotation layer instance. This layer rotates given columns relative to other columns, given by name.
+        If rotation is not enabled in the model building config, None is returned.
+
+        Returns:
+            torch.nn.Module: Rotation layer instance or None if rotation is not enabled in the model building config.
+        """
         if self.model_building_config.enable_rotation:
             rotation_layer = layers.RotatePhiLayer(
                 columns=list(map(str, self.dataset_config.continuous_features)),
@@ -151,7 +65,15 @@ class DenseNet(torch.nn.Module):
             rotation_layer = None
         return rotation_layer
 
-    def init_standardization_layer(self):
+    def init_standardization_layer(self)-> torch.nn.Module:
+        """
+        Helper to initialize a Standardization Layer instance with mean and std as buffer.
+        Mean and STD are fixed values that need to be set before the training.
+        If mean and std in model building config are set to None, an Identity transformation is returned.
+
+        Returns:
+            torch.nn.Module: Standardization layer instance with mean and std as buffer.
+        """
         is_unset_mean = (self.model_building_config.mean is None)
         is_unset_std = (self.model_building_config.std is None)
         if is_unset_mean and is_unset_std:
@@ -164,12 +86,18 @@ class DenseNet(torch.nn.Module):
             std_layer = layers.StandardizeLayer(mean=self.model_building_config.mean, std=self.model_building_config.std)
         return std_layer
 
-    def init_padding_layer(self):
+    def init_padding_layer(self)-> tuple[torch.nn.Module | None, torch.nn.Module | None]:
+        """
+        Helper function to initialize two padding layers, one to pad continous values and the other for categorical information.
+        The actual padding value is defined in the model building config, if the value is None, no padding layer is created.
+
+        Returns:
+            tuple[torch.nn.Module | None, torch.nn.Module | None]: None or tuple of PaddingLayer instances.
+        """
         if self.model_building_config.continuous_padding_value is None:
             continuous_padding = None
         else:
             continuous_padding = layers.PaddingLayer(padding_value=-4, mask_value=utils.EMPTY_FLOAT)
-
 
         if self.model_building_config.categorical_padding_value is None:
             categorical_padding = None
@@ -177,7 +105,14 @@ class DenseNet(torch.nn.Module):
             categorical_padding = layers.PaddingLayer(padding_value=self.model_building_config.categorical_padding_value, mask_value=utils.EMPTY_INT)
         return continuous_padding, categorical_padding
 
-    def init_input_layer(self):
+    def init_input_layer(self) -> torch.nn.Module:
+        """
+        Helper function to initialize the input layer, which consist of a preprocessing pipeline.
+        This preprocessing pipeline consist of standardization, rotation and padding layer, which are initialized with the corresponding helper functions.
+
+        Returns:
+            torch.nn.Module: input layer instance with preprocessing pipeline
+        """
         d_cfg = self.dataset_config
         m_cfg = self.model_building_config
 
@@ -195,8 +130,75 @@ class DenseNet(torch.nn.Module):
             padding_categorical_layer=cat_pad_layer,
             padding_continuous_layer=cont_pad_layer,
         )
-
         return input_layer
+
+    def init_last_activation_layer(self) -> torch.nn.Module | None:
+        """
+        Helper to init the very last activation function.
+
+        Returns:
+            torch.nn.Module | None: Either an instance of the last activation layer or None.
+        """
+        # pick activation layer from torch by string,
+        if self.model_building_config.last_activation_fn:
+            last_activation_fn = getattr(torch.nn.modules.activation, self.model_building_config.last_activation_fn)
+            if self.model_building_config.last_activation_fn == "Softmax":
+                return last_activation_fn(dim=1)
+            elif self.model_building_config.last_activation_fn == "Sigmoid":
+                return last_activation_fn()
+        return None
+
+
+class ResidualDNN(BaseModel):
+    def __init__(self, full_config, *args, **kwargs):
+        super().__init__(full_config, *args, **kwargs)
+        self.init_layers()
+
+    def init_layers(self):
+        # increasing eps helps to stabilize training to counter batch norm and L2 reg counterplay when used together.
+        # eps = 0.5e-5
+
+        # activate weight normalization on linear layer weights
+        normalize = False
+
+        # helper where all layers are defined
+        # std layers are filled when statitics are known
+        self.init_standardization_layer()
+        self.init_padding_layer()
+
+        self.init_rotation_layer()
+        self.init_input_layer()
+
+        self.transition_dense_1 = layers.DenseBlock(input_nodes = self.input_layer.ndim, output_nodes = self.model_building_config.nodes, activation_functions=self.model_building_config.activation_functions, eps=self.model_building_config.batch_norm_eps, normalize=normalize) # noqa
+        self.resnet_block_1 = layers.ResNetPreactivationBlock(self.model_building_config.nodes, self.model_building_config.activation_functions, self.model_building_config.skip_connection_init, self.model_building_config.freeze_skip_connection, eps=self.model_building_config.batch_norm_eps, normalize=normalize)
+        self.resnet_block_2 = layers.ResNetPreactivationBlock(self.model_building_config.nodes, self.model_building_config.activation_functions, self.model_building_config.skip_connection_init, self.model_building_config.freeze_skip_connection, eps=self.model_building_config.batch_norm_eps, normalize=normalize)
+        self.resnet_block_3 = layers.ResNetPreactivationBlock(self.model_building_config.nodes, self.model_building_config.activation_functions, self.model_building_config.skip_connection_init, self.model_building_config.freeze_skip_connection, eps=self.model_building_config.batch_norm_eps, normalize=normalize)
+        self.last_linear = torch.nn.Linear(self.model_building_config.nodes, 3)
+
+    def forward(self, categorical_inputs, continuous_inputs):
+        x = self.input_layer(categorical_inputs=categorical_inputs, continuous_inputs=continuous_inputs)
+        x = self.transition_dense_1(x)
+        x = self.resnet_block_1(x)
+        x = self.resnet_block_2(x)
+        x = self.resnet_block_3(x)
+        x = self.last_linear(x)
+        return x
+
+
+class DenseNet(BaseModel):
+    def __init__(self, full_config, *args, **kwargs):
+        super().__init__(full_config, *args, **kwargs)
+
+        # init layers
+        self.dense_config = {
+            "skip_connection_init" : self.model_building_config.skip_connection_init,
+            "freeze_skip_connection" : self.model_building_config.freeze_skip_connection,
+            "activation_functions" : self.model_building_config.activation_functions,
+            "eps": self.model_building_config.eps_batchnorm, # increasing eps helps to stabilize training, to counter batch norm and L2 reg counter play when used together
+            "normalize" : self.model_building_config.normalize_linear, # activate weight normalization on linear layer weights
+        }
+        self.init_layers()
+
 
     def init_layers(self):
         m_cfg = self.model_building_config
@@ -217,6 +219,9 @@ class DenseNet(torch.nn.Module):
         self.dense_block_5 = layers.DenseNetBlock(input_nodes = self.dense_block_4.output_dim, output_nodes = int((m_cfg.nodes)), **self.dense_config)
         self.last_linear = torch.nn.Linear(self.dense_block_5.output_dim, len(self.dataset_config.target_map.keys()))
 
+        # can only be sigmoid or softmax, uses only dim as configuration
+        self.last_activaton_fn = self.init_last_activation_layer()
+
     def forward(self, categorical_inputs, continuous_inputs):
         x = self.input_layer(categorical_inputs=categorical_inputs, continuous_inputs=continuous_inputs)
         x = self.transition_dense_1(x)
@@ -226,6 +231,8 @@ class DenseNet(torch.nn.Module):
         x = self.dense_block_4(x)
         x = self.dense_block_5(x)
         x = self.last_linear(x)
+        if self.use_last_activation:
+            self.last_activaton_fn(x)
         return x
 
 class LBNDenseNet(DenseNet):
@@ -269,43 +276,68 @@ class LBNDenseNet(DenseNet):
         x = self.dense_block_4(x)
         x = self.dense_block_5(x)
         x = self.last_linear(x)
+        if self.use_last_activation:
+            x = self.last_activaton_fn(x)
         return x
 
 
 class BinnedLBNDenseNetV2(LBNDenseNet):
     def __init__(self, full_config, *args, **kwargs):
-        super().__init__(
-            self.dataset_config,
-            self.model_building_config,
-            *args,
-            **kwargs
-            )
+        super().__init__(full_config, *args, **kwargs)
 
-        self.config = config
-        self.binning_config = binning_config
-
-    def init_layers(self, dataset_config, config):
+    def init_layers(self):
         # create normal LBN DenseNet
-        super().init_layers(
-            dataset_config.continuous_features,
-            dataset_config.categorical_features,
-            config
-            )
-
+        super().init_layers()
         # init binning layer
         # add binning layer if necessary
         if self.binning_config is None:
             self.binning_layer = torch.nn.Identity()
         else:
-            from IPython import embed; mbed(header="MESSAGE Line 443 | File: create_model.py")
             self.binning_layer = layers.BinningLayerRight(
-                num_bins=binning_config.num_bins,
-                lower_bound=binning_config.lower_edge,
-                upper_bound=binning_config.upper_edge,
-                binning_fn=binning_config.binning_fn,
-                kernel_cls=getattr(kernel, binning_config.kernel_cls),
-                kernel_cfg=binning_config.kernel_config[binning_config.kernel_cls],
+                num_bins=self.binning_config.num_bins,
+                bounds=self.binning_config.bounds,
+                binning_fn=self.binning_config.binning_fn,
+                kernel_cls=getattr(kernel, self.binning_config.kernel_cls),
+                kernel_cfg=self.binning_config.kernel_config[self.binning_config.kernel_cls],
                 )
+
+    def set_learning_mode(self, mode):
+        """
+        Control training status of the layers of the model.
+        Depending on mode different moduses are activated.
+
+        Following options are available:
+        TOBEDONE
+        Args:
+            mode (_type_): _description_
+        """
+        LEARNING_MODE_CHOICE = ("bin_only", "model_only", "unfreeze_all", "freeze_all")
+        if mode not in LEARNING_MODE_CHOICE:
+            raise ValueError(f" Learning mode choice {mode} not availabed, choice from {LEARNING_MODE_CHOICE}")
+
+        # first freeze everything, then unfreeze depending on mode
+        for name, layer in self.named_children():
+            layer.requires_grad = False
+
+        if mode == "bin_only":
+            all_layers = dict(self.named_children())
+            all_layers["binning_layer"].requires_grad = True
+        elif mode == "model_only":
+            all_layers_except_binning = dict(self.named_children())
+            all_layers_except_binning.pop("binning_layer")
+            for name, layer in all_layers_except_binning.items():
+                layer.requires_grad = True
+        elif mode == "unfreeze_all":
+            for name, layer in self.named_children():
+                layer.requires_grad = True
+        elif mode == "freeze_all":
+            pass # is done by default
+
+
+    def forward(self, categorical_inputs, continuous_inputs):
+        normal_network_output = super().forward(categorical_inputs, continuous_inputs)
+        binned_output = self.binning_layer(normal_network_output) # increases dimension at axis 0
+        return normal_network_output, binned_output
 
 
 class BinnedLBNDenseNet(torch.nn.Module):
@@ -405,7 +437,8 @@ class BinnedLBNDenseNet(torch.nn.Module):
         # pick correct last activaton function
         last_activation_fn =  getattr(torch.nn.modules.activation, config.last_activation_fn) if config.last_activation_fn else torch.nn.Identity()
         if config.last_activation_fn == "Softmax":
-            self.last_activation = last_activation_fn(dim=1)
+            # always go on object dimension, which is last
+            self.last_activation = last_activation_fn(dim=-1)
         else:
             self.last_activation = self.last_activation()
 

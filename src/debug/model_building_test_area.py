@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 # package imports
+import torch
+
 import optimizer
 import models.create_model as create_model
-
+import models.layers as layers
 #from models import create_model
 from data import load_data, preprocessing, sampler, cache
 from utils import logger
 from optimizer.utils import init_optimizer
-
+import loss.kernel as kernel
 from train.train_config import full_config
-
+from models.utils import init_model
 
 
 
@@ -27,15 +29,32 @@ def main(parser_args):
         return_dummy=True,
     )
 
-    if full_config.training_config.model_choice == "binned_lbn":
-        model_inst = create_model.BinnedLBNDenseNet(full_config)
-        model_inst.set_learning_mode("default")
-    elif full_config.training_config.model_choice == "bnet_lbn":
-        model_inst = create_model.LBNDenseNet(full_config)
-    else:
-        raise ValueError(f"Model choice {full_config.training_config.model_choice} not recognized, but must be set")
 
-    optimizer_inst = init_optimizer(full_config=full_config, model_inst=model_inst)
+    data = torch.load("/data/dust/user/wiedersb/HH_DNN/cache/test.pt", map_location="cpu")
+    prediction, truth, weights = data["pred"], data["truth"], data["weights"]
+
+    binning_layer = layers.BinningLayerRight(
+        num_bins=20,
+        bounds=(0,1),
+        binning_fn=torch.linspace,
+        kernel_cls=kernel.GaussianKernelFinal,
+        kernel_cfg={
+            "left_notch" : 0,
+            "right_notch" : 0,
+            "smoothing_width" : 0.1,
+            "abs_mode" : False,
+            "bin_height" : 1,
+        }
+    )
+    model_inst = init_model(full_config)
+
+
+
+    from IPython import embed; embed(header="MESSAGE Line 30 | File: model_building_test_area.py")
+
+    #### TEST OPTIMIZER
+
+    # optimizer_inst = init_optimizer(full_config=full_config, model_inst=model_inst)
 
     # # only linear layers contribute to weight decay, prepare config that separates them for the optimizer
     # weight_decay_parameters = optimizer.weight_decay.normalized_weight_decay(

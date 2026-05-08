@@ -1277,8 +1277,8 @@ class BinningLayerRight(torch.nn.Module):
     def __init__(
         self,
         num_bins: int,
-        lower_bound: float,
-        upper_bound: float,
+        bounds: tuple[float],
+
         binning_fn: callable, # like linspace or logspace to create initial edges
         kernel_cls,
         kernel_cfg,
@@ -1286,44 +1286,75 @@ class BinningLayerRight(torch.nn.Module):
         **kwargs
         ):
         """
+        Creates *num_bins* kernel instances of *kernel_cls* with configuration defined in *kernel_cfg*.
+        The initial edge are defined by a given binning function *binning_fn*.
+        The lower and upper bounds are given as tuple *bounds*.
+
+        For every prediction, add another axis, with num_bins entries.
+
+        Example we have an prediction vector of shape [100, 3] and 20 kernels.
+        The resulting Tensors would be [20, 100, 3]
+
         Args:
             init_edges (list[float]): _description_
         """
         super().__init__(*args, **kwargs)
         # TODO currently no fusion allowed
-        # TODO maybe good idea, when going below certain threshold
+
         self.num_bins = num_bins
-        self.lower_bound = lower_bound
-        self.upper_bound = upper_bound
+        self.bounds = bounds
+        self.init_learnable_edges(space_fn=binning_fn)
+
         self.kernel_cls = kernel_cls
         self.kernel_cfg = kernel_cfg
         self.kernel_cache = None
 
 
-        self.bin_lengths = torch.nn.Parameter(self.init_learnable_edges(space_fn=binning_fn), requires_grad=True)
-        parametrize.register_parametrization(self, "bin_lengths", torch.nn.Softmax(dim=0))
 
-    def get_bin_edges(self):
-        # relative_part = torch.softmax(self.bin_lengths)
-        relative_part = self.bin_lengths.detach()
-        interval = self.upper_bound - self.lower_bound
+    @property
+    def lower_edge(self):
+        return self.bounds[0]
 
-        absolute_bin_widths = self.lower_bound + interval * relative_part
-        right_edge = torch.cumsum(absolute_bin_widths, dim=0)
-        left_edge = right_edge - absolute_bin_widths
-        left_edge[0] = self.lower_bound
-        right_edge[-1] = self.upper_bound
-        return torch.tensor(list(zip(left_edge, right_edge)))
+    @property
+    def upper_edge(self):
+        return self.bounds[1]
 
-        # TODO bin start
+    @property
+    def interval(self):
+        return self.upper_edge - self.lower_edge
+
+    @property
+    def bin_edges(self):
+        # calculate absolute widht of bins
+        relative_part = self.relative_bin_width.detach()
+        interval = self.upper_edge - self.lower_edge
+        abs_width = interval * relative_part
+
+        # right edge is sum of abs_bins + lowest edge
+        # left edge is
+        shift = self.lower_edge
+        right_edge = shift + torch.cumsum(abs_width, dim=0)
+        left_edge = right_edge - abs_width
+        return torch.stack((left_edge, right_edge), dim = 1)
 
     def init_learnable_edges(self, space_fn):
-        # create initial edges with space fn, then create learnable edges by taking the difference of the initial edges
-        space_intervalls = space_fn(self.lower_bound, self.upper_bound, self.num_bins + 1)
-        differences = space_intervalls[1:] - space_intervalls[:-1]
-        return differences
+        """
+        Takes *space_fn* that defines an interval space, like linspace and register this interval.
+        Afterwards parametrize the interval to their relative contribution.
 
-    def kernel(self ,load_cache=False) -> torch.tensor:
+        Args:
+            space_fn (_type_): _description_
+
+        Returns:
+            _type_: _description_
+        """
+        intervalls = space_fn(self.lower_edge, self.upper_edge, self.num_bins + 1)
+        relative_width = (intervalls[1:] - intervalls[:-1]) / self.interval
+
+        self.relative_bin_width = torch.nn.Buffer(relative_width)
+        parametrize.register_parametrization(self, "relative_bin_width", torch.nn.Softmax(dim=0))
+
+    def kernels(self ,load_cache=False) -> torch.tensor:
         """
         Actual kernel implementation, containing 3 parts: left gaussian, horizontal 1 and right gaussian.
         A value *x* is mapped to an y value using these function.
@@ -1334,31 +1365,32 @@ class BinningLayerRight(torch.nn.Module):
         Returns:
             torch.tensor: y value tensor resulting form the function. Is by default between 0 and 1
         """
-        # get tensor of edges depending on prediction
+        # kernels should only be rebuild, when there is no cache or load_cache is false
         if load_cache and self.kernel_cache:
             return self.kernel_cache
-        else:
-            kernels = []
-            for bin_num, edge in enumerate(self.get_bin_edges()):
-                if bin_num == 0:
-                    bin_type = "underflow"
-                elif bin_num == (self.num_bins - 1):
-                    bin_type = "overflow"
-                else:
-                    bin_type = "normal"
-                kernel = self.kernel_cls(
-                    edges=edge,
-                    bin_type=bin_type,
-                    **self.kernel_cfg,
-                    )
-                kernels.append(kernel)
-            return kernels
+
+        kernels = []
+        for bin_num, edge in enumerate(self.bin_edges):
+            if bin_num == 0:
+                bin_type = "underflow"
+            elif bin_num == (self.num_bins - 1):
+                bin_type = "overflow"
+            else:
+                bin_type = "normal"
+            kernel = self.kernel_cls(
+                edges=edge,
+                bin_type=bin_type,
+                **self.kernel_cfg,
+                )
+            kernels.append(kernel)
+        # save in cache
+        self.kernel_cache = kernels
+        return kernels
 
     def forward(self, x):
         scaled_x = []
-        kernels = kernel(load_cache=False)
+        kernels = self.kernels(load_cache=False)
         for kernel in kernels:
             scale = kernel(x)
             scaled_x.append(scale * x)
-        binned_x = torch.sum(torch.stack(scaled_x, axis=0), axis=0)
-        return binned_x
+        return torch.stack(scaled_x, dim=0)
