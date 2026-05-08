@@ -99,15 +99,16 @@ class CheckPoint:
         self.no_improvement_count +=1
         return False
 
-    def create_checkpoint(self, model, optimizer, scheduler, current_iteration):
+    def create_checkpoint(self, model, optimizer, scheduler, current_iteration, full_config):
         checkpoint = {
             "epoch": current_iteration,
-            "model_inst" : model,
+            "model_inst" : (None if model.is_parametrized else model), # when using a parametrization model_inst can't be saved, in this case return None
             "model_state_dict" : model.state_dict().copy(),
             "optimizer" : optimizer,
             "optimizer_state_dict": optimizer.state_dict().copy(),
             "lr_scheduler": scheduler,
             "iteration": current_iteration,
+            "full_config": full_config,
         }
 
         self.last_checkpoint = checkpoint
