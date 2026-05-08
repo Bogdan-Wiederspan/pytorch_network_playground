@@ -1,8 +1,6 @@
 import torch
 
 import loss
-from train.train_config import full_config
-
 
 def init_loss(full_config, device=torch.device("cpu"), **kwargs):
     if full_config.training_config.loss_fn == "cross_entropy":

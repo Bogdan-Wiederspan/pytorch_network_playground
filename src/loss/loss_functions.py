@@ -171,7 +171,8 @@ class SignalEfficiency(torch.nn.Module):
         truth: torch.tensor,
         product_of_weights: dict[torch.tensor],
         evaluation_phase_space_mask: dict[torch.tensor],
-        is_signal: bool
+        is_signal: bool,
+        epsilon=None,
         ):
         """
         Function to assemble together the result of the approximation parts.
@@ -193,42 +194,28 @@ class SignalEfficiency(torch.nn.Module):
             evaluation_phase_space_mask=evaluation_phase_space_mask,
             is_signal=is_signal,
         )
-        weighted_yield = torch.sum(weighted_predictions)
+
+        weighted_yield = torch.sum(weighted_predictions, dim = 1) # sum over all predictions in bins
+        # have atleast epsilon yield to avoid 0 yields, which are not physical and cause problems in the loss calculation
+        if epsilon is not None:
+            weighted_yield = torch.clamp(weighted_yield, min=epsilon)
         return transfer_factor * weighted_yield
 
 
-    # TODO CHECK again
-
-    def main(self, prediction, truth, weight, *args, **kwargs):
-        signal_node_truth = truth[:, self.s_cls]
-        prediction = torch.softmax(prediction, dim = 1) # network does not contain softmax
-        signal_node_prediction = prediction[:, self.s_cls]
-
-        s = self.approximation_sb(signal_node_prediction, signal_node_truth, weight["product_of_weights"], weight["evaluation_space_mask"], is_signal=True)
-        b = self.approximation_sb(signal_node_prediction, signal_node_truth, weight["product_of_weights"], weight["evaluation_space_mask"], is_signal=False)
-
-        if (s <= 0 or b <= 0):
-            from IPython import embed; embed(header = "Either s or b is below 0, which is not physical, starting debugger in Forward of SignalEfficiency loss")
-        uncertainty = self._uncertainty(b)
-
-        loss = self.loss(s= s, b=b, unc_b=uncertainty)
-        if loss == 0:
-            return 0
-        return 1 / loss
-    # TODO REPLACE
-
     def forward(self, prediction, truth, weight, *args, **kwargs):
-        signal_node_truth = truth[:, self.s_cls]
-        prediction = torch.softmax(prediction, dim = 1) # network does not contain softmax
-        signal_node_prediction = prediction[:, self.s_cls]
+        signal_node_truth = truth[..., self.s_cls]
 
-        s = self.approximation_sb(signal_node_prediction, signal_node_truth, weight["product_of_weights"], weight["evaluation_space_mask"], is_signal=True)
-        b = self.approximation_sb(signal_node_prediction, signal_node_truth, weight["product_of_weights"], weight["evaluation_space_mask"], is_signal=False)
+        # prediction = torch.softmax(prediction, dim = -1) # network does not contain softmax
+        signal_node_prediction = prediction[..., self.s_cls]
 
-        if (s <= 0 or b <= 0):
-            from IPython import embed; embed(header = "Either s or b is below 0, which is not physical, starting debugger in Forward of SignalEfficiency loss")
+        s = self.approximation_sb(signal_node_prediction, signal_node_truth, weight["product_of_weights"], weight["evaluation_space_mask"], is_signal=True, epsilon=1e-2)
+        b = self.approximation_sb(signal_node_prediction, signal_node_truth, weight["product_of_weights"], weight["evaluation_space_mask"], is_signal=False, epsilon=1e-2)
+
+        # if (s <= 0 or b <= 0):
+        #     from IPython import embed; embed(header = "Either s or b is below 0, which is not physical, starting debugger in Forward of SignalEfficiency loss")
         uncertainty = self._uncertainty(b)
         loss = self.loss(s= s, b=b, unc_b=uncertainty)
+        loss = torch.sum(loss)
         if loss == 0:
             return 0
         if torch.isnan(1 / loss):
@@ -239,7 +226,8 @@ class SignalEfficiency(torch.nn.Module):
 class BinningAwareSignificance(SignalEfficiency):
     def __init__(
         self,
-        bins: torch.tensor,
+        model_inst: torch.nn.Module=None,
+        bins: torch.tensor=None,
         binning_cfg: dict=None,
         *args,
         **kwargs
@@ -254,8 +242,13 @@ class BinningAwareSignificance(SignalEfficiency):
         """
 
         super().__init__(*args, **kwargs)
-
+        if model_inst is not None:
+            pass
         self.edges = bins
+        if self.edges is not None:
+            self.build_kernels()
+
+    def build_kernels(self):
         kernels = []
         for bin_num, (low, upper) in enumerate(zip(self.edges[:-1], self.edges[1:])):
             if bin_num == 0:
@@ -267,11 +260,11 @@ class BinningAwareSignificance(SignalEfficiency):
             k = kernel.GaussianKernelV2(
                 initial_edge=(low, upper),
                 bin_type=bin_type,
-                **binning_cfg
+                **self.binning_config,
             )
             kernels.append(k)
-
         self.kernels = kernels
+
 
     def digitize_masks(self, x, bin_edges, include_left_edge = True):
         # create masks for each bin and save them in a mask dictionary, where the key is the bin number
