@@ -159,19 +159,6 @@ def main(**kwargs):
                     device=DEVICE
                     )
                 # TODO when edges should be tracked add this in a way that is universal and does not break for models without binning layer, e.g. add property to model that returns None if no binning layer is present and add check in log_metrics
-                log_metrics(
-                    tensorboard_inst = tensorboard_writer,
-                    iteration_step = current_iteration,
-                    sampler_output = (eval_t_pred, eval_t_tar, eval_t_weights),
-                    target_map = full_config.dataset_config.target_map,
-                    mode = "train",
-                    loss = eval_t_loss.item(),
-                    lr = optimizer_inst.param_groups[0]["lr"],
-                    # binning_edges = model_inst.binning_layer.edges.detach().cpu(),
-                    # binning_edges = ,
-                    current_iteration = current_iteration,
-                    # kernels = model_inst.binning_layer.kernels,
-                )
                 # evaluation of validation
                 logger_inst.info(f"Iteration {current_iteration}. Start evaluation of validation data.")
 
@@ -183,19 +170,36 @@ def main(**kwargs):
                     device=DEVICE
                     )
                 # TODO when edges should be tracked add this in a way that is universal and does not break for models without binning layer, e.g. add property to model that returns None if no binning layer is present and add check in log_metrics
-                log_metrics(
-                    tensorboard_inst = tensorboard_writer,
-                    iteration_step = current_iteration,
-                    sampler_output = (eval_v_pred, eval_v_tar, eval_v_weights),
-                    target_map = full_config.dataset_config.target_map,
-                    mode = "validation",
-                    loss = eval_v_loss.item(),
-                    # TODO binning edges and kernels are only defined for BinnedLBN make universal
-                    # binning_edges = model_inst.binning_layer.edges.detach().cpu(),
-                    binning_edges = full_config.binning_config.num_bins,
-                    current_iteration = current_iteration,
-                    # kernels=model_inst.binning_layer.kernels,
-                )
+                if full_config.training_config.log_metrics:
+                    log_metrics(
+                        tensorboard_inst = tensorboard_writer,
+                        iteration_step = current_iteration,
+                        sampler_output = (eval_t_pred, eval_t_tar, eval_t_weights),
+                        target_map = full_config.dataset_config.target_map,
+                        mode = "train",
+                        loss = eval_t_loss.item(),
+                        lr = optimizer_inst.param_groups[0]["lr"],
+                        # binning_edges = model_inst.binning_layer.edges.detach().cpu(),
+                        # binning_edges = ,
+                        current_iteration = current_iteration,
+                        # kernels = model_inst.binning_layer.kernels,
+                    )
+
+
+
+                    log_metrics(
+                        tensorboard_inst = tensorboard_writer,
+                        iteration_step = current_iteration,
+                        sampler_output = (eval_v_pred, eval_v_tar, eval_v_weights),
+                        target_map = full_config.dataset_config.target_map,
+                        mode = "validation",
+                        loss = eval_v_loss.item(),
+                        # TODO binning edges and kernels are only defined for BinnedLBN make universal
+                        # binning_edges = model_inst.binning_layer.edges.detach().cpu(),
+                        binning_edges = full_config.binning_config.num_bins,
+                        current_iteration = current_iteration,
+                        # kernels=model_inst.binning_layer.kernels,
+                    )
                 logger_inst.training(f"Iteration: {current_iteration} - TLoss: {eval_t_loss:.2E} VLoss: {eval_v_loss:.2E}")
 
 
@@ -206,6 +210,7 @@ def main(**kwargs):
                         optimizer=optimizer_inst,
                         scheduler=scheduler_inst,
                         current_iteration=current_iteration,
+                        full_config=full_config,
                     )
 
                 # if metric does not improve x-times reduce

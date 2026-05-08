@@ -9,6 +9,14 @@ from utils import logger
 functions = {}
 logger_inst = logger.get_logger(__name__)
 
+def prepare_binned_output(pred):
+    is_binned = isinstance(pred, tuple)
+    if is_binned:
+        logging_pred, optimization_pred = pred
+    else:
+        logging_pred, optimization_pred = pred, pred
+    return logging_pred, optimization_pred
+
 def do_scheduler_step(
     loss: torch.tensor,
     logger_inst: logger.logging.Logger,
@@ -80,8 +88,9 @@ class TrainingLoop(BaseLoop):
 
         cont, cat, targets = sampler.sample_batch(device=device)
         pred = model(categorical_inputs=cat, continuous_inputs=cont)
+        logging_pred, optimization_pred = prepare_binned_output(pred)
 
-        loss = loss_fn(pred, targets)
+        loss = loss_fn(optimization_pred, targets)
         loss.backward()
         optimizer.first_step(zero_grad=True)
 
@@ -93,7 +102,7 @@ class TrainingLoop(BaseLoop):
         optimizer.second_step(zero_grad=True)
 
         optimizer.enable_running_stats(model)  # <- this is the important line
-        return loss, (pred, targets)
+        return loss, (logging_pred, targets)
 
     @BaseLoop.register
     def default(model, loss_fn, optimizer, sampler, sample_from, device):
@@ -101,12 +110,13 @@ class TrainingLoop(BaseLoop):
 
         events = sampler.sample_batch(sample_from=sample_from, device=device)
         pred = model(categorical_inputs=events.pop("categorical"), continuous_inputs=events.pop("continuous"))
+        logging_pred, optimization_pred = prepare_binned_output(pred)
 
         targets = events.pop("targets")
-        loss = loss_fn(pred, targets.reshape(-1,3), events)
+        loss = loss_fn(optimization_pred, targets.reshape(-1,3), events)
         loss.backward()
         optimizer.step()
-        return loss, (pred, targets)
+        return loss, (logging_pred, targets)
 
 class ValidationLoop(BaseLoop):
     def __init__(self, which_fn, *args, **kwargs):
@@ -130,15 +140,17 @@ class ValidationLoop(BaseLoop):
                 dataset_losses = []
 
                 for events in validation_batch_generator:
-                    val_pred = model(categorical_inputs=events.pop("categorical"), continuous_inputs=events.pop("continuous"))
+                    pred = model(categorical_inputs=events.pop("categorical"), continuous_inputs=events.pop("continuous"))
+                    logging_pred, optimization_pred = prepare_binned_output(pred)
+
                     targets = events.pop("targets")
-                    loss = loss_fn(val_pred, targets.reshape(-1,3), events, debug=False)
+                    loss = loss_fn(optimization_pred, targets.reshape(-1,3), events, debug=False)
                     # collect data for metric plots
                     dataset_losses.append(loss)
                     # predictions.append(torch.softmax(val_pred, dim=1).cpu())
-                    predictions.append(val_pred).cpu()
+                    predictions.append(logging_pred).cpu()
                     truth.append(targets.cpu())
-                    weights.append(torch.full(size=(val_pred.shape[0], 1), fill_value=sampler[uid].relative_weight).cpu())
+                    weights.append(torch.full(size=(logging_pred.shape[0], 1), fill_value=sampler[uid].relative_weight).cpu())
 
                 process_contribution = sampler[uid].relative_weight
                 average_val = sum(dataset_losses) / len(dataset_losses) * process_contribution
@@ -170,24 +182,30 @@ class ValidationLoop(BaseLoop):
                 device=device).items():
                 dataset_losses = []
 
-
-
                 for events in validation_batch_generator:
-                    val_pred = model(categorical_inputs=events.pop("categorical"), continuous_inputs=events.pop("continuous"))
-                    p.append(val_pred)
+                    pred = model(categorical_inputs=events.pop("categorical"), continuous_inputs=events.pop("continuous"))
+                    logging_pred, optimization_pred = prepare_binned_output(pred)
+
+                    p.append(optimization_pred)
                     targets = events.pop("targets")
                     t.append(targets)
                     e["product_of_weights"].append(events.pop("product_of_weights"))
                     e["evaluation_space_mask"].append(events.pop("evaluation_space_mask"))
 
                     # collect data for metric plots
-
-                    predictions.append(torch.softmax(val_pred, dim=1))
+                    # TODO: outsource softmax for all things
+                    predictions.append(torch.softmax(logging_pred, dim=1))
                     truth.append(targets)
-                    weights.append(torch.full(size=(val_pred.shape[0], 1), fill_value=sampler[uid].relative_weight))
+                    weights.append(torch.full(size=(logging_pred.shape[0], 1), fill_value=sampler[uid].relative_weight))
 
-            p = torch.concatenate(p)
-            t = torch.concatenate(t)
+            _dim = len(p[0].shape)
+            if _dim == 3: #then it means that we have a binned output, concat happens over the 1 axis
+                event_dim = 1
+            elif _dim == 2: # then we have a normal output, concat happens over the 0 axis
+                event_dim = 0
+            p = torch.concatenate(p, dim=event_dim)
+
+            t = torch.concatenate(t, dim=0)
             e["product_of_weights"] = torch.concatenate(e["product_of_weights"])
             e["evaluation_space_mask"] = torch.concatenate(e["evaluation_space_mask"])
             loss = loss_fn(p, t.reshape(-1,3), e, debug=False)
@@ -223,12 +241,13 @@ def trainings_loop_sam(model, loss_fn, optimizer, sampler, device):
     # second forward step with disabled bachnorm running stats in second forward step
     optimizer.disable_running_stats(model)
     pred_2 = model(categorical_inputs=cat, continuous_inputs=cont)
-    loss_fn(pred_2, targets).backward()
+    logging_pred, optimization_pred = prepare_binned_output(pred_2)
+    loss_fn(optimization_pred, targets).backward()
 
     optimizer.second_step(zero_grad=True)
 
     optimizer.enable_running_stats(model)  # <- this is the important line
-    return loss, (pred, targets)
+    return loss, (logging_pred, targets)
 
 @register
 def trainings_loop_default(model, loss_fn, optimizer, sampler, sample_from, device):

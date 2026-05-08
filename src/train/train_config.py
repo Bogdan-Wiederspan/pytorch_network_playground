@@ -11,10 +11,10 @@ from utils.utils import choice_check
 # some values only accept certain values, not runtime check is performed!
 ERAS_CHOICE = Literal["22pre", "22post", "23pre", "23post"]
 LAST_ACTIVATION_CHOICE = Literal["Softmax", "Sigmoid", None]
-KERNEL_CHOICE = Literal["GaussianKernelV3"]
+KERNEL_CHOICE = Literal["GaussianKernelV3", "GaussianKernelFinal"]
 OPTIMIZER_CHOICE = Literal["adamw", "sam"]
 
-MODEL_CHOICE = Literal["binned_lbn", "bnet_lbn"]
+MODEL_CHOICE = Literal["binned_lbn", "bnet_lbn", "binned_lbnv2"]
 LOSS_CHOICE = Literal["cross_entropy", "signal_efficiency", "signal_efficiency_binning_aware"]
 TRAINING_LOOP_CHOICE = Literal["default", "sam"]
 VALIDATION_LOOP_CHOICE = Literal["signal_efficiency"]
@@ -69,6 +69,7 @@ class ModelBuildingConfig:
     batch_norm_eps: float = 0.001 # epsilon denominator of batch norm - increase stability Marcel: 0.001
     LBN_M: int = 10 # number of particles of the lbn network Marcel: 10
     last_activation_fn: LAST_ACTIVATION_CHOICE = "Softmax" # add activation function after last layer
+    use_last_activation: bool = True # whether to use the last activation function, can be deactivated if not wanted - for example when using a loss function that already includes an activation like cross entropy, Marcel: False
     #STD Layers
     mean: Optional[Any] = None
     std: Optional[Any] = None
@@ -92,18 +93,18 @@ class ModelBuildingConfig:
 
 @dataclass
 class BinningConfig:
-    num_bins: int = 25
-    lower_edge: float = 0.0
-    upper_edge: float = 1.0
+    num_bins: int = 15
+    bounds: tuple[int] = (0, 1)
     binning_fn: Any = torch.linspace  # keep as a callable, if needed
-    kernel_cls: KERNEL_CHOICE = "GaussianKernelV3"
+    kernel_cls: KERNEL_CHOICE = "GaussianKernelFinal"
     kernel_config: Dict[str, Dict[str, Any]] = field(
         default_factory=lambda: {
-            "GaussianKernelV3": {
+            "GaussianKernelFinal": {
                 "abs_mode": False, # all values are interpreted as absolute values, recommended to be relative
-                "smoothing_width": 0.3, # width of gaussian where it goes from 100% to 10%
-                "left_notch": 0.1, # shift of gaussian into linear part from left
-                "right_notch": 0.1, # shift of gaussian into linear part from right
+                "smoothing_width": 0.1, # width of gaussian where it goes from 100% to 10%
+                "left_notch": 0.0, # shift of gaussian into linear part from left
+                "right_notch": 0.0, # shift of gaussian into linear part from right
+                "bin_height" : 1,
             }
         }
     )
@@ -112,8 +113,9 @@ class BinningConfig:
 
 @dataclass
 class TrainingConfig:
-    model_choice: MODEL_CHOICE = "bnet_lbn"
-    loss_fn: LOSS_CHOICE = "signal_efficiency_binning_aware"
+    log_metrics: bool = True # whether to log metrics to tensorboard during training, if false only validation loss is logged
+    model_choice: MODEL_CHOICE = "binned_lbnv2"
+    loss_fn: LOSS_CHOICE = "signal_efficiency"
     max_train_iteration: int = 60000 # max number of batches
     verbose_interval: int = 5 # interval between two logger outputs of training loss
     validation_interval: int = 100 # interval between two validation passes / plots are done during validation
