@@ -10,8 +10,9 @@ export LOG_LEVEL="DEBUG"
 export FILE_LOG_LEVEL="DEBUG"
 
 # location where the input data can be found.
-export INPUT_DATA_DIR="/data/dust/user/riegerma/hh2bbtautau/run3_training_data/prod20"
-#export INPUT_DATA_DIR="/data/dust/user/riegerma/hh2bbtautau/run3_training_data/prod14"
+export TRAINIG_ROOT="/data/dust/user/riegerma/hh2bbtautau/run3_training_data/"
+export ERA=prod20 # possible eras: prod14, prod20, prod24 (20 only has 22pre)
+export INPUT_DATA_DIR="/data/dust/user/riegerma/hh2bbtautau/run3_training_data/${ERA}"
 
 # virtualenv handling
 export VENV_MODE="venv" # pyenv, venv or cf, handles switch
