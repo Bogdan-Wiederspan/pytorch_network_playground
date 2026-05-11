@@ -14,7 +14,7 @@ LAST_ACTIVATION_CHOICE = Literal["Softmax", "Sigmoid", None]
 KERNEL_CHOICE = Literal["GaussianKernelV3", "GaussianKernelFinal"]
 OPTIMIZER_CHOICE = Literal["adamw", "sam"]
 
-MODEL_CHOICE = Literal["binned_lbn", "bnet_lbn", "binned_lbnv2"]
+MODEL_CHOICE = Literal["residual", "dense", "lbn_dense", "binned_lbn_dense"]
 LOSS_CHOICE = Literal["cross_entropy", "signal_efficiency", "signal_efficiency_binning_aware"]
 TRAINING_LOOP_CHOICE = Literal["default", "sam"]
 VALIDATION_LOOP_CHOICE = Literal["signal_efficiency"]
@@ -114,7 +114,7 @@ class BinningConfig:
 @dataclass
 class TrainingConfig:
     log_metrics: bool = True # whether to log metrics to tensorboard during training, if false only validation loss is logged
-    model_choice: MODEL_CHOICE = "binned_lbnv2"
+    model_choice: MODEL_CHOICE = "binned_lbn_dense"
     loss_fn: LOSS_CHOICE = "signal_efficiency"
     max_train_iteration: int = 60000 # max number of batches
     verbose_interval: int = 5 # interval between two logger outputs of training loss
@@ -127,7 +127,7 @@ class TrainingConfig:
     train_ratio: float = 0.75 # split ratio for k-fold data into train and validation
     t_batch_size: int = 4096 * 10
     v_batch_size: int = -1 # validation batch size, -1 = full set,
-    save_model_name: str = "test_binning" # name of the model used to save
+    save_model_name: str = "parametrized_binning" # name of the model used to save
     training_fn: TRAINING_LOOP_CHOICE = "default" # name of the training and validation loop function
     validation_fn: VALIDATION_LOOP_CHOICE = "signal_efficiency"
     loss_mode: SIGNAL_EFFICIENCY_LOSS_MODE = "no_unc" # only relevant if signal_efficiency loss is chosen, determines which formula is used for the asimov calculation

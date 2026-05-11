@@ -7,6 +7,13 @@ from models import layers
 from data import features
 from utils import utils
 
+MODEL_REGISTRY = {}
+
+def register_model(name):
+    def wrapper(cls):
+        MODEL_REGISTRY[name] = cls
+        return cls
+    return wrapper
 
 class BaseModel(torch.nn.Module):
     def __init__(self, full_config, *args, **kwargs):
@@ -148,7 +155,7 @@ class BaseModel(torch.nn.Module):
                 return last_activation_fn()
         return None
 
-
+@register_model("residual")
 class ResidualDNN(BaseModel):
     def __init__(self, full_config, *args, **kwargs):
         super().__init__(full_config, *args, **kwargs)
@@ -184,7 +191,7 @@ class ResidualDNN(BaseModel):
         x = self.last_linear(x)
         return x
 
-
+@register_model("dense")
 class DenseNet(BaseModel):
     def __init__(self, full_config, *args, **kwargs):
         super().__init__(full_config, *args, **kwargs)
@@ -235,6 +242,7 @@ class DenseNet(BaseModel):
             self.last_activaton_fn(x)
         return x
 
+@register_model("lbn_dense")
 class LBNDenseNet(DenseNet):
     def __init__(self, full_config, *args, **kwargs):
         # has same init as DenseNet
@@ -280,7 +288,7 @@ class LBNDenseNet(DenseNet):
             x = self.last_activaton_fn(x)
         return x
 
-
+@register_model("binned_lbn_dense")
 class BinnedLBNDenseNetV2(LBNDenseNet):
     def __init__(self, full_config, *args, **kwargs):
         super().__init__(full_config, *args, **kwargs)

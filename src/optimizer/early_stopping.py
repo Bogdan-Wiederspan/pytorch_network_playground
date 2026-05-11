@@ -102,6 +102,8 @@ class CheckPoint:
     def create_checkpoint(self, model, optimizer, scheduler, current_iteration, full_config):
         checkpoint = {
             "epoch": current_iteration,
+            "model_cls_module": model.__class__.__module__,
+            "model_cls_name": model.__class__.__name__,
             "model_inst" : (None if model.is_parametrized else model), # when using a parametrization model_inst can't be saved, in this case return None
             "model_state_dict" : model.state_dict().copy(),
             "optimizer" : optimizer,

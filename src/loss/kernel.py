@@ -760,23 +760,34 @@ class GaussianKernelFinal(BaseKernel):
         return self._smoothing_width * self.bin_width
 
     def checks(self):
+
         # helper function to gather all assert checks
         init_variables = {
             name: getattr(self,name)
             for name in ("initial_lower_edge", "initial_upper_edge", "smoothing_width", "left_notch", "right_notch")
             }
 
-        assert self.bin_type in ("normal", "underflow", "overflow"), f"Bin type is {self.bin_type}, which is not supported"
+        if self.bin_type not in ("normal", "underflow", "overflow"):
+            raise ValueError(f"Unsupported bin type: {self.bin_type}")
 
         # everything should be tensors
         is_tensor = {name: torch.is_tensor(attribute) for name, attribute in (init_variables).items()}
-        assert all(is_tensor.values()), f"All arguments should be tensors but have\n {is_tensor.items()}"
 
-        # low and upper should be in the correct order
-        assert self.initial_lower_edge < self.initial_upper_edge, f"Lower edge is above upper edge - low: {self.initial_lower_edge}, upper: {self.initial_upper_edge}"
+        if not all(is_tensor.values()):
+            raise TypeError(f"All arguments should be tensors but got:\n{is_tensor}")
 
-        # gaussian should not over whole bin
-        assert self._left_notch + self._right_notch <= 1, f"Notches should not exceed whole bin, but left notch is {self._left_notch}, right notch is {self._right_notch} and their sum is {self._left_notch + self._right_notch}"
+        # TODO: These checks break torchscript
+        # # low and upper should be in the correct order
+        # torch._assert(
+        #     self.initial_lower_edge < self.initial_upper_edge,
+        #     "Lower edge above upper edge"
+        #     )
+
+        # # gaussian should not over whole bin
+        # torch._assert(
+        #     self._left_notch + self._right_notch <= 1,
+        #     "Notches exceed whole bin"
+        # )
 
     @property
     def coordinates(self):

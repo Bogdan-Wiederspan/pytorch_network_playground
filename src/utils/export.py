@@ -14,7 +14,7 @@ def torch_export(
     name: str,
     fold: str,
     base_dir: str | None=None,
-    add_softmax: bool =True) -> str:
+    activation_fn_name: str =None) -> str:
     """
     Takes *model*
 
@@ -31,8 +31,8 @@ def torch_export(
     # by default set CPU device, to enable most compatible export.
     DEVICE=torch.device("cpu")
 
-    if add_softmax:
-        model_inst = create_model.AddActFnToModel(model_inst, "softmax")
+    if activation_fn_name is not None:
+        model_inst = create_model.utils.AddActFnToModel(model_inst, activation_fn_name)
 
     # prepare model_inst
     model_inst = model_inst.to(DEVICE)
@@ -107,24 +107,49 @@ def run_exported_tensor_model(
     scores = exp.module()(cat, cont)
     return scores
 
+def resolve_models_path(path):
+    models_path = pathlib.Path(path)
+    is_only_model_name = len(path.parts) == 1
+    if is_only_model_name:
+        models_root = pathlib.Path(os.environ["MODELS_DIR"])
+        models_path = models_root / models_path.stem
+    return models_path.with_suffix(".pt2"), models_path.with_suffix(".pt")
+
+def build_model(path):
+    checkpoint = torch.load(str(path), weights_only=False, map_location="cpu")
+    # when instance is saved load this, otherwise rebuild model from module and class name and load state dict
+    if "model_inst" in checkpoint:
+        model_inst = checkpoint["model_inst"]
+    else:
+        full_cfg = checkpoint["full_config"]
+
+        # model_choice = full_cfg.training_config.model_choice
+        model_choice = "binned_lbn_dense"
+        model_cls = create_model.MODEL_REGISTRY[model_choice]
+        model_inst = model_cls(full_cfg)
+        model_inst.load_state_dict(checkpoint["model_state_dict"])
+    model_inst.eval()
+    return model_inst
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Export model to torch-export (.pt2) with dynamic batch dim")
-    p.add_argument("--model_path", "-m", required=True, help="Path to the model file (file or checkpoint) to load")
+    p.add_argument("--checkpoint_path", "-m", required=True, help="Path to checkpoint file to load")
     p.add_argument("--fold", "-f", required=True, help="Fold number", default=0)
-
+    p.add_argument(
+        "--add_activation",
+        required=False,
+        help="If value is given, get activation function and add at end of network",
+        default=None,
+        choices=["sigmoid", "softmax"]
+        )
     args = p.parse_args()
 
-    model_path = pathlib.Path(args.model_path)
+    pt2_path, pt_path = resolve_models_path(pathlib.Path(args.checkpoint_path))
     fold = args.fold
-    # if given path is a only a name search for name in environment dir
-    if len(model_path.parts) == 1:
-        model_path = pathlib.Path(os.environ["MODELS_DIR"]).with_stem(args.model_path).with_suffix(".pt2")
 
-    model = torch.load(args.model_path, weights_only=False)
+    model_inst = build_model(pt_path)
     # model is dict with keys
     # epoch ,model_inst, model_state_dict, optimizer
-    model = model["model_inst"]
-    model.eval()
-    torch_export(model, name=str(model_path), fold=fold)
+    # we want an model_instance OR if not existing we create new model instance and load the state dict
+    torch_export(model_inst, name=str(pt2_path), fold=fold)
     print("Done exporting")
