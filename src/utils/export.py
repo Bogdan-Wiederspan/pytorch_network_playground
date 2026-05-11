@@ -123,8 +123,7 @@ def build_model(path):
     else:
         full_cfg = checkpoint["full_config"]
 
-        # model_choice = full_cfg.training_config.model_choice
-        model_choice = "binned_lbn_dense"
+        model_choice = full_cfg.training_config.model_choice
         model_cls = create_model.MODEL_REGISTRY[model_choice]
         model_inst = model_cls(full_cfg)
         model_inst.load_state_dict(checkpoint["model_state_dict"])
