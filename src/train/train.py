@@ -15,7 +15,7 @@ from models import create_model
 from data import load_data, preprocessing, sampler, cache
 from utils import logger
 
-from optimizer.utils import init_optimizer
+from optimizer.utils import init_optimizer, init_scheduler
 from optimizer.early_stopping import EarlyStopOnPlateau, CheckPoint
 
 from loss.utils import init_loss
@@ -107,25 +107,12 @@ def main(**kwargs):
         model_inst = init_model(full_config=full_config)
         model_inst = model_inst.to(DEVICE).train()
 
-
         training_loop = TrainingLoop(which_fn=full_config.training_config.training_fn)
         validation_loop = ValidationLoop(which_fn=full_config.training_config.validation_fn)
 
         optimizer_inst = init_optimizer(full_config=full_config, model_inst=model_inst)
         training_loss_inst, validation_loss_inst = init_loss(full_config=full_config, device=DEVICE, training_sampler=training_sampler)
-
-        scheduler_inst = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer=optimizer_inst,
-            mode='min',
-            factor=full_config.scheduler_config.factor,
-            patience=full_config.scheduler_config.patience,
-            threshold=full_config.scheduler_config.min_delta,
-            threshold_mode=full_config.scheduler_config.threshold_mode,
-            cooldown=0,
-            min_lr=0,
-            eps=1e-08
-        )
-
+        scheduler_inst = init_scheduler(full_config=full_config, optimizer_inst=optimizer_inst)
         checkpoint_inst = CheckPoint(checkpoint_name=full_config.training_config.save_model_name, checkpoint_fold=current_fold)
 
         #----
@@ -140,10 +127,12 @@ def main(**kwargs):
                 sampler = training_sampler,
                 device=DEVICE,
                 sample_from = full_config.training_config.sample_attributes,
+                scheduler_inst = scheduler_inst,
             )
             if current_iteration % full_config.training_config.verbose_interval == 0:
                 tensorboard_writer.log_loss({"batch_loss": t_loss.item()}, step=current_iteration)
-                logger_inst.training(f"Training: {current_iteration} - batch loss: {t_loss.item():.2E}")
+                current_lr = optimizer_inst.param_groups[0]["lr"]
+                logger_inst.training(f"T-It: {current_iteration} - LR: {current_lr} - batch loss: {t_loss.item():.2E}")
             #----
             #### Evaluation of training and validation data, logging and checkpointing
             #----
@@ -215,20 +204,23 @@ def main(**kwargs):
 
                 # if metric does not improve x-times reduce
                 # load previous checkpoint with reduces learning rate
-                previous_lr =  optimizer_inst.param_groups[0]["lr"]
-                scheduler_inst.step(eval_v_loss)
-                current_lr = optimizer_inst.param_groups[0]["lr"]
-                if previous_lr != current_lr:
-                    logger_inst.info(
-                        f"{previous_lr} -> {current_lr}" +
-                        "\nReload model and optimizer from iteration"
-                        f" {checkpoint_inst.last_checkpoint['iteration']}")
 
-                    model_inst.load_state_dict(checkpoint_inst.last_checkpoint["model_state_dict"])
-                    optimizer_inst.load_state_dict(checkpoint_inst.last_checkpoint["optimizer_state_dict"])
-                    # since scheduler and optimizer are coupled
-                    # overwrite old lr in checkpoint with lr after scheduler step
-                    optimizer_inst.param_groups[0]["lr"] = current_lr
+                # when using ReduceLROnPlateau, step scheduler and check if lr was reduced, if yes load last checkpoint and update optimizer with new lr
+                if isinstance(scheduler_inst, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                    previous_lr =  optimizer_inst.param_groups[0]["lr"]
+                    scheduler_inst.step(eval_v_loss)
+                    current_lr = optimizer_inst.param_groups[0]["lr"]
+                    if previous_lr != current_lr:
+                        logger_inst.info(
+                            f"{previous_lr} -> {current_lr}" +
+                            "\nReload model and optimizer from iteration"
+                            f" {checkpoint_inst.last_checkpoint['iteration']}")
+
+                        model_inst.load_state_dict(checkpoint_inst.last_checkpoint["model_state_dict"])
+                        optimizer_inst.load_state_dict(checkpoint_inst.last_checkpoint["optimizer_state_dict"])
+                        # since scheduler and optimizer are coupled
+                        # overwrite old lr in checkpoint with lr after scheduler step
+                        optimizer_inst.param_groups[0]["lr"] = current_lr
 
         from IPython import embed; embed(header="Training ends: Check if everything is as you thought it would be")
 

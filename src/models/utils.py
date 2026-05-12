@@ -1,5 +1,4 @@
 import torch
-from models.layers import BinningLayer
 
 from models.create_model import MODEL_REGISTRY
 
@@ -15,11 +14,22 @@ def init_model(full_config):
 
     return model_inst
 
-class AddBinning(torch.nn.Module):
-    def __init__(self, model, kernel_cls, kernel_cfg, binning_edges, signal_cls=None, *args, **kwargs):
+
+class AddBinningLayer(torch.nn.Module):
+    def __init__(
+        self,
+        model,
+        binning_cls,
+        kernel_cls,
+        kernel_cfg,
+        binning_edges,
+        signal_cls=None,
+        *args,
+        **kwargs
+        ):
         super().__init__(*args, **kwargs)
         self.unbinned_model = model
-        self.binning_layer = BinningLayer(
+        self.binning_layer = binning_cls(
             init_edges=binning_edges,
             kernel_cls=kernel_cls,
             kernel_cfg=kernel_cfg,
@@ -32,6 +42,7 @@ class AddBinning(torch.nn.Module):
         x = self.unbinned_model(categorical_inputs, continuous_inputs)[:, self.signal_cls] # normal prediction as probabilities
         x = self.binning_layer(x)
         return x
+
 
 
 class AddActFnToModel(torch.nn.Module):

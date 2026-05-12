@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from typing import Dict, List, Optional, Tuple, Literal, Any
 
 import torch
@@ -19,6 +19,7 @@ LOSS_CHOICE = Literal["cross_entropy", "signal_efficiency", "signal_efficiency_b
 TRAINING_LOOP_CHOICE = Literal["default", "sam"]
 VALIDATION_LOOP_CHOICE = Literal["signal_efficiency"]
 SIGNAL_EFFICIENCY_LOSS_MODE = Literal["full", "no_unc", "approximation"]
+SCHEDULER_CHOICE = Literal["linear", "cosine_annealing", "reduce_on_plateau"]
 
 
 
@@ -158,11 +159,54 @@ class TrainingConfig:
 
 @dataclass
 class SchedulerConfig:
-    # TODO if wanna have multiple scheduler types create nested dataclass configs
-    patience: int = 4 # wait x number of checks - Marcel: 10
-    min_delta: float = 0.0 # minimum improvement before increase patience - Marcel: 0
-    threshold_mode: str = "abs" # type of min_delta - Marcel: abs
-    factor: float = 0.5 # LR reduce by factor
+    scheduler_chain: Tuple[SCHEDULER_CHOICE, ...] = ("linear", "cosine_annealing") # schedulers used in chain
+    config_chain: Optional[Tuple[Any, ...]] = None # list of configs corresponding to the schedulers in the scheduler chain
+    scheduler_cls_chain: Optional[Tuple[Any, ...]] = None # list of scheduler classes corresponding to the schedulers in the scheduler chain, if None is given, it is assumed that the scheduler class can be derived from the scheduler choice by adding "LR" at the end, for example "CosineAnnealingLR" for "cosine"
+    milestones: Tuple[int, ...] = (500,) # intervals after which the LR scheduler is swapped
+
+    @dataclass
+    class CosineAnnealingLRConfig():
+        T_max: int = 10000 # maximum number of iterations
+        eta_min: float = 1e-7 # minimum learning rate
+
+    @dataclass
+    class ReduceLROnPlateauConfig():
+        mode: str ='min' # one of {min, max}, in min mode lr will be reduced when the quantity monitored has stopped decreasing
+        step_size: int = 10 # number of iterations between two learning rate reductions
+        gamma: float = 0.5 # learning rate reduction factor
+        patience: int = 4 # wait x number of checks - Marcel: 10
+        min_delta: float = 0.0 # minimum improvement before increase patience - Marcel: 0
+        threshold_mode: str = "abs" # type of min_delta - Marcel: abs
+        factor: float = 0.5 # LR reduce by factor
+        cooldown=0, # number of iterations to wait after a learning rate reduction before resuming normal operation
+        min_lr=0, # lower bound on the learning rate
+        eps=1e-08,  # minimal decay applied to lr, if it is smaller than this value, it is set to this value
+
+    @dataclass
+    class LinearLRConfig():
+        start_factor: float = 0.01 # the initial learning rate will be the start_factor times the base learning rate
+        end_factor: float = 1.0 # the final learning rate will be the end_factor times the base learning rate
+        total_iters: int = 100 # number of iterations over which the multiplier increases from start_factor to end_factor
+
+
+    def __post_init__(self):
+        schedulers = torch.optim.lr_scheduler
+
+        scheduler_register = {
+            "cosine_annealing" : (self.CosineAnnealingLRConfig, schedulers.CosineAnnealingLR),
+            "reduce_on_plateau" : (self.ReduceLROnPlateauConfig, schedulers.ReduceLROnPlateau),
+            "linear" : (self.LinearLRConfig, schedulers.LinearLR),
+        }
+        # move optimizer attribute to top level
+        scheduler_configs = []
+        scheduler_cls_chain = []
+        for choice in self.scheduler_chain:
+            config, scheduler_cls = scheduler_register[choice]
+            scheduler_configs.append(asdict(config()))
+            scheduler_cls_chain.append(scheduler_cls) # init is done in the training
+            choice_check(choice, SCHEDULER_CHOICE)
+        self.config_chain = tuple(scheduler_configs)
+        self.scheduler_cls_chain = tuple(scheduler_cls_chain)
 
 @dataclass
 class OptimizerConfig:
@@ -179,11 +223,14 @@ class OptimizerConfig:
         TODO = None
 
     def __post_init__(self):
+        # TODO change like in scheduler
+        optimizer_register = {
+            "adamw" : self.ADAMWConfig,
+            "sam" : self.SAMConfig,
+        }
+
         # move optimizer attribute to top level
-        if self.optimizer_choice == "adamw":
-            choice_config = self.ADAMWConfig()
-        elif self.optimizer_choice == "sam":
-            choice_config = self.SAMConfig()
+        choice_config = optimizer_register[self.optimizer_choice]()
 
         for _key, _attr in choice_config.__dict__.items():
             setattr(self, _key, _attr)

@@ -105,7 +105,7 @@ class TrainingLoop(BaseLoop):
         return loss, (logging_pred, targets)
 
     @BaseLoop.register
-    def default(model, loss_fn, optimizer, sampler, sample_from, device):
+    def default(model, loss_fn, optimizer, sampler, sample_from, device, scheduler_inst=None):
         optimizer.zero_grad()
 
         events = sampler.sample_batch(sample_from=sample_from, device=device)
@@ -116,6 +116,9 @@ class TrainingLoop(BaseLoop):
         loss = loss_fn(optimization_pred, targets.reshape(-1,3), events)
         loss.backward()
         optimizer.step()
+        if scheduler_inst is not None:
+            scheduler_inst.step()
+
         return loss, (logging_pred, targets)
 
 class ValidationLoop(BaseLoop):
