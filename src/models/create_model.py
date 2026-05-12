@@ -165,9 +165,6 @@ class ResidualDNN(BaseModel):
         # increasing eps helps to stabilize training to counter batch norm and L2 reg counterplay when used together.
         # eps = 0.5e-5
 
-        # activate weight normalization on linear layer weights
-        normalize = False
-
         # helper where all layers are defined
         # std layers are filled when statitics are known
         self.init_standardization_layer()
@@ -176,10 +173,23 @@ class ResidualDNN(BaseModel):
         self.init_rotation_layer()
         self.init_input_layer()
 
-        self.transition_dense_1 = layers.DenseBlock(input_nodes = self.input_layer.ndim, output_nodes = self.model_building_config.nodes, activation_functions=self.model_building_config.activation_functions, eps=self.model_building_config.batch_norm_eps, normalize=normalize) # noqa
-        self.resnet_block_1 = layers.ResNetPreactivationBlock(self.model_building_config.nodes, self.model_building_config.activation_functions, self.model_building_config.skip_connection_init, self.model_building_config.freeze_skip_connection, eps=self.model_building_config.batch_norm_eps, normalize=normalize)
-        self.resnet_block_2 = layers.ResNetPreactivationBlock(self.model_building_config.nodes, self.model_building_config.activation_functions, self.model_building_config.skip_connection_init, self.model_building_config.freeze_skip_connection, eps=self.model_building_config.batch_norm_eps, normalize=normalize)
-        self.resnet_block_3 = layers.ResNetPreactivationBlock(self.model_building_config.nodes, self.model_building_config.activation_functions, self.model_building_config.skip_connection_init, self.model_building_config.freeze_skip_connection, eps=self.model_building_config.batch_norm_eps, normalize=normalize)
+        cfg = {
+            "nodes" : self.model_building_config.nodes,
+            "activation_functions" : self.model_building_config.activation_functions,
+            "skip_connection_init" : self.model_building_config.skip_connection_init,
+            "freeze_skip_connection" :self.model_building_config.freeze_skip_connection,
+            "eps" : self.model_building_config.batch_norm_eps,
+            "normalize" : False # activate weight normalization on linear layer weights
+        }
+
+        self.transition_dense_1 = layers.DenseBlock(
+            input_nodes = self.input_layer.ndim,
+            output_nodes = self.model_building_config.nodes,
+            **cfg,
+            )
+        self.resnet_block_1 = layers.ResNetPreactivationBlock(**cfg)
+        self.resnet_block_2 = layers.ResNetPreactivationBlock(**cfg)
+        self.resnet_block_3 = layers.ResNetPreactivationBlock(**cfg)
         self.last_linear = torch.nn.Linear(self.model_building_config.nodes, 3)
 
     def forward(self, categorical_inputs, continuous_inputs):
@@ -213,17 +223,17 @@ class DenseNet(BaseModel):
         self.input_layer = self.init_input_layer()
 
         self.transition_dense_1 = layers.DenseBlock(
-            input_nodes = self.input_layer.ndim,
-            output_nodes = m_cfg.nodes,
+            input_nodes=self.input_layer.ndim,
+            output_nodes=int(m_cfg.nodes),
             activation_functions=m_cfg.activation_functions,
             eps=self.dense_config["eps"],
             normalize=self.dense_config["normalize"],
             )
-        self.dense_block_1 = layers.DenseNetBlock(input_nodes = self.transition_dense_1.output_dim, output_nodes = int((m_cfg.nodes)), **self.dense_config)
-        self.dense_block_2 = layers.DenseNetBlock(input_nodes = self.dense_block_1.output_dim, output_nodes = int((m_cfg.nodes)), **self.dense_config)
-        self.dense_block_3 = layers.DenseNetBlock(input_nodes = self.dense_block_2.output_dim, output_nodes = int((m_cfg.nodes)), **self.dense_config)
-        self.dense_block_4 = layers.DenseNetBlock(input_nodes = self.dense_block_3.output_dim, output_nodes = int((m_cfg.nodes)), **self.dense_config)
-        self.dense_block_5 = layers.DenseNetBlock(input_nodes = self.dense_block_4.output_dim, output_nodes = int((m_cfg.nodes)), **self.dense_config)
+        self.dense_block_1 = layers.DenseNetBlock(input_nodes=self.transition_dense_1.output_dim, output_nodes=int(m_cfg.nodes), **self.dense_config)
+        self.dense_block_2 = layers.DenseNetBlock(input_nodes=self.dense_block_1.output_dim, output_nodes=int(m_cfg.nodes), **self.dense_config)
+        self.dense_block_3 = layers.DenseNetBlock(input_nodes=self.dense_block_2.output_dim, output_nodes=int(m_cfg.nodes), **self.dense_config)
+        self.dense_block_4 = layers.DenseNetBlock(input_nodes=self.dense_block_3.output_dim, output_nodes=int(m_cfg.nodes), **self.dense_config)
+        self.dense_block_5 = layers.DenseNetBlock(input_nodes=self.dense_block_4.output_dim, output_nodes=int(m_cfg.nodes), **self.dense_config)
         self.last_linear = torch.nn.Linear(self.dense_block_5.output_dim, len(self.dataset_config.target_map.keys()))
 
         # can only be sigmoid or softmax, uses only dim as configuration
@@ -244,7 +254,12 @@ class DenseNet(BaseModel):
 
 @register_model("lbn_dense")
 class LBNDenseNet(DenseNet):
-    def __init__(self, full_config, *args, **kwargs):
+    def __init__(
+        self,
+        full_config,
+        *args,
+        **kwargs
+        ):
         # has same init as DenseNet
         super().__init__(full_config, *args, **kwargs)
 
@@ -253,16 +268,16 @@ class LBNDenseNet(DenseNet):
         super().init_layers()
         # old transition layer needs combined input dimension lbn and input_layer
         self.lbn = layers.LBN_DNN(
-            continuous_features = self.dataset_config.continuous_features,
-            M  = self.model_building_config.LBN_M,
-            weight_init_scale = 1.0,
-            clip_weights = False,
-            eps = 1.0e-5,
+            continuous_features=self.dataset_config.continuous_features,
+            M =self.model_building_config.LBN_M,
+            weight_init_scale=1.0,
+            clip_weights=False,
+            eps=1.0e-5,
         )
 
         self.transition_dense_1 = layers.DenseBlock(
-            input_nodes = (self.input_layer.ndim + self.lbn.ndim),
-            output_nodes = self.model_building_config.nodes,
+            input_nodes=(self.input_layer.ndim + self.lbn.ndim),
+            output_nodes=self.model_building_config.nodes,
             activation_functions=self.model_building_config.activation_functions,
             eps=self.model_building_config.eps_batchnorm,
             normalize=self.model_building_config.normalize_linear
@@ -290,7 +305,12 @@ class LBNDenseNet(DenseNet):
 
 @register_model("binned_lbn_dense")
 class BinnedLBNDenseNetV2(LBNDenseNet):
-    def __init__(self, full_config, *args, **kwargs):
+    def __init__(
+        self,
+        full_config,
+        *args,
+        **kwargs,
+        ):
         super().__init__(full_config, *args, **kwargs)
 
     def init_layers(self):

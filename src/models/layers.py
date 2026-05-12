@@ -340,6 +340,8 @@ class InputLayer(torch.nn.Module):  # noqa: F811
         rotation_layer: torch.nn.Module | None = None,
         padding_continuous_layer: torch.nn.Module | None = None,
         padding_categorical_layer: torch.nn.Module | None = None,
+        *args,
+        **kwargs,
     ):
         """
         Enables the use of categorical and continuous features in a single model.
@@ -446,6 +448,8 @@ class ResNetBlock(torch.nn.Module):  # noqa: F811
         freeze_skip_connection: float = False,
         eps: float = 1e-5,
         normalize = True,
+        *args,
+        **kwargs,
     ):
         """
         ResNetBlock consisting of a linear layer, batch normalization, and an activation function.
@@ -463,7 +467,7 @@ class ResNetBlock(torch.nn.Module):  # noqa: F811
             skip_connection_init (int, optional): Start value of the skipconnection. Defaults to 1.
             freeze_skip_connection (bool, optional): Freeze leanable skipconnection parameter. Defaults to False.
         """
-        super().__init__()
+        super().__init__(*args, **kwargs)
 
         self.nodes = nodes
         self.act_func = self._get_attr(torch.nn.modules.activation, activation_functions)()
@@ -499,6 +503,8 @@ class DenseBlock(torch.nn.Module):  # noqa: F811
         activation_functions: str = "LeakyReLu",
         eps: float = 1e-5,
         normalize: bool = True,
+        *args,
+        **kwargs,
     ):
         """
         DenseBlock is a dense block that consists of a linear layer, batch normalization, and an activation function.
@@ -536,8 +542,10 @@ class ResNetPreactivationBlock(torch.nn.Module):  # noqa: F811
         activation_functions: str = "PReLu",
         skip_connection_init: float = 1,
         freeze_skip_connection: bool = False,
-        eps=1e-5,
+        eps: float = 1e-5,
         normalize: bool = True,
+        *args,
+        **kwargs,
     ):
         """
         Residual block that consists of a linear layer, batch normalization, and an activation function.
@@ -749,42 +757,6 @@ class RotatePhiLayer(torch.nn.Module):  # noqa: F811
         ref_phi = self.calc_ref_phi(x)
         return self.rotate_columns(x, ref_phi)
 
-class AggregationLayer(torch.nn.Module):
-    def __init__(
-        self,
-        name: str = "sum",
-        dim: int = 1,
-    ):
-        """
-        Aggregation Layer to aggregate over object dimension of input.
-        This layer assumes that the
-
-        Args:
-            name (str, optional): Name of the aggregation function ("max", "sum", "mean"). Defaults to "sum".
-            dim (int, optional): Dimension over which the aggregation happens. Defaults to 1.
-        """
-        super().__init__()
-        self.aggregation_fn = self._get_agg_fn(name)
-        self.dim = torch.nn.Buffer(torch.tensor(dim).to(torch.int32))
-
-    @property
-    def name(self):
-        return self.aggregation_fn.__name__
-
-    def _get_agg_fn(self, name):
-        return self.__getattribute__(name.lower())
-
-    def max(self, x: torch.FloatTensor) -> torch.FloatTensor:
-        return x.max(dim=1).values
-
-    def sum(self, x: torch.FloatTensor) -> torch.FloatTensor:
-        return x.sum(dim=1)
-
-    def mean(self, x: torch.FloatTensor) -> torch.FloatTensor:
-        return x.mean(dim=1)
-
-    def forward(self, x: torch.FloatTensor) -> torch.FloatTensor:
-        return self.aggregation_fn(x)
 
 class LBN(torch.nn.Module):
     """
@@ -1003,9 +975,19 @@ class LBN(torch.nn.Module):
 
 
 class LBNFeaturerExtractor(torch.nn.Module):
+    """
+    Helper Layer to filter out correct features necessary for the LBN to run. The filtering is done by naming!
+    Thus changing names of features result automatically into  a broken functionality.
+
+    Args:
+        continuous_features (list[str]): List of all continuous features that should be extracted for the LBN.
+    """
+
     def __init__(
         self,
-        continuous_features,
+        continuous_features: list[str],
+        *args,
+        **kwargs,
     ):
         super().__init__()
         self.continuous_features = continuous_features
@@ -1078,6 +1060,8 @@ class LBN_DNN(torch.nn.Module):
         weight_init_scale: float | int = 1.0,
         clip_weights: bool = False,
         eps: float = 1.0e-5,
+        *args,
+        **kwargs,
     ):
         super().__init__()
         self.lbn_feature_extractor = LBNFeaturerExtractor(continuous_features=continuous_features)
@@ -1096,16 +1080,8 @@ class LBN_DNN(torch.nn.Module):
         x = self.lbn_batch_norm(x)
         return x
 
-class TemperaturCalibrationLayer(torch.nn.Module):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.temperature = torch.nn.Parameter(torch.ones(1))
-        self.activation = torch.nn.Softmax(dim=1)
 
-    def __call__(self, x):
-        return self.activation(x / self.temperature)
-
-class BinningLayer(torch.nn.Module):
+class BinningLayerV1(torch.nn.Module):
     def __init__(
         self,
         init_edges: list[float],
@@ -1201,7 +1177,7 @@ class BinningLayer(torch.nn.Module):
         return binned_x
 
 
-class BinningLayer2(torch.nn.Module):
+class BinningLayerV2(torch.nn.Module):
     def __init__(
         self,
         num_bins: int,
