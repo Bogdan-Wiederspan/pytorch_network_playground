@@ -1,76 +1,139 @@
 
 #!/bin/bash
+create_dirs(){
+    # just creating directories when they don't exist
+    if [ "${SETUP_DIRS_DONE}" -eq 1 ]; then
+        echo "Already done"
+        return 0
+    fi
 
+    DIRS=(
+        "${CACHE_DIR}"
+        "${PICTURE_DIR}"
+        "${MODELS_DIR}"
+        "${TENSORBOARD_DIR}"
+    )
+    if [ ! -d "${STORE_DIR}" ]; then
+        mkdir "${STORE_DIR}"
+        for dir in "${DIRS[@]}"; do
+            mkdir "${dir}"
+        done
+    fi
+
+    # set SETUP_DIRS_DONE to completed
+    sed -i 's/^SETUP_DIRS_DONE=.*/SETUP_DIRS_DONE=1/' "${LOCAL_DIR}/config.sh"
+    echo "[INFO] Directory setup complete"
+    return 0
+}
+
+prepare_venv(){
+    _path="${VENV_ROOT}/${ML_ENV}/bin/"
+    if [ ! -n "${_path}" ]; then
+        echo "Venv root does not exist check ${_path}"
+        return 1
+    fi
+}
+# virtualenv
 activate_venv(){
-    _path=${VENV_ROOT}/${ML_ENV}/bin/
+    _path="${VENV_ROOT}/${ML_ENV}/bin"
     # activate but without prompt change
-    VIRTUAL_ENV_DISABLE_PROMPT=1 source ${_path}/activate
+    VIRTUAL_ENV_DISABLE_PROMPT=1 source "${_path}/activate"
+    finish_setup
     # set currently VENV as most important
     #export PATH="${_path}:${PATH}";
 }
 
-pyenv_activate ()
-{
-    # bootstrap pyenv to be activate for current bash session
-    echo "Bootstrap Pyenv"
-    export PATH="${PYENV_ROOT}/bin/:${PATH}";
-    eval "$(pyenv init --path)";
-    eval "$(pyenv init -)";
-    eval "$(pyenv virtualenv-init -)"
+# pyenv
+prepare_pyenv(){
+    if [ -n "${PYENV_ROOT}" ] && [ -n "${ML_ENV}" ]; then
+        # check if pyenv exists as command, if not activate it
+        # command return 0 if exist, else another number
+        # >/dev etc. just silence the output
+        if ! command -v pyenv >/dev/null 2>&1; then
+            echo "Bootstrap Pyenv"
+            export PATH="${PYENV_ROOT}/bin/:${PATH}";
+            eval "$(pyenv init --path)";
+            eval "$(pyenv init -)";
+            eval "$(pyenv virtualenv-init -)"
+        fi
+    else
+        echo "can' activate pyenv due too wrong PYEV_ROOT or not set ML_ENV"
+        return 1
+    fi
 }
 
-setup_env() {
-    # Setup Virtualenv and mount given environment in config
+activate_pyenv(){
+    pyenv activate "${ML_ENV}"
+    finish_setup
+    echo "activate virtualenv ${ML_ENV}"
+}
 
+# columnflow sandbox
+prepare_cf(){
+    if [ -n "${CF_SANDBOX}" ]; then
+        if ! command -v cf_sandbox >/dev/null 2>&1; then
+            echo "Source your columnflow setup!"
+            return 2
+        fi
+    fi
+    return 0
+    }
+
+activate_cf(){
+    echo "Activate cf sandbox at ${CF_SANDBOX}"
+    finish_setup
+    cf_sandbox "${CF_SANDBOX}"
+}
+
+check_if_inside_venv(){
     # check if inside virtualenv -> if inside sys prefix changes
     # Source - https://stackoverflow.com/a/15454916
-    local IN_VENV=$(python -c 'import sys; print ("1" if hasattr(sys, "real_prefix") else "0")')
+    local IN_VENV=$(python -c 'import sys; print("1" if hasattr(sys, "real_prefix") else "0")')
     # -n is true if NON-ZERO, -z true if EMPTY
     if [ "${IN_VENV}" = "1" ]; then
         echo "Already inside virtualenv"
         return 4
     fi
+}
 
-    # activate pyenv or cf setup
+setup_env() {
+    # Setup Virtualenv and mount given environment in config
+    check_if_inside_venv
+
+    # prepare different setups
     if [ "${VENV_MODE}" = "pyenv" ]; then
-        if [ -n "${PYENV_ROOT}" ] && [ -n "${ML_ENV}" ]; then
-            # check if pyenv exists as command, if not activate it
-            # command return 0 if exist, else another number
-            # >/dev etc. just silence the output
-            if ! command -v pyenv >/dev/null 2>&1; then
-                pyenv_activate
-            fi
-            pyenv activate "${ML_ENV}"
-            echo "activate virtualenv ${ML_ENV}"
-        else
-            echo "can' activate pyenv due too wrong PYEV_ROOT or not set ML_ENV"
-            return 1
-        fi
+        prepare_pyenv
     # for bachelor and master students that use columnflow sandboxes
     elif [ "${VENV_MODE}" = "cf" ]; then
-        echo "Sourcing cf sandbox"
-
-        if [ -n "${CF_SANDBOX}" ]; then
-            if command -v cf_sandbox >/dev/null 2>&1; then
-                cf_sandbox ${CF_SANDBOX}
-            else
-                echo "Source your columnflow setup!"
-                return 2
-            fi
-        else
-            echo "CF_SANDBOX is not a valid columnflow sandbox - check if sandbox exist"
-            return 2
-        fi
-
+        prepare_cf
     elif [ "${VENV_MODE}" = "venv" ]; then
-        echo "Sourcing VENV Sandbox"
-        activate_venv
-    else
-        echo "VENV_MODE can only be cf or pyenv, but got ${VENV_MODE}"
-        return 3
+        prepare_venv
     fi
-    return 0
 }
+
+activate_env(){
+    if [ "${VENV_MODE}" = "pyenv" ]; then
+        activate_pyenv
+    # for bachelor and master students that use columnflow sandboxes
+    elif [ "${VENV_MODE}" = "cf" ]; then
+        activate_cf
+    elif [ "${VENV_MODE}" = "venv" ]; then
+        activate_venv
+    fi
+}
+
+finish_setup(){
+    # set flags and expand paths
+    echo "Ready to go"
+    export SETUP_COMPLETE=1
+    # extend PS1 if environment is set properly
+
+    # Show only the last part of the virtualenv path (env name) in the prompt
+    export PS1="[${VIRTUAL_ENV##*/}] ${PS1}"
+    # include source of project as root for python
+    export PYTHONPATH="${PYTHONPATH}:$(pwd)/src"
+    return 0
+    }
 
 setup() {
     # Prevent double execution, when SETUP_COMPLETE is set (at end of script) don't run setup twice.
@@ -86,19 +149,12 @@ setup() {
 
     # run env and check status if run correctly change python path and venv marker
     setup_env
-    SETUP_DONE=$?
+    SETUP_ENV_COMPLETE=$?
 
-    if [ "${SETUP_DONE}" -eq 0 ]; then
-        echo "Ready to go"
-        export SETUP_COMPLETE=1
-        # extend PS1 if environment is set properly
-        # Show only the last part of the virtualenv path (env name) in the prompt
-        export PS1="[${VIRTUAL_ENV##*/}] ${PS1}"
-        # include source of project as root for python
-        export PYTHONPATH="${PYTHONPATH}:$(pwd)/src"
+    if [ "${SETUP_ENV_COMPLETE}" -eq 0 ]; then
+        activate_env
+        return 0
     fi
-    return 0
-}
-
+    }
 
 setup "$@"
