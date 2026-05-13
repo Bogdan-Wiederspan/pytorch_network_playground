@@ -16,6 +16,7 @@ def register_model(name):
     return wrapper
 
 class BaseModel(torch.nn.Module):
+    LEARNING_MODES = {}
     def __init__(self, full_config, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.model_building_config = full_config.model_building_config
@@ -154,6 +155,46 @@ class BaseModel(torch.nn.Module):
             elif self.model_building_config.last_activation_fn == "Sigmoid":
                 return last_activation_fn()
         return None
+
+
+    @classmethod
+    def register_learning_mode(cls, fn) -> None:
+        """
+        Helper function *fn* to register learning modes.
+        These function take a model and modify their training status.
+
+        Args:
+            fn (function): Function that takes a model instance as input and sets the requires_grad attribute of the layers accordingly.
+        """
+        # helper method to register learning modes
+        # defines a function as learning mode, which can be set with set_learning_mode. The function needs to take the model instance as input and set the requires_grad attribute of the layers accordingly.
+        cls.LEARNING_MODES[fn.__name__] = fn
+        return fn
+
+    def set_learning_mode(self, mode):
+        """
+        Set the learning mode of the model, which determines which layers are trainable.
+
+        Args:
+            mode (str): String that determines the learning mode. Needs to be registered with the register_learning_mode decorator.
+        """
+        mode = f"_{mode}"
+        if mode not in self.LEARNING_MODES:
+            raise ValueError(f"Learning mode {mode} is not registered. Available learning modes are: {list(self.LEARNING_MODES.keys())}")
+        # set all layers to non trainable
+        self.LEARNING_MODES["_freeze_all"](self)
+        # set specific layers to trainable depending on mode
+        self.LEARNING_MODES[mode](self)
+
+@BaseModel.register_learning_mode
+def _freeze_all(model):
+    for name, layer in model.named_children():
+        layer.requires_grad = False
+
+@BaseModel.register_learning_mode
+def _unfreeze_all(model):
+    for name, layer in model.named_children():
+        layer.requires_grad = True
 
 @register_model("residual")
 class ResidualDNN(BaseModel):
@@ -313,6 +354,7 @@ class BinnedLBNDenseNetV2(LBNDenseNet):
         ):
         super().__init__(full_config, *args, **kwargs)
 
+
     def init_layers(self):
         # create normal LBN DenseNet
         super().init_layers()
@@ -329,42 +371,23 @@ class BinnedLBNDenseNetV2(LBNDenseNet):
                 kernel_cfg=self.binning_config.kernel_config[self.binning_config.kernel_cls],
                 )
 
-    def set_learning_mode(self, mode):
-        """
-        Control training status of the layers of the model.
-        Depending on mode different moduses are activated.
-
-        Following options are available:
-        TOBEDONE
-        Args:
-            mode (_type_): _description_
-        """
-        LEARNING_MODE_CHOICE = ("bin_only", "model_only", "unfreeze_all", "freeze_all")
-        if mode not in LEARNING_MODE_CHOICE:
-            raise ValueError(f" Learning mode choice {mode} not availabed, choice from {LEARNING_MODE_CHOICE}")
-
-        # first freeze everything, then unfreeze depending on mode
-        for name, layer in self.named_children():
-            layer.requires_grad = False
-
-        if mode == "bin_only":
-            all_layers = dict(self.named_children())
-            all_layers["binning_layer"].requires_grad = True
-        elif mode == "model_only":
-            all_layers_except_binning = dict(self.named_children())
-            all_layers_except_binning.pop("binning_layer")
-            for name, layer in all_layers_except_binning.items():
-                layer.requires_grad = True
-        elif mode == "unfreeze_all":
-            for name, layer in self.named_children():
-                layer.requires_grad = True
-        elif mode == "freeze_all":
-            pass # is done by default
-
     def forward(self, categorical_inputs, continuous_inputs):
         normal_network_output = super().forward(categorical_inputs, continuous_inputs)
         binned_output = self.binning_layer(normal_network_output) # increases dimension at axis 0
         return normal_network_output, binned_output
+
+@BinnedLBNDenseNetV2.register_learning_mode
+def _bin_only(model):
+    all_layers = dict(model.named_children())
+    all_layers["binning_layer"].requires_grad = True
+
+@BinnedLBNDenseNetV2.register_learning_mode
+def _model_only(model):
+    all_layers_except_binning = dict(model.named_children())
+    all_layers_except_binning.pop("binning_layer")
+    for name, layer in all_layers_except_binning.items():
+        layer.requires_grad = True
+
 
 
 class BinnedLBNDenseNet(torch.nn.Module):

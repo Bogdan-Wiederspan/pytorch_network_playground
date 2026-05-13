@@ -11,7 +11,6 @@ def init_model(full_config):
     # extra settings for specific models
     if model_choice in ("binned_lbn_dense",):
         model_inst.set_learning_mode("model_only")
-
     return model_inst
 
 
