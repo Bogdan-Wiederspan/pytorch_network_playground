@@ -9,7 +9,7 @@ def init_model(full_config):
     model_inst = model_cls(full_config)
 
     # extra settings for specific models
-    if model_choice in ("lbn_dense", "binned_lbn_dense"):
+    if model_choice in ("binned_lbn_dense",):
         model_inst.set_learning_mode("model_only")
 
     return model_inst

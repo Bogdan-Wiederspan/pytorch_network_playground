@@ -361,7 +361,6 @@ class BinnedLBNDenseNetV2(LBNDenseNet):
         elif mode == "freeze_all":
             pass # is done by default
 
-
     def forward(self, categorical_inputs, continuous_inputs):
         normal_network_output = super().forward(categorical_inputs, continuous_inputs)
         binned_output = self.binning_layer(normal_network_output) # increases dimension at axis 0
