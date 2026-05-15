@@ -22,7 +22,8 @@ from loss.utils import init_loss
 from models.utils import init_model
 
 from train.train_config import full_config
-from train.train_utils import TrainingLoop, ValidationLoop, log_metrics
+from train.loops import TrainingLoop, ValidationLoop
+from train.train_utils import log_metrics
 
 CPU = torch.device("cpu")
 CUDA = torch.device("cuda")
@@ -106,9 +107,7 @@ def main(**kwargs):
         #----
         model_inst = init_model(full_config=full_config)
         model_inst = model_inst.to(DEVICE).train()
-
-        training_loop = TrainingLoop(which_fn=full_config.training_config.training_fn)
-        validation_loop = ValidationLoop(which_fn=full_config.training_config.validation_fn)
+        training_loop, validation_loop = TrainingLoop(full_config),ValidationLoop(full_config)
 
         optimizer_inst = init_optimizer(full_config=full_config, model_inst=model_inst)
         training_loss_inst, validation_loss_inst = init_loss(full_config=full_config, device=DEVICE, training_sampler=training_sampler)
