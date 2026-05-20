@@ -107,7 +107,7 @@ def main(**kwargs):
         #----
         model_inst = init_model(full_config=full_config)
         model_inst = model_inst.to(DEVICE).train()
-        training_loop, validation_loop = TrainingLoop(full_config),ValidationLoop(full_config)
+        training_loop, validation_loop = TrainingLoop(full_config), ValidationLoop(full_config)
 
         optimizer_inst = init_optimizer(full_config=full_config, model_inst=model_inst)
         training_loss_inst, validation_loss_inst = init_loss(full_config=full_config, device=DEVICE, training_sampler=training_sampler)
@@ -119,13 +119,13 @@ def main(**kwargs):
         #----
         logger_inst.info(f"Start training loop")
         for current_iteration in range(1_000_000):
-            t_loss, (t_pred, t_targets) = training_loop(
+            t_loss = training_loop(
                 model = model_inst,
                 loss_fn = training_loss_inst,
                 optimizer = optimizer_inst,
                 sampler = training_sampler,
                 device=DEVICE,
-                sample_from = full_config.training_config.sample_attributes,
+                sample_columns = full_config.training_config.sample_attributes,
                 scheduler_inst = scheduler_inst,
             )
             if current_iteration % full_config.training_config.verbose_interval == 0:
@@ -143,7 +143,7 @@ def main(**kwargs):
                     model_inst,
                     validation_loss_inst,
                     training_sampler,
-                    sample_from=full_config.training_config.sample_attributes,
+                    sample_columns=full_config.training_config.sample_attributes,
                     device=DEVICE
                     )
                 # TODO when edges should be tracked add this in a way that is universal and does not break for models without binning layer, e.g. add property to model that returns None if no binning layer is present and add check in log_metrics
@@ -154,7 +154,7 @@ def main(**kwargs):
                     model_inst,
                     validation_loss_inst,
                     validation_sampler,
-                    sample_from=full_config.training_config.sample_attributes,
+                    sample_columns=full_config.training_config.sample_attributes,
                     device=DEVICE
                     )
                 # TODO when edges should be tracked add this in a way that is universal and does not break for models without binning layer, e.g. add property to model that returns None if no binning layer is present and add check in log_metrics

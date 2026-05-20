@@ -16,8 +16,8 @@ OPTIMIZER_CHOICE = Literal["adamw", "sam"]
 
 MODEL_CHOICE = Literal["residual", "dense", "lbn_dense", "binned_lbn_dense"]
 LOSS_CHOICE = Literal["cross_entropy", "signal_efficiency", "signal_efficiency_binning_aware"]
-TRAINING_LOOP_CHOICE = Literal["default", "sam"]
-VALIDATION_LOOP_CHOICE = Literal["signal_efficiency"]
+TRAINING_LOOP_CHOICE = Literal["cross_entropy", "sam", "signal_efficiency"]
+VALIDATION_LOOP_CHOICE = Literal["signal_efficiency", "cross_entropy"]
 SIGNAL_EFFICIENCY_LOSS_MODE = Literal["full", "no_unc", "approximation"]
 SCHEDULER_CHOICE = Literal["linear", "cosine_annealing", "reduce_on_plateau"]
 
@@ -117,6 +117,11 @@ class TrainingConfig:
     log_metrics: bool = True # whether to log metrics to tensorboard during training, if false only validation loss is logged
     model_choice: MODEL_CHOICE = "binned_lbn_dense"
     loss_fn: LOSS_CHOICE = "signal_efficiency"
+    training_fn: TRAINING_LOOP_CHOICE = "signal_efficiency" # name of the training loop
+    validation_fn: VALIDATION_LOOP_CHOICE = "signal_efficiency" # name of the validation loop
+    loss_mode: SIGNAL_EFFICIENCY_LOSS_MODE = "no_unc" # only relevant if signal_efficiency loss is chosen, determines which formula is used for the asimov calculation
+    loss_uncertainty: float = 0.0 # # only relevant if signal_efficiency loss is chosen, determines the background uncertainty used in the asimov calculation
+
     max_train_iteration: int = 60000 # max number of batches
     verbose_interval: int = 5 # interval between two logger outputs of training loss
     validation_interval: int = 100 # interval between two validation passes / plots are done during validation
@@ -129,10 +134,6 @@ class TrainingConfig:
     t_batch_size: int = 4096 * 10
     v_batch_size: int = -1 # validation batch size, -1 = full set,
     save_model_name: str = "parametrized_binning" # name of the model used to save
-    training_fn: TRAINING_LOOP_CHOICE = "default" # name of the training and validation loop function
-    validation_fn: VALIDATION_LOOP_CHOICE = "signal_efficiency"
-    loss_mode: SIGNAL_EFFICIENCY_LOSS_MODE = "no_unc" # only relevant if signal_efficiency loss is chosen, determines which formula is used for the asimov calculation
-    loss_uncertainty: float = 0.0 # # only relevant if signal_efficiency loss is chosen, determines the background uncertainty used in the asimov calculation
 
     # Sampler Settings
     sample_ratio: Dict[str, float] = field(default_factory=lambda:{"dy": 1 / 3, "tt": 1 / 3, "hh": 1 / 3})
@@ -154,7 +155,6 @@ class TrainingConfig:
         choice_check(self.loss_mode, SIGNAL_EFFICIENCY_LOSS_MODE)
         choice_check(self.loss_fn, LOSS_CHOICE)
         choice_check(self.model_choice, MODEL_CHOICE)
-
 
 
 @dataclass

@@ -17,6 +17,7 @@ def choice_check(selected, choices):
     if not is_inside:
         raise ValueError(f"Selected ({selected}) is not part of valid choices {choices}")
 
+
 def clip_gradients(parameters: Iterable[torch.nn.Parameter], clip_value: float = 1.0):
     for p in parameters:
         p.register_hook(lambda grad: torch.clamp(grad, -clip_value, clip_value))

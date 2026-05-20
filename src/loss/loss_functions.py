@@ -194,7 +194,6 @@ class SignalEfficiency(torch.nn.Module):
             evaluation_phase_space_mask=evaluation_phase_space_mask,
             is_signal=is_signal,
         )
-
         weighted_yield = torch.sum(weighted_predictions, dim = 1) # sum over all predictions in bins
         # have atleast epsilon yield to avoid 0 yields, which are not physical and cause problems in the loss calculation
         if epsilon is not None:
@@ -202,17 +201,23 @@ class SignalEfficiency(torch.nn.Module):
         return transfer_factor * weighted_yield
 
 
-    def forward(self, prediction, truth, weight, *args, **kwargs):
+    def forward(self, prediction, truth, product_of_weights, evaluation_mask):
         signal_node_truth = truth[..., self.s_cls]
 
         # prediction = torch.softmax(prediction, dim = -1) # network does not contain softmax
         signal_node_prediction = prediction[..., self.s_cls]
 
-        s = self.approximation_sb(signal_node_prediction, signal_node_truth, weight["product_of_weights"], weight["evaluation_space_mask"], is_signal=True, epsilon=1e-2)
-        b = self.approximation_sb(signal_node_prediction, signal_node_truth, weight["product_of_weights"], weight["evaluation_space_mask"], is_signal=False, epsilon=1e-2)
+        sb = {
+            "prediction" : signal_node_prediction,
+            "truth" : signal_node_truth,
+            "product_of_weights" : product_of_weights,
+            "evaluation_phase_space_mask" : evaluation_mask,
+            "epsilon" : 1e-2,
+        }
 
-        # if (s <= 0 or b <= 0):
-        #     from IPython import embed; embed(header = "Either s or b is below 0, which is not physical, starting debugger in Forward of SignalEfficiency loss")
+        s = self.approximation_sb(is_signal=True, **sb)
+        b = self.approximation_sb(is_signal=False, **sb)
+
         uncertainty = self._uncertainty(b)
         loss = self.loss(s= s, b=b, unc_b=uncertainty)
         loss = torch.sum(loss)
@@ -325,7 +330,7 @@ class BinningAwareSignificance(SignalEfficiency):
             binned_yield = torch.clamp(binned_yield, min=epsilon)
         return binned_yield
 
-    def forward(self, prediction, truth, weight, *args, **kwargs):
+    def forward(self, prediction, truth, product_of_weights, evaluation_mask):
         signal_node_truth = truth[:, self.s_cls]
         prediction = torch.softmax(prediction, dim = 1) # network does not contain softmax
         signal_node_prediction = prediction[:, self.s_cls]
@@ -333,8 +338,8 @@ class BinningAwareSignificance(SignalEfficiency):
         s = self.approximation_sb(
             signal_node_prediction,
             signal_node_truth,
-            weight["product_of_weights"],
-            weight["evaluation_space_mask"],
+            product_of_weights,
+            evaluation_mask,
             is_signal=True,
             epsilon=1e-4
             )
@@ -342,8 +347,8 @@ class BinningAwareSignificance(SignalEfficiency):
         b = self.approximation_sb(
             signal_node_prediction,
             signal_node_truth,
-            weight["product_of_weights"],
-            weight["evaluation_space_mask"],
+            product_of_weights,
+            evaluation_mask,
             is_signal=False,
             epsilon=1e-4
             )
@@ -353,22 +358,22 @@ class BinningAwareSignificance(SignalEfficiency):
 
 
 class WeightedCrossEntropy(torch.nn.CrossEntropyLoss):
-    def forward(self, input, target, weight: torch.Tensor | None = None):
+    def forward(self, prediction, target, event_weights: torch.Tensor | None = None):
         # save original reduction mode
         reduction = self.reduction
-        if weight is not None:
+        if event_weights is not None:
             self.reduction = "none"
-            loss = super().forward(input, target)
+            loss = super().forward(prediction, target)
             self.reduction = reduction
 
             # dot product is only defined for flat tensors, so flatten
             loss = torch.flatten(loss)
-            weight = torch.flatten(weight)
-            loss = torch.dot(loss, weight)
+            event_weights = torch.flatten(event_weights)
+            loss = torch.dot(loss, event_weights)
             if self.reduction == "mean":
-                loss = loss / torch.sum(weight)
+                loss = loss / torch.sum(event_weights)
         else:
-            loss = super().forward(input, target)
+            loss = super().forward(prediction, target)
         return loss
 
 

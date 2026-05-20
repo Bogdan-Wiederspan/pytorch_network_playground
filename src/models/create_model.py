@@ -27,7 +27,8 @@ class BaseModel(torch.nn.Module):
         self.continuous_features = self.dataset_config.continuous_features
 
         # use the last activation function when it exist. Can be deactivated
-        self.use_last_activation = self.model_building_config.last_activation_fn
+        self.use_last_activation = self.model_building_config.use_last_activation
+        self.is_binned = False
 
     def init_layers(self):
         raise NotImplementedError("init_layers needs to be implemented in child class, where all layers of the model are defined")
@@ -353,6 +354,7 @@ class BinnedLBNDenseNetV2(LBNDenseNet):
         **kwargs,
         ):
         super().__init__(full_config, *args, **kwargs)
+        self.is_binned = True
 
 
     def init_layers(self):

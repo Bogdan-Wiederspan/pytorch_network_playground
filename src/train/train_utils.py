@@ -81,7 +81,6 @@ def log_metrics(
             return False
         return True
 
-
     logger_inst.info(f"Start {mode} Logs at iteration {iteration_step}")
     # logs and plots that are ALWAYS plotted
 
@@ -92,6 +91,7 @@ def log_metrics(
     # weights are EVENT WEIGHTS, but cross entropy want to have cls weights
     # for this reason reduce is set to false and manual average is calculated
     cce_metric = torch.nn.functional.cross_entropy(pred, tar, weight=None, reduction="none")
+    weights = weights.reshape(cce_metric.shape)
     cce_metric = torch.mean(cce_metric * weights)
     tensorboard_inst.log_scalar(values={mode: cce_metric}, step=iteration_step, name=f"{mode} CrossEntropy")
 

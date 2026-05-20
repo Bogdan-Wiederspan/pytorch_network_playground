@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import torch
+from typing import TYPE_CHECKING
 
 from utils import logger
+
+if TYPE_CHECKING:
+    from data.sampler import ProcessSampler
 
 functions = {}
 logger_inst = logger.get_logger(__name__)
@@ -30,6 +34,8 @@ class BaseLoop():
             if self.MODE == "training"
             else full_config.training_config.validation_fn
             )
+        # these column are always necessary for the loops
+        self.necessary_columns = {"continuous","categorical","targets",}
 
     def __init_subclass__(cls):
         for name, fn in cls.__dict__.items():
@@ -38,7 +44,10 @@ class BaseLoop():
                 cls.REGISTERED_LOOPS.setdefault(cls.MODE, {}) # make sure that dict for mode exists
                 cls.REGISTERED_LOOPS[cls.MODE][fn._loop_name] = fn
 
-    def prepare_binned_output(pred: torch.tensor | tuple[torch.tensor]) -> tuple[torch.tensor, torch.tensor]:
+    def separate_prediction(
+        self,
+        pred: torch.tensor | tuple[torch.tensor],
+        ) -> tuple[torch.tensor, torch.tensor]:
         """
         Depending on the network architecture the output can either be a tuple of prediction and binned prediction
         or just the prediction. To have a uniform interface the singular output uses a dummy value.
@@ -50,18 +59,21 @@ class BaseLoop():
             tuple[torch.tensor, torch.tensor]: Tuple of predictions where first value is used for logging and second value is used for optimization.
             In case of non binned output both values are the same.
         """
+        # TODO maybe replace with dictionary?
         is_binned = isinstance(pred, tuple)
         if is_binned:
             logging_pred, optimization_pred = pred
         else:
             logging_pred, optimization_pred = pred, pred
+
         return logging_pred, optimization_pred
 
 
     def __call__(self, *args, **kwargs):
-
-        fn = getattr(self, self.which_fn)
-        return fn(*args, **kwargs)
+        # registered loop is just an unbound function
+        # bound by passing self as first argument
+        fn = self.REGISTERED_LOOPS[self.MODE][self.which_fn]
+        return fn(self, *args, **kwargs)
 
 
 class TrainingLoop(BaseLoop):
@@ -76,7 +88,7 @@ class TrainingLoop(BaseLoop):
 
         cont, cat, targets = sampler.sample_batch(device=device)
         pred = model(categorical_inputs=cat, continuous_inputs=cont)
-        logging_pred, optimization_pred = self.prepare_binned_output(pred)
+        logging_pred, optimization_pred = self.separate_prediction(pred)
 
         loss = loss_fn(optimization_pred, targets)
         loss.backward()
@@ -92,160 +104,226 @@ class TrainingLoop(BaseLoop):
         optimizer.enable_running_stats(model)  # <- this is the important line
         return loss, (logging_pred, targets)
 
-    @register_loop(name="default")
-    def default(self, model, loss_fn, optimizer, sampler, sample_from, device, scheduler_inst=None):
+    @register_loop(name="cross_entropy")
+    def cross_entropy_loss(
+        self,
+        model,
+        loss_fn,
+        optimizer,
+        sampler,
+        sample_columns,
+        device,
+        scheduler_inst=None
+        ):
+        # this loss never uses a binning network thus, a single prediction is expected
+
         optimizer.zero_grad()
 
-        events = sampler.sample_batch(sample_from=sample_from, device=device)
-        pred = model(categorical_inputs=events.pop("categorical"), continuous_inputs=events.pop("continuous"))
+        events = sampler.sample_batch(sample_from=self.necessary_columns, device=device)
+        targets = events["targets"].reshape(-1,3)
 
-        logging_pred, optimization_pred = self.prepare_binned_output(pred)
+        predictions = model(
+            categorical_inputs=events.pop("categorical"),
+            continuous_inputs=events.pop("continuous")
+            )
 
-        targets = events.pop("targets")
-        loss = loss_fn(optimization_pred, targets.reshape(-1,3), events)
+        # training does not need event weights. The oversampling algorithm takes care of this
+        loss = loss_fn(predictions, targets, event_weights=None)
         loss.backward()
         optimizer.step()
         if scheduler_inst is not None:
             scheduler_inst.step()
 
-        return loss, (logging_pred, targets)
+        return loss
+
+    @register_loop(name="signal_efficiency")
+    def signal_efficiency_loop(
+        self,
+        model,
+        loss_fn,
+        optimizer,
+        sampler,
+        sample_columns,
+        device,
+        scheduler_inst=None
+        ):
+        optimizer.zero_grad()
+
+        events = sampler.sample_batch(sample_from=sample_columns, device=device)
+        pred = model(
+            categorical_inputs=events.pop("categorical"),
+            continuous_inputs=events.pop("continuous"),
+            )
+
+        _ , optimization_pred = self.separate_prediction(pred)
+
+        targets = events.pop("targets")
+        loss = loss_fn(
+            prediction=optimization_pred,
+            truth=targets.reshape(-1,3),
+            product_of_weights=events["product_of_weights"],
+            evaluation_mask=events["evaluation_space_mask"],
+            )
+        loss.backward()
+        optimizer.step()
+        if scheduler_inst is not None:
+            scheduler_inst.step()
+        return loss
+
 
 class ValidationLoop(BaseLoop):
     MODE = "validation"
     def __init__(self, full_config, *args, **kwargs):
         super().__init__(full_config=full_config, *args, **kwargs)
 
-    @register_loop(name="default")
-    def default(self, model, loss_fn, sampler, sample_from, device):
+    def collect_from_generators(
+        self,
+        model_inst: torch.nn.Module,
+        sampler_inst: ProcessSampler,
+        sample_columns: list[str],
+        skip_concatenate_columns: tuple[str] = ("",),
+        device: torch.device =torch.device("cpu"),
+        ) -> dict[torch.tensors]:
+        """
+        During Validation no sampling is used, instead we loop over all unsampeled Datasets.
+        The *model_inst* is the DNN you want to use, while *sampler_inst* should be a ValidationSampler.
+        Which column is aggregated over all datasets is defined in *sample_columns*.
+        In the end a concatenation is done over the event axis. If this step should be skipped for
+        certain columns (e.g. to maintain the shape), add the name in *skip_concatenate_columns*.
+
+        Args:
+            model_inst (torch.nn.Module): Your neural network model.
+            sampler_inst (ProcessSampler): Instance of a ProcessSampler, with registered Processes.
+            sample_columns (list[str]): List of columns to sample from.
+            skip_concatenate_columns (tuple[str], optional): List of columns to skip concatenation. Defaults to ("",).
+            device (torch.device, optional): Device everything should run on. Defaults to torch.device("cpu").
+
+        Returns:
+            dict[torch.tensors]: Dictonary with all aggregated tensors.
+        """
+        model_inst.eval()
+        collected_data = {
+            "class_predictions" : [],
+            "targets" : [],
+            "sample_weights" : [],
+            "loss_predictions" : [],
+            "relative_weights" : [],
+
+            # "dataset_id" : [], # TODO add ID to enable filtering by dataset
+            }
+
+        dynamic_data = {dynamic_d : [] for dynamic_d in tuple(sample_columns - self.necessary_columns)}
+
+        with torch.no_grad():
+            # sample over all dataset generator and run network
+            # store output in lists which are then concatenated in the end
+            for uid, validation_batch_generator in sampler_inst.create_sample_generator(
+                batch_size=sampler_inst.batch_size,
+                sample_from=sample_columns,
+                device=device
+                ).items():
+                # hold data for current dataset, saved in loop to avoid memory issues
+                for events in validation_batch_generator:
+                    pred = model_inst(
+                        categorical_inputs=events.pop("categorical"),
+                        continuous_inputs=events.pop("continuous")
+                        )
+                    # network can output either binned or non binned predictions
+                    # depending on model architecture, separate_prediction gives us a uniform interface to handle both cases
+                    class_pred, loss_pred = self.separate_prediction(pred)
+
+                    # -- collect data that is always done --
+
+                    collected_data["targets"].append(events.pop("targets"))
+                    collected_data["sample_weights"].append(events.pop("sample_weights"))
+                    collected_data["relative_weights"].append(
+                        torch.full(size=(class_pred.shape[0], 1), fill_value=sampler_inst[uid].relative_weight)
+                        )
+
+                    if not model_inst.use_last_activation:
+                        # TODO if sigmoid is necessary add switch case
+                        class_pred = torch.softmax(class_pred, dim=1)
+                    collected_data["class_predictions"].append(class_pred)
+
+                    # for loss calculation, can be the same as class_prediction e.g. crossentropy
+                    collected_data["loss_predictions"].append(loss_pred)
+
+                    # -- collect dynamic data --
+                    for k in dynamic_data.keys():
+                        dynamic_data[k].append(events.pop(k))
+
+                    # it is necessary to ensure the same shape
+                    # when mapping of activation function is on (only having softmax) do not apply them, else do apply
+
+            # combine datas
+            collected_data.update(dynamic_data)
+
+            for k in tuple(collected_data.keys()):
+                value = collected_data.pop(k)
+                # event dimension is always the second last axis
+                event_dim = len(value[0].shape) - 2
+                # for whatever reason maybe want to skip concatenate?
+                if k not in skip_concatenate_columns:
+                    value = torch.concatenate(value, dim = event_dim)
+                collected_data[k] = value
+        return collected_data
+
+    @register_loop(name="cross_entropy")
+    def cross_entropy_loop(
+        self,
+        model_inst,
+        loss_fn_inst,
+        sampler_inst,
+        sample_columns,
+        device
+        ):
         """
         Used for normal loss functions like Crossentropy.
         """
-        # TODO: MAYBE BUGGED
-        with torch.no_grad():
-            val_loss = []
-            model.eval()
-            predictions = []
-            truth = []
-            weights = []
+        to_sample_columns = self.necessary_columns.union(sample_columns)
+        tensors = self.collect_from_generators(
+            model_inst=model_inst,
+            sampler_inst=sampler_inst,
+            sample_columns=to_sample_columns,
+            skip_concatenate_columns=("",),
+            device=device,
+            )
 
-            for uid, validation_batch_generator in sampler.create_sample_generator(
-                batch_size=sampler.batch_size, # do validation over whole dataset at once
-                sample_from=sample_from,
-                device=device).items():
-                dataset_losses = []
-
-                for events in validation_batch_generator:
-                    pred = model(categorical_inputs=events.pop("categorical"), continuous_inputs=events.pop("continuous"))
-                    logging_pred, optimization_pred = self.prepare_binned_output(pred)
-
-                    targets = events.pop("targets")
-                    loss = loss_fn(optimization_pred, targets.reshape(-1,3), events, debug=False)
-                    # collect data for metric plots
-                    dataset_losses.append(loss)
-                    # predictions.append(torch.softmax(val_pred, dim=1).cpu())
-                    predictions.append(logging_pred).cpu()
-                    truth.append(targets.cpu())
-                    weights.append(torch.full(size=(logging_pred.shape[0], 1), fill_value=sampler[uid].relative_weight).cpu())
-
-                process_contribution = sampler[uid].relative_weight
-                average_val = sum(dataset_losses) / len(dataset_losses) * process_contribution
-                val_loss.append(average_val)
-
-            final_validation_loss = sum(val_loss).cpu()#/ len(val_loss)
-            model.train()
-
-            truth = torch.concatenate(truth, dim=0)
-            predictions = torch.concatenate(predictions, dim=0)
-            weights = torch.flatten(torch.concatenate(weights, dim=0))
-            return final_validation_loss, (predictions, truth, weights)
-
-
-    def gather_from_(self, model, loss_fn, sampler, sample_from, collect ,device):
-        model.eval()
-
-        collected_data = {"predictions": [], "targets": [], "weights": []}
-        collected_data.update({key: [] for key in collect.keys()})
-
-        with torch.no_grad():
-            # get constant process factors and filter signal or background out
-            for uid, validation_batch_generator in sampler.create_sample_generator(
-                batch_size=sampler.batch_size, # do validation over whole dataset at once
-                sample_from=sample_from,
-                device=device).items():
-                dataset_losses = []
-
-                for events in validation_batch_generator:
-                    pred = model(categorical_inputs=events.pop("categorical"), continuous_inputs=events.pop("continuous"))
-                    logging_pred, optimization_pred = self.prepare_binned_output(pred)
-                    targets = events.pop("targets")
-                    t.append(targets)
-                    e["product_of_weights"].append(events.pop("product_of_weights"))
-                    e["evaluation_space_mask"].append(events.pop("evaluation_space_mask"))
-
-                    # collect data for metric plots
-                    # TODO: outsource softmax for all things
-                    predictions.append(torch.softmax(logging_pred, dim=1))
-                    truth.append(targets)
-                    weights.append(torch.full(size=(logging_pred.shape[0], 1), fill_value=sampler[uid].relative_weight))
-
+        # validation needs to be reweightes by sample weights
+        loss = loss_fn_inst(
+            tensors["loss_predictions"],
+            tensors["targets"],
+            tensors["sample_weights"],
+        )
+        return loss, (tensors["class_predictions"], tensors["targets"], tensors["sample_weights"])
 
     @register_loop(name="signal_efficiency")
-    def signal_efficiency(self, model, loss_fn, sampler, sample_from, device):
-        with torch.no_grad():
-            model.eval()
-            predictions = []
-            truth = []
-            weights = []
+    def signal_efficiency_loop(
+        self,
+        model_inst,
+        loss_fn_inst,
+        sampler_inst,
+        sample_columns,
+        device
+        ):
+        loss_columns = {"product_of_weights", "evaluation_space_mask"}
+        to_sample_columns = self.necessary_columns.union(loss_columns).union(sample_columns)
 
-            # get constant process factors and filter signal or background out
-            p, t = [], []
-            e = {"product_of_weights" : [], "evaluation_space_mask" : []}
-            for uid, validation_batch_generator in sampler.create_sample_generator(
-                batch_size=sampler.batch_size, # do validation over whole dataset at once
-                sample_from=sample_from,
-                device=device).items():
-                dataset_losses = []
 
-                for events in validation_batch_generator:
-                    pred = model(categorical_inputs=events.pop("categorical"), continuous_inputs=events.pop("continuous"))
-                    logging_pred, optimization_pred = self.prepare_binned_output(pred)
+        tensors = self.collect_from_generators(
+            model_inst=model_inst,
+            sampler_inst=sampler_inst,
+            sample_columns=to_sample_columns,
+            skip_concatenate_columns=("",),
+            device=device,
+            )
 
-                    p.append(optimization_pred)
-                    targets = events.pop("targets")
-                    t.append(targets)
-                    e["product_of_weights"].append(events.pop("product_of_weights"))
-                    e["evaluation_space_mask"].append(events.pop("evaluation_space_mask"))
+        loss = loss_fn_inst(
+            tensors["loss_predictions"],
+            tensors["targets"].reshape(-1,3),
+            tensors["product_of_weights"],
+            tensors["evaluation_space_mask"]
+            # TODO  sampler weight is not used, but maybe should ?
+            )
 
-                    # collect data for metric plots
-                    # TODO: outsource softmax for all things
-                    predictions.append(torch.softmax(logging_pred, dim=1))
-                    truth.append(targets)
-                    weights.append(torch.full(size=(logging_pred.shape[0], 1), fill_value=sampler[uid].relative_weight))
-
-            _dim = len(p[0].shape)
-            if _dim == 3: #then it means that we have a binned output, concat happens over the 1 axis
-                event_dim = 1
-            elif _dim == 2: # then we have a normal output, concat happens over the 0 axis
-                event_dim = 0
-            p = torch.concatenate(p, dim=event_dim)
-
-            t = torch.concatenate(t, dim=0)
-            e["product_of_weights"] = torch.concatenate(e["product_of_weights"])
-            e["evaluation_space_mask"] = torch.concatenate(e["evaluation_space_mask"])
-            loss = loss_fn(p, t.reshape(-1,3), e, debug=False)
-            # loss = loss_fn(val_pred, targets.reshape(-1,3), events, debug=False)
-            dataset_losses.append(loss)
-
-            # from IPython import embed; embed(header = "VALID LOSS line: 182 in train_utils.py")
-            # process_contribution = sampler[uid].relative_weight
-            # average_val = sum(dataset_losses) / len(dataset_losses) * process_contribution
-            # val_loss.append(average_val)
-
-            # final_validation_loss = sum(val_loss).cpu()#/ len(val_loss)
-            final_validation_loss = loss.cpu()#/ len(val_loss)
-            model.train()
-
-            truth = torch.concatenate(truth, dim=0)
-            predictions = torch.concatenate(predictions, dim=0)
-            weights = torch.flatten(torch.concatenate(weights, dim=0))
-            return final_validation_loss, (predictions.cpu(), truth.cpu(), weights.cpu())
+        return loss, (tensors["class_predictions"], tensors["targets"], tensors["sample_weights"])

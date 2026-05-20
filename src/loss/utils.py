@@ -5,8 +5,14 @@ import loss
 def init_loss(full_config, device=torch.device("cpu"), **kwargs):
     if full_config.training_config.loss_fn == "cross_entropy":
         # the default trainings_loss_function
-        train_loss_fn = torch.nn.CrossEntropyLoss(weight=None, size_average=None,label_smoothing=full_config.training_config.label_smoothing)
-        validation_loss_fn = torch.nn.CrossEntropyLoss(weight=None, size_average=None,label_smoothing=full_config.training_config.label_smoothing)
+        loss_cls = loss.loss_functions.WeightedCrossEntropy
+
+        # train_loss_fn = torch.nn.CrossEntropyLoss(weight=None, size_average=None,label_smoothing=full_config.training_config.label_smoothing)
+        # validation_loss_fn = torch.nn.CrossEntropyLoss(weight=None, size_average=None,label_smoothing=full_config.training_config.label_smoothing)
+        train_loss_fn = loss_cls(weight=None, size_average=None,label_smoothing=full_config.training_config.label_smoothing)
+        validation_loss_fn = loss_cls(weight=None, size_average=None,label_smoothing=full_config.training_config.label_smoothing)
+
+
 
     elif full_config.training_config.loss_fn == "signal_efficiency":
         training_sampler = kwargs["training_sampler"]

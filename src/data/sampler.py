@@ -126,7 +126,7 @@ class Process(t_data.Dataset):
 
         # sample events from sample_from, and normalization weight per default
         sampled_events = {attribute:getattr(self, attribute)[idx].to(device) for attribute in sample_from}
-        sampled_events["weights"] = torch.full((len(idx), 1), self.weights_statistics["normalization_weights"]["whole_sum"] / self.sample_size).to(device)
+        sampled_events["sample_weights"] = torch.full((len(idx), 1), self.weights_statistics["normalization_weights"]["whole_sum"] / self.sample_size).to(device)
         return sampled_events
 
         # return self.continuous[idx].to(device), self.categorical[idx].to(device), self.targets[idx].to(device)
@@ -161,7 +161,7 @@ class Process(t_data.Dataset):
             start_idx = next_idx
             # reset if we reached the end of the dataset and drop last incomplete batch
             sampled_events = {attribute:getattr(self, attribute)[idx].to(device) for attribute in sample_from}
-            sampled_events["weights"] = torch.full((len(idx), 1), self.weights_statistics["normalization_weights"]["whole_sum"] / self.sample_size).to(device)
+            sampled_events["sample_weights"] = torch.full((len(idx), 1), self.weights_statistics["normalization_weights"]["whole_sum"] / self.sample_size).to(device)
             yield sampled_events
 
 
