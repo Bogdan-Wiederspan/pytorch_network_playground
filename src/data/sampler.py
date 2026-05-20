@@ -171,7 +171,8 @@ class ProcessSampler(t_data.Sampler):
     def __init__(
         self,
         batch_size: int=1,
-        sample_ratio: dict[int]={"dy": 0.25, "tt": 0.25, "hh": 0.5},
+        sample_ratio: dict[float]={"dy": 0.25, "tt": 0.25, "hh": 0.5},
+        sub_sample_ratio: dict[float] = None,
         min_size: int=0,
         target_map: dict[int] = {"hh": 0, "tt": 1, "dy": 2},
         weight_aggregator_inst = None,
@@ -200,6 +201,7 @@ class ProcessSampler(t_data.Sampler):
 
         self.batch_size = torch.tensor([batch_size], dtype=torch.int32)
         self.sample_ratio = sample_ratio
+        self.sub_sample_ratio = sub_sample_ratio
         self.min_size = min_size
         self.target_map = target_map
         self.weights_aggregator_inst = weight_aggregator_inst
@@ -350,12 +352,20 @@ class ProcessSampler(t_data.Sampler):
             ValueError: The batch size is smaller than 1, which is not supported.
             TypeError: The change of type from float to int changed the value, which should not happen since the algorithm is designed to handle this case.
         """
-
         if self.batch_size == -1:
             raise ValueError("Batch Size < 1 is not supported. Try a number big enough to be representative")
         logger_inst.info(f"Calculate Sampler sample sizes for subprocesses of {process_type}")
         # unpack and convert to tensors for easier handling, get desired_sub_batch_size
-        weights = torch.tensor([proc.weights_statistics["normalization_weights"]["whole_sum"] for proc in self.process_inst[process_type].values()])
+
+        # -- calculate weighting for each subprocess --
+        weights = []
+        for pid, proc in self.process_inst[process_type].items():
+            sub_process_total_normalization_weight = proc.weights_statistics["normalization_weights"]["whole_sum"]
+            sub_process_ratio = self.sub_sample_ratio.get(pid, 1) # defaults to equal importance, if no pid exist
+            weighted_sub_process_weight = sub_process_total_normalization_weight * sub_process_ratio
+            weights.append(weighted_sub_process_weight)
+        weights = torch.tensor(weights)
+
         min_size = torch.tensor(self.min_size)
         sub_batch_size = int(self.batch_size * self.sample_ratio[process_type])
 
@@ -509,6 +519,7 @@ def create_sampler(
     min_size=1,
     train=True,
     sample_ratio={"dy": 0.25, "tt": 0.25, "hh": 0.5},
+    sub_sample_ratio=None,
     ):
     # extract data from events and wrap into Datasets
     if not events:
@@ -521,7 +532,8 @@ def create_sampler(
         min_size=min_size,
         sample_ratio=sample_ratio,
         target_map = target_map,
-        weight_aggregator_inst=weight_aggregator_inst
+        weight_aggregator_inst=weight_aggregator_inst,
+        sub_sample_ratio=sub_sample_ratio,
         )
 
     for uid in list(events.keys()):
