@@ -8,23 +8,29 @@ import torch
 from utils import logger, utils
 from torch.nn.utils import parametrize
 
-__all__ = [
-    "PaddingLayer",
-    "CategoricalTokenizer",
-    "OneHotEncodingLayer",
-    "CatEmbeddingLayer",
-    "InputLayer",
-    "ResNetBlock",
-    "DenseBlock",
-    "ResNetPreactivationBlock",
-    "StandardizeLayer",
-    "RotatePhiLayer",
-    "AggregationLayer",
-    "LBN",
-    "BinningLayer",
-]
-
 logger_inst = logger.get_logger(__name__)
+
+def dummy_identity(layer: torch.nn.Module | None) -> torch.nn.Module:
+    if layer is None:
+        return torch.nn.Identity()
+    return layer
+
+class EmptyLayer(torch.nn.Module):
+    """
+    Empty Layer that return always an empty tensor.
+    This kind of layer is useful, when one wants an optional tensor in concatenation operations.
+    """
+    def __init__(self):
+        super().__init__()
+        self.ndim = 0
+
+    def forward(self, *args, **kwargs):
+        return torch.tensor([])
+
+def dummy_empty(condition, layer: torch.nn.Module | None) -> torch.nn.Module:
+    if condition:
+        return torch.nn.EmptyLayer()
+    return layer
 
 class WeightNormalizedLinear(torch.nn.Linear):  # noqa: F811
     def __init__(self ,*args, normalize=False, **kwargs):
@@ -327,6 +333,95 @@ class CatEmbeddingLayer(torch.nn.Module):  # noqa: F811
         x = self.embeddings(x)
         return x.flatten(start_dim=1)
 
+
+class CategoricalInputLayer(torch.nn.Module):
+    def __init__(
+        self,
+        embedding_layer: torch.nn.Module,
+        empty: int = 15,
+        padding_categorical_layer: torch.nn.Module | None = None,
+
+        *args,
+        **kwargs,
+    ):
+        """
+        Input Layer for categorical features.
+        Convert the categorical feature into tokens, via Tokenizer and result are Embedding vectors
+
+        embedding_dim (int): Number of dimensions for the embedding layer.
+        categories (tuple[str]): Names of the categories as strings.
+        expected_categorical_inputs (dict[list[int]]): Dictionary where keys are category
+            names and values are lists of integers representing the expected values for
+            each category.
+        empty (int, optional): Value used to represent missing values in the input tensor.
+        """
+
+        super().__init__()
+        self.empty = empty
+        self.embedding_layer = embedding_layer
+        self.ndim = self.embedding_layer.ndim
+        self.padding_categorical_layer = dummy_identity(padding_categorical_layer)
+
+    def forward(self, x: torch.FloatTensor) -> torch.FloatTensor:
+        x = self.padding_categorical_layer(x)
+        x = self.embedding_layer(x)
+        return x
+
+class ContinuousInputLayer(torch.nn.Module):  # noqa: F811
+    def __init__(
+        self,
+        continuous_inputs: tuple[str],
+        empty: int = 15,
+        std_layer: torch.nn.Module | None = None,
+        rotation_layer: torch.nn.Module | None = None,
+        padding_continuous_layer: torch.nn.Module | None = None,
+        *args,
+        **kwargs,
+    ):
+        """
+        Enables the use of categorical and continuous features in a single model.
+        A tokenizer and embedding layer are created  is created using and an embedding layer.
+        The continuous features are passed through a linear layer and then concatenated with the
+        categorical features.
+        """
+        super().__init__()
+        self.empty = empty
+        self.ndim = len(continuous_inputs)
+
+        self.rotation_layer = dummy_identity(rotation_layer)
+        self.std_layer = dummy_identity(std_layer)
+        self.padding_continuous_layer = dummy_identity(padding_continuous_layer)
+
+    def forward(self, x):
+        x = self.padding_continuous_layer(x)
+        x = self.rotation_layer(x)
+        x = self.std_layer(x)
+        return x
+
+
+class OptionalInputLayer(torch.nn.Module):  # noqa: F811
+    def __init__(
+        self,
+        continuous_layer_inst: torch.nn.Module | None = None,
+        categorical_layer_inst: torch.nn.Module | None = None,
+        *args,
+        **kwargs,
+    ):
+        super().__init__()
+        self.continuous_layer = continuous_layer_inst
+        self.categorical_layer = categorical_layer_inst
+        self.ndim = self.continuous_layer.ndim + self.categorical_layer.ndim
+
+    def forward(self, *, categorical_inputs, continuous_inputs):
+        x = torch.cat(
+            [
+                self.continuous_layer(continuous_inputs),
+                self.categorical_layer(categorical_inputs),
+            ],
+            dim=1,
+        )
+        return x
+
 class InputLayer(torch.nn.Module):  # noqa: F811
     def __init__(
         self,
@@ -353,14 +448,16 @@ class InputLayer(torch.nn.Module):  # noqa: F811
         self.empty = empty
         self.ndim = len(continuous_inputs)
         self.embedding_layer = None
+        # when categories exist
         if categorical_inputs is not None:
+            # and categories has clear ranges
             if expected_categorical_inputs is not None:
                 self.embedding_layer = CatEmbeddingLayer(
                     embedding_dim=embedding_dim,
                     categories=categorical_inputs,
                     expected_categorical_inputs=expected_categorical_inputs,
                     empty=empty)
-
+            # otherwise ?
             elif category_dims:
                 self.embedding_layer = CatEmbeddingLayer(
                     embedding_dim=embedding_dim,
@@ -372,10 +469,10 @@ class InputLayer(torch.nn.Module):  # noqa: F811
         if self.embedding_layer:
             self.ndim += self.embedding_layer.ndim
 
-        self.rotation_layer = self.dummy_identity(rotation_layer)
-        self.std_layer = self.dummy_identity(std_layer)
-        self.padding_continuous_layer = self.dummy_identity(padding_continuous_layer)
-        self.padding_categorical_layer = self.dummy_identity(padding_categorical_layer)
+        self.rotation_layer = dummy_identity(rotation_layer)
+        self.std_layer = dummy_identity(std_layer)
+        self.padding_continuous_layer = dummy_identity(padding_continuous_layer)
+        self.padding_categorical_layer = dummy_identity(padding_categorical_layer)
 
 
     def dummy_identity(self, layer: torch.nn.Module | None) -> torch.nn.Module:

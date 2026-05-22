@@ -15,6 +15,7 @@ def register_model(name):
         return cls
     return wrapper
 
+
 class BaseModel(torch.nn.Module):
     LEARNING_MODES = {}
     def __init__(self, full_config, *args, **kwargs):
@@ -141,6 +142,58 @@ class BaseModel(torch.nn.Module):
         )
         return input_layer
 
+    def init_cat_embedding_layer(self) -> torch.nn.Module:
+        embedding_layer = layers.CatEmbeddingLayer(
+            embedding_dim = self.model_building_config.embedding_dim,
+            categories = self.dataset_config.categorical_features,
+            expected_categorical_inputs = self.model_building_config.expected_embedding_inputs,
+            empty = self.model_building_config.categorical_padding_value,
+            # category_dims = self.model_building_config.category_dims,
+            )
+        return embedding_layer
+
+    def init_optional_input_layer(self) -> torch.nn.Module:
+        """
+        Helper function to initialize the input layer, which consist of a preprocessing pipeline.
+        This preprocessing pipeline consist of standardization, rotation and padding layer, which are initialized with the corresponding helper functions.
+
+        Returns:
+            torch.nn.Module: input layer instance with preprocessing pipeline
+        """
+        d_cfg = self.dataset_config
+        m_cfg = self.model_building_config
+
+        cont_pad_layer, cat_pad_layer = self.init_padding_layer()
+        embedding_layer = self.init_cat_embedding_layer()
+        std_layer = self.init_standardization_layer()
+        rot_layer = self.init_rotation_layer()
+
+        if d_cfg.continuous_features:
+            cont_input_layer = layers.ContinuousInputLayer(
+                continuous_inputs=d_cfg.continuous_features,
+                empty=m_cfg.continuous_padding_value,
+                rotation_layer=rot_layer,
+                std_layer=std_layer,
+                padding_continuous_layer=cont_pad_layer,
+            )
+        else:
+            cont_input_layer = layers.EmptyLayer()
+
+        if d_cfg.categorical_features:
+            cat_input_layer = layers.CategoricalInputLayer(
+                embedding_layer=embedding_layer,
+                empty=m_cfg.categorical_padding_value,
+                padding_categorical_layer=cat_pad_layer,
+                )
+        else:
+            cat_input_layer = layers.EmptyLayer()
+
+        input_layer = layers.OptionalInputLayer(
+            continuous_layer_inst=cont_input_layer,
+            categorical_layer_inst=cat_input_layer,
+        )
+        return input_layer
+
     def init_last_activation_layer(self) -> torch.nn.Module | None:
         """
         Helper to init the very last activation function.
@@ -262,7 +315,8 @@ class DenseNet(BaseModel):
     def init_layers(self):
         m_cfg = self.model_building_config
 
-        self.input_layer = self.init_input_layer()
+        # self.input_layer = self.init_input_layer()
+        self.input_layer = self.init_optional_input_layer()
 
         self.transition_dense_1 = layers.DenseBlock(
             input_nodes=self.input_layer.ndim,
@@ -324,7 +378,6 @@ class LBNDenseNet(DenseNet):
             eps=self.model_building_config.eps_batchnorm,
             normalize=self.model_building_config.normalize_linear
             )
-
 
     def forward(self, categorical_inputs, continuous_inputs):
         # preprocessing with lbn
@@ -498,7 +551,6 @@ class BinnedLBNDenseNet(torch.nn.Module):
         if binning_config is None:
             self.binning_layer = torch.nn.Identity()
         else:
-            from IPython import embed; mbed(header="MESSAGE Line 443 | File: create_model.py")
             self.binning_layer = layers.BinningLayerRight(
                 num_bins=binning_config.num_bins,
                 lower_bound=binning_config.lower_edge,

@@ -10,7 +10,6 @@ import torch
 
 import loss
 
-from models import create_model
 
 from data import load_data, preprocessing, sampler, cache
 from utils import logger
@@ -53,7 +52,6 @@ def main(**kwargs):
         # load data from cache is necessary or from root files
         # events is of form : {uid : {"continuous","categorical", "weight": torch tensor}}
         events = load_data.get_data(full_config.dataset_config, ignore_cache=kwargs["ignore_cache"], _save_cache=kwargs["save_cache"])
-
         fold_split_coordinator = preprocessing.FoldAndSplitCoordinator(
             events=events,
             c_fold=current_fold,
@@ -64,7 +62,6 @@ def main(**kwargs):
         )
 
         train_events, validation_events = fold_split_coordinator(events, which="training"), fold_split_coordinator(events, which="validation")
-
         weight_aggregator = preprocessing.WeightAggregator(events, fold_split_coordinator.indices)
 
         # release fie
