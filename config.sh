@@ -2,7 +2,7 @@
 export USER=wiedersb
 export STORE_DIR=/data/dust/user/${USER}/HH_DNN # ROOT of storage
 export CACHE_DIR=${STORE_DIR}/cache # directory where preprocessed data is stored as well as dataset paths
-export PICTURE_DIR=${STORE_DIR}/pictures/features
+export PICTURE_DIR=${STORE_DIR}/pictures
 export MODELS_DIR=${STORE_DIR}/models # saved models
 export TENSORBOARD_DIR=${STORE_DIR}/tensorboard # tensorboard storage
 
@@ -25,4 +25,4 @@ export CF_SANDBOX="venv_hbt_dev" #  sandbox name within columnflow - ATTENTION: 
 export PYENV_ROOT="/afs/desy.de/user/w/${USER}/.pyenv" # root of pyenv installation
 
 # flags to stop unnecessar dir checks, can be undone to recreate dirs
-export SETUP_DIRS_DONE=1 # 1 = done
+export SETUP_DIRS_DONE=1

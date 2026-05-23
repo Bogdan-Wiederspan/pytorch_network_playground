@@ -1,9 +1,13 @@
 
 #!/bin/bash
 create_dirs(){
+    local LOCAL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    CONFIG_FILE=${LOCAL_DIR}/config.sh
+    source ${CONFIG_FILE}
+
     # just creating directories when they don't exist
     if [ "${SETUP_DIRS_DONE}" -eq 1 ]; then
-        echo "Already done"
+        echo "Skip Directory Setup, since its already done"
         return 0
     fi
 
@@ -13,16 +17,26 @@ create_dirs(){
         "${MODELS_DIR}"
         "${TENSORBOARD_DIR}"
     )
+
     if [ ! -d "${STORE_DIR}" ]; then
-        mkdir "${STORE_DIR}"
-        for dir in "${DIRS[@]}"; do
-            mkdir "${dir}"
-        done
+        mkdir "${STORE_DIR}" || {
+            echo "[ERROR] Failed to create STORE_DIR"
+            return 1
+        }
     fi
 
-    # set SETUP_DIRS_DONE to completed
-    sed -i 's/^SETUP_DIRS_DONE=.*/SETUP_DIRS_DONE=1/' "${LOCAL_DIR}/config.sh"
+    for dir in "${DIRS[@]}"; do
+        if [ ! -d "${dir}" ]; then
+            mkdir "${dir}" || {
+            echo "[ERROR] Failed to create ${dir}"
+                return 1
+            }
+        fi
+    done
+
+    sed -i 's/^export SETUP_DIRS_DONE=.*/export SETUP_DIRS_DONE=1/' "${CONFIG_FILE}"
     echo "[INFO] Directory setup complete"
+
     return 0
 }
 
@@ -142,6 +156,13 @@ setup() {
         return 0
     fi
 
+    # create directories, when they do not exist
+    create_dirs
+    CREATE_DIR_COMPLETE=$?
+    if [ "${CREATE_DIR_COMPLETE}" -ne 0 ]; then
+        echo "Don't continue setup - creation of directories failed"
+        return 1
+    fi
     # Get the directory where this script is located and source config located there
     # BASH_SOURCE[0] = path of current script, get dir and resolve absolute path
     local LOCAL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
