@@ -11,6 +11,33 @@ EMPTY_FLOAT = -99999.0
 import torch
 import awkward as ak
 
+def multiply_sub_process_rates(which_sub_process, sub_process_rates):
+    def validate_exactly_two_levels(d):
+        for outer_key, inner in d.items():
+            # only dictionaries on top level are accepted
+            if not isinstance(inner, dict):
+                raise TypeError(f"Expected dict at top-level key")
+
+            # no more than another dict is accepted
+            has_dict_values = any(isinstance(v, dict) for v in inner.values())
+            if has_dict_values:
+                raise ValueError("Nesting deeper than 2 levels detected")
+
+    validate_exactly_two_levels(sub_process_rates)
+    final_rate = defaultdict(lambda: 1)
+    for name in which_sub_process:
+        for key, rate in sub_process_rates[name].items():
+            # if a whole group should be handled
+            if isinstance(key, Iterable) and not isinstance(key, str):
+                for sub_process in key:
+                    final_rate[sub_process] *= rate
+            # no nested case
+            else:
+                final_rate[key] *= rate
+
+    return dict(final_rate)
+
+
 def choice_check(selected, choices):
     choices = typing.get_args(choices)
     is_inside = any([selected in choices for choice in choices])

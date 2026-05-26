@@ -76,7 +76,7 @@ def main(**kwargs):
             "min_size" : full_config.training_config.min_events_in_batch,
             "batch_size" : full_config.training_config.t_batch_size,
             "sample_ratio" : full_config.training_config.sample_ratio,
-            "sub_sample_ratio" : full_config.training_config.sub_process_ratio,
+            "sub_sample_ratio" : full_config.training_config.sub_process_ratios,
         }
 
         training_sampler = sampler.create_sampler(
