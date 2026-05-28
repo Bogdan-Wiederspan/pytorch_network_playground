@@ -21,14 +21,13 @@ class DataCacher():
         self.path = self.cache_dir(config)
 
     def cache_dir(self, config):
+        # create cache parent, and return path to cache
         h = hash_dictionary(config)
         p = pathlib.Path(os.environ["CACHE_DIR"])
 
-        target = p / h
-        # create dir if not exist
-        if not target.exists():
-            target.mkdir(parents=False)
-        return target
+        if not p.exists():
+            p.mkdir(parents=False)
+        return p / h
 
     def save_cache(self, data):
         logger_inst.i_info(f"Try saving cache at {self.path}:")
