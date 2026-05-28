@@ -12,8 +12,10 @@ export FILE_LOG_LEVEL="DEBUG"
 
 # location where the input data can be found.
 export ERA=prod20 # possible eras: prod14, prod20, prod24 (20 only has 22pre)
-export TRAINIG_ROOT="/data/dust/user/riegerma/hh2bbtautau/run3_training_data/"
-export INPUT_DATA_DIR="/data/dust/user/riegerma/hh2bbtautau/run3_training_data/${ERA}"
+export TRAINING_ROOT="/data/dust/user/riegerma/hh2bbtautau/run3_training_data" # normal training root
+# export TRAINING_ROOT="/data/dust/user/wiedersb/machine_learning_data" # quintus training root
+export INPUT_DATA_DIR="${TRAINING_ROOT}/${ERA}"
+
 
 # virtualenv handling
 export VENV_MODE="venv" # venv_switch - possible values: pyenv, venv or cf
