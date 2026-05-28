@@ -164,11 +164,10 @@ class BaseModel(torch.nn.Module):
         m_cfg = self.model_building_config
 
         cont_pad_layer, cat_pad_layer = self.init_padding_layer()
-        embedding_layer = self.init_cat_embedding_layer()
-        std_layer = self.init_standardization_layer()
-        rot_layer = self.init_rotation_layer()
 
         if d_cfg.continuous_features:
+            std_layer = self.init_standardization_layer()
+            rot_layer = self.init_rotation_layer()
             cont_input_layer = layers.ContinuousInputLayer(
                 continuous_inputs=d_cfg.continuous_features,
                 empty=m_cfg.continuous_padding_value,
@@ -180,6 +179,7 @@ class BaseModel(torch.nn.Module):
             cont_input_layer = layers.EmptyLayer()
 
         if d_cfg.categorical_features:
+            embedding_layer = self.init_cat_embedding_layer()
             cat_input_layer = layers.CategoricalInputLayer(
                 embedding_layer=embedding_layer,
                 empty=m_cfg.categorical_padding_value,
