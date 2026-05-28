@@ -42,10 +42,13 @@ def init_scheduler(full_config, optimizer_inst):
     for scheduler_cfg, scheduler_cls in zip(s_cfg.config_chain, s_cfg.scheduler_cls_chain):
         scheduler_instances.append(scheduler_cls(optimizer_inst, **scheduler_cfg))
 
-    scheduler_inst = torch.optim.lr_scheduler.SequentialLR(
-        optimizer=optimizer_inst,
-        schedulers=scheduler_instances,
-        milestones=s_cfg.milestones
-    )
-
+    # sequential LR does not enable adaptive scheduler
+    if len(scheduler_instances) == 1:
+        scheduler_inst = scheduler_instances[0]
+    else:
+        scheduler_inst = torch.optim.lr_scheduler.SequentialLR(
+            optimizer=optimizer_inst,
+            schedulers=scheduler_instances,
+            milestones=s_cfg.milestones
+        )
     return scheduler_inst

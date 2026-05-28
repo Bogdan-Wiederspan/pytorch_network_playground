@@ -19,7 +19,7 @@ LOSS_CHOICE = Literal["cross_entropy", "signal_efficiency", "signal_efficiency_b
 TRAINING_LOOP_CHOICE = Literal["cross_entropy", "sam", "signal_efficiency"]
 VALIDATION_LOOP_CHOICE = Literal["signal_efficiency", "cross_entropy"]
 SIGNAL_EFFICIENCY_LOSS_MODE = Literal["full", "no_unc", "approximation"]
-SCHEDULER_CHOICE = Literal["linear", "cosine_annealing", "reduce_on_plateau"]
+SCHEDULER_CHOICE = Literal["linear", "cosine_annealing", "reduce_on_plateau", "step"]
 
 
 
@@ -174,10 +174,18 @@ class TrainingConfig:
 
 @dataclass
 class SchedulerConfig:
-    scheduler_chain: Tuple[SCHEDULER_CHOICE, ...] = ("linear", "cosine_annealing") # schedulers used in chain
+    scheduler_chain: Tuple[SCHEDULER_CHOICE, ...] = ("linear", "step") # schedulers used in chain
     config_chain: Optional[Tuple[Any, ...]] = None # list of configs corresponding to the schedulers in the scheduler chain
     scheduler_cls_chain: Optional[Tuple[Any, ...]] = None # list of scheduler classes corresponding to the schedulers in the scheduler chain, if None is given, it is assumed that the scheduler class can be derived from the scheduler choice by adding "LR" at the end, for example "CosineAnnealingLR" for "cosine"
     milestones: Tuple[int, ...] = (500,) # intervals after which the LR scheduler is swapped
+
+
+    @dataclass
+    class StepLRConfig(): # used by marcel
+        step_size: int = 10 # number of iterations between two learning rate reductions
+        gamma: float = 0.5 # learning rate reduction factor
+        # min_delta: float = 0.0 # minimum improvement before increase patience - Marcel: 0
+
 
     @dataclass
     class CosineAnnealingLRConfig():
@@ -187,15 +195,12 @@ class SchedulerConfig:
     @dataclass
     class ReduceLROnPlateauConfig():
         mode: str ='min' # one of {min, max}, in min mode lr will be reduced when the quantity monitored has stopped decreasing
-        step_size: int = 10 # number of iterations between two learning rate reductions
-        gamma: float = 0.5 # learning rate reduction factor
         patience: int = 4 # wait x number of checks - Marcel: 10
-        min_delta: float = 0.0 # minimum improvement before increase patience - Marcel: 0
         threshold_mode: str = "abs" # type of min_delta - Marcel: abs
         factor: float = 0.5 # LR reduce by factor
-        cooldown=0, # number of iterations to wait after a learning rate reduction before resuming normal operation
-        min_lr=0, # lower bound on the learning rate
-        eps=1e-08,  # minimal decay applied to lr, if it is smaller than this value, it is set to this value
+        cooldown: int = 0, # number of iterations to wait after a learning rate reduction before resuming normal operation
+        min_lr: float = 0, # lower bound on the learning rate
+        eps: float = 1e-08,  # minimal decay applied to lr, if it is smaller than this value, it is set to this value
 
     @dataclass
     class LinearLRConfig():
@@ -211,8 +216,9 @@ class SchedulerConfig:
             "cosine_annealing" : (self.CosineAnnealingLRConfig, schedulers.CosineAnnealingLR),
             "reduce_on_plateau" : (self.ReduceLROnPlateauConfig, schedulers.ReduceLROnPlateau),
             "linear" : (self.LinearLRConfig, schedulers.LinearLR),
+            "step" : (self.StepLRConfig, schedulers.StepLR),
         }
-        # move optimizer attribute to top level
+
         scheduler_configs = []
         scheduler_cls_chain = []
         for choice in self.scheduler_chain:

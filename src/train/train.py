@@ -4,22 +4,17 @@ from __future__ import annotations
 import dataclasses
 
 # package imports
-
 import numpy as np
 import torch
 
-import loss
-
-
+# personal imports
 from data import load_data, preprocessing, sampler, cache
 from utils import logger
 
 from optimizer.utils import init_optimizer, init_scheduler
-from optimizer.early_stopping import EarlyStopOnPlateau, CheckPoint
-
+from optimizer.early_stopping import CheckPoint
 from loss.utils import init_loss
 from models.utils import init_model
-
 from train.train_config import full_config
 from train.loops import TrainingLoop, ValidationLoop
 from train.train_utils import log_metrics
