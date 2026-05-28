@@ -91,7 +91,7 @@ class CheckPoint:
     def check_criteria(self, loss):
         # when loss is small, save model
         if self.no_improvement_count >= self.patience:
-            if (self.best_loss is None) or (self.best_loss <= (loss - self.delta)):
+            if (self.best_loss is None) or (self.best_loss >= (loss - self.delta)):
                 logger_inst.info(f"Checkpoint criteria trigger started at {loss:6E} - after {self.no_improvement_count} waiting epochs")
                 self.no_improvement_count = 0
                 self.best_loss = loss
