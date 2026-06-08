@@ -1,6 +1,28 @@
 
 #!/bin/bash
 create_dirs(){
+    # -----------------------------------------------------------------------------
+    # Create project directory structure if not already initialized.
+    #
+    # Reads:
+    #   CONFIG_FILE=config.sh
+    #
+    # Required variables from config:
+    #   STORE_DIR         Parent directory
+    #   CACHE_DIR         Cache storage directory
+    #   PICTURE_DIR       Image output directory
+    #   MODELS_DIR        Model storage directory
+    #   TENSORBOARD_DIR   Tensorboard log directory
+    #   SETUP_DIRS_DONE   Setup flag (0/1)
+    #
+    # Side effects:
+    #   - Creates missing directories
+    #   - Updates SETUP_DIRS_DONE in config.sh
+    #
+    # Returns:
+    #   0 -> success / already completed
+    #   1 -> directory creation failure
+    # -----------------------------------------------------------------------------
     local LOCAL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     CONFIG_FILE=${LOCAL_DIR}/config.sh
     source ${CONFIG_FILE}
@@ -40,24 +62,51 @@ create_dirs(){
     return 0
 }
 
+check_required_vars() {
+    # simple function that checks if given variable are set
+    # -n ensures that $1 is seen as arrays reference
+    local -n vars_ref=$1
+    local missing=()
+
+    for var in "${vars_ref[@]}"; do
+        # !VARIABLE indirect expansion
+        # -> treat the content of VARIABLE as another variable and expand that
+        # necessary i loop over multiple variable names, which need to be expanded
+
+        # :-FALLBACK_VALUE if unset use FALLBACK_VALUE
+        if [ -z "${!var:-}" ]; then
+            missing+=("${var}")
+        fi
+    done
+
+
+    # #array = number of elements of array
+    if [ ${#missing[@]} -gt 0 ]; then
+        # $array[*] expand array into string
+        echo "[ERROR] Missing variables: ${missing[*]}"
+        return 1
+    fi
+}
+
+# venv handling
 prepare_venv(){
+    # check if venv root exist, return 1 if false
     _path="${VENV_ROOT}/${ML_ENV}/bin/"
     if [ ! -n "${_path}" ]; then
         echo "Venv root does not exist check ${_path}"
         return 1
     fi
 }
-# virtualenv
+
 activate_venv(){
+
     _path="${VENV_ROOT}/${ML_ENV}/bin"
     # activate but without prompt change
     VIRTUAL_ENV_DISABLE_PROMPT=1 source "${_path}/activate"
     finish_setup
-    # set currently VENV as most important
-    #export PATH="${_path}:${PATH}";
 }
 
-# pyenv
+# pyenv handling
 prepare_pyenv(){
     if [ -n "${PYENV_ROOT}" ] && [ -n "${ML_ENV}" ]; then
         # check if pyenv exists as command, if not activate it
@@ -84,6 +133,16 @@ activate_pyenv(){
 
 # columnflow sandbox
 prepare_cf(){
+    required_vars=(
+    CF_ROOT
+    CF_USER_FLAVOR
+    CF_SANDBOX
+    )
+
+    check_required_vars required_vars || exit 1
+    cd "${CF_ROOT}"
+    source setup.sh "${CF_USER_FLAVOR}"
+
     if [ -n "${CF_SANDBOX}" ]; then
         if ! command -v cf_sandbox >/dev/null 2>&1; then
             echo "Source your columnflow setup!"
@@ -143,7 +202,9 @@ finish_setup(){
     # extend PS1 if environment is set properly
 
     # Show only the last part of the virtualenv path (env name) in the prompt
-    export PS1="[${VIRTUAL_ENV##*/}] ${PS1}"
+    if [[ "${VENV_MODE}" != "cf" ]]; then
+        export PS1="[${VIRTUAL_ENV##*/}] ${PS1}"
+    fi
     # include source of project as root for python
     export PYTHONPATH="${PYTHONPATH}:$(pwd)/src"
     return 0
@@ -163,6 +224,7 @@ setup() {
         echo "Don't continue setup - creation of directories failed"
         return 1
     fi
+
     # Get the directory where this script is located and source config located there
     # BASH_SOURCE[0] = path of current script, get dir and resolve absolute path
     local LOCAL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -18,13 +18,17 @@ export INPUT_DATA_DIR="${TRAINING_ROOT}/${ERA}"
 
 
 # virtualenv handling
-export VENV_MODE="venv" # venv_switch - possible values: pyenv, venv or cf
+export VENV_MODE="venv" # decide which venv is used - possible values: pyenv, venv or cf
+
+# columnflow settings, only necessary if VENV_MDOE is set to cf
+export CF_ROOT="/afs/desy.de/user/w/wiedersb/xxl/hh2bbtautau_analyze" # your root directory of CF
+export CF_USER_FLAVOR="dev" # your cf user name - used when source setup with for example 'dev'
+export CF_SANDBOX="venv_hbt_dev" #  sandbox name within columnflow
+
+# pyenv or virtualenv settings
+export VENV_ROOT="/data/dust/user/${USER}/pyenv_virtualenvs" # place to look for existing virtualenvs
+export PYENV_ROOT="/afs/desy.de/user/w/${USER}/.pyenv" # root of pyenv installation
 export ML_ENV="ml_torch" # name of your virtualenv, so it can be activated by source setup.sh
 
-# virtualenv directories - you only need to set 1 (depending on your VENV_MODE)
-export VENV_ROOT="/data/dust/user/${USER}/pyenv_virtualenvs" # place to look for existing virtualenvs
-export CF_SANDBOX="venv_hbt_dev" #  sandbox name within columnflow - ATTENTION: need to run source of columnflow before
-export PYENV_ROOT="/afs/desy.de/user/w/${USER}/.pyenv" # root of pyenv installation
-
-# flags to stop unnecessar dir checks, can be undone to recreate dirs
+# flags to stop unnecessary dir checks, can be undone to recreate dirs
 export SETUP_DIRS_DONE=1
