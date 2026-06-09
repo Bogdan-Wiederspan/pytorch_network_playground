@@ -38,6 +38,7 @@ class DataConfig:
     eras: Tuple[ERAS_CHOICE] = ("22pre")
     datasets: Optional[List[str]] = None
     cuts: Optional[Any] = None
+    dummy_values = -99999 # value used to fill in missing values
 
     def __post_init__(self):
         # a dictionary of all files corresponding to a certain dataset

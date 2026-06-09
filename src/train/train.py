@@ -47,6 +47,8 @@ def main(**kwargs):
         # load data from cache is necessary or from root files
         # events is of form : {uid : {"continuous","categorical", "weight": torch tensor}}
         events = load_data.get_data(full_config.dataset_config, ignore_cache=kwargs["ignore_cache"], _save_cache=kwargs["save_cache"])
+
+        # split data into training and validation according to fold and get collect all weight statistics
         fold_split_coordinator = preprocessing.FoldAndSplitCoordinator(
             events=events,
             c_fold=current_fold,
@@ -56,10 +58,11 @@ def main(**kwargs):
             randomize=True,
         )
 
-        train_events, validation_events = fold_split_coordinator(events, which="training"), fold_split_coordinator(events, which="validation")
+        columns_to_split = ("continuous", "categorical", "event_id", "normalization_weights", "product_of_weights", "evaluation_mask")
+        train_events, validation_events = fold_split_coordinator(events, which="training", columns=columns_to_split), fold_split_coordinator(events, which="validation", columns=columns_to_split) #noqa
         weight_aggregator = preprocessing.WeightAggregator(events, fold_split_coordinator.indices)
 
-        # release fie
+        # release initial fields
         for key in list(events.keys()):
             del events[key]
 
@@ -91,7 +94,7 @@ def main(**kwargs):
 
         full_config.model_building_config.mean, full_config.model_building_config.std = preprocessing.get_batch_statistics_from_sampler(
             training_sampler,
-            padding_values=-99999,
+            padding_values=full_config.dataset_config.dummy_values,
             features=full_config.dataset_config.continuous_features,
             return_dummy=full_config.debug_config.get_batch_statistic_return_dummy,
         )
@@ -100,6 +103,7 @@ def main(**kwargs):
         #----
         model_inst = init_model(full_config=full_config)
         model_inst = model_inst.to(DEVICE).train()
+
         training_loop, validation_loop = TrainingLoop(full_config), ValidationLoop(full_config)
 
         optimizer_inst = init_optimizer(full_config=full_config, model_inst=model_inst)

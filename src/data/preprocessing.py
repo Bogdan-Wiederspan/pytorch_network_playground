@@ -7,7 +7,15 @@ from utils.logger import get_logger
 logger_inst = get_logger(__name__)
 
 class WeightAggregator():
+
     def __init__(self, events, indices):
+        """
+        Accumulates and handle process weights from events.
+
+        Args:
+            events (_type_): _description_
+            indices (_type_): _description_
+        """
         self.weights = self.calculate_process_weights(events, indices)
         self.summary_statistic_of_processes = self.calculate_summary_statistics_from_process_weights(self.weights)
 
@@ -123,8 +131,17 @@ class FoldAndSplitCoordinator():
             indicies[(process_name, pid)] = {"test":test_fold, "training": training_id, "validation":validation_id}
         return indicies
 
-    def create_fold_index_map(self, event_id) -> tuple[torch.Tensor]:
-        # TODO Docstring
+    def create_fold_index_map(self, event_id: torch.Tensor) -> tuple[torch.Tensor]:
+        """
+        Creates a map of indicies for test and training fold from *event_id* using *k_fold* and *current_fold*.
+        The indices are permutated using *seed* if *randomize* is set to True.
+
+        Args:
+            event_id (torch.tensor): Tensor of event ids that are unique for each event
+
+        Returns:
+            tuple[torch.Tensor]: Tensor of test and training indices
+        """
         test_fold_mask = event_id % self.k_fold == self.current_fold
         indices = torch.arange(len(event_id))
 
@@ -137,13 +154,12 @@ class FoldAndSplitCoordinator():
             training_id = training_id[torch.randperm(len(training_id), generator=torch.Generator().manual_seed(self.seed))]
         return test_id, training_id
 
-    def split_array_to_train_variation_by_ratio(self, array):
+    def split_array_to_train_variation_by_ratio(self, array: torch.Tensor) -> tuple[torch.Tensor]:
         """
-        Splits given *array* into *trainings_proportion* train and (1 - *trainings_proportion*) validation parts.
+        Splits given *array* into training and validation parts according to the *percentage_training*.
 
         Args:
             array (torch.Tensor, numpy.Array): flat torch or numpy array
-            trainings_proportion (float, optional): Relative proportion of the resulting trainings array. Defaults to 0.75.
 
         Returns:
             tuple (torch.Tensor, numpy.Array): Tuple of trainings and validation array
@@ -153,17 +169,36 @@ class FoldAndSplitCoordinator():
         v_idx = array[train_length:]
         return t_idx, v_idx
 
-    def apply_indices(self, events, which="training"):
-        if which not in ("training", "validation", "test"):
-            raise ValueError(f"which needs to be one of training, validation or test, got {which}")
+    def apply_indices(
+        self,
+        events: torch.Tensor,
+        kind: str="training",
+        columns: tuple[str]=("continuous", "categorical", "event_id", "normalization_weights", "product_of_weights", "evaluation_mask")
+        ) -> dict[torch.Tensor]:
+        """
+        Apply indices of specific *kind* of specific *columns* of *events*.
+
+        Args:
+            events (dict[torch.Tensor]): Dictionary of processes
+            which (str, optional): Description which kind of data is processed. Defaults to "training".
+            columns (tuple[str], optional): Iterable of column names on which indices are applied to. Defaults to ("continuous", "categorical", "event_id", "normalization_weights", "product_of_weights", "evaluation_mask").
+
+        Raises:
+            ValueError: Raises error if *which* is not one of "training", "validation" or "test", since these are the only valid keys for the indices.
+
+        Returns:
+            dict[torch.Tensor]: Dictionary of events with applied indices of specific *kind* on specific *columns*.
+        """
+        if kind not in ("training", "validation", "test"):
+            raise ValueError(f"which needs to be one of training, validation or test, got {kind}")
         splitted_events = {}
         for uid, arrays in events.items():
             arrays = events[uid]
             splitted_events[uid] = {}
-            for key in ("continuous", "categorical", "event_id", "normalization_weights", "product_of_weights", "evaluation_mask"):
+            for key in columns:
                 array = arrays[key]
 
-                splitted_array = array[self.indices[uid][which]]
+                splitted_array = array[self.indices[uid][kind]]
                 splitted_events[uid][key] = splitted_array
         # edge case split results in empty tensors (due to very low event count).
         # just stop applying indices and remove this process from the splitted_events
@@ -173,8 +208,13 @@ class FoldAndSplitCoordinator():
                 splitted_events.pop(uid)
         return splitted_events
 
-    def __call__(self, events, which="training"):
-        return self.apply_indices(events, which)
+    def __call__(
+        self,
+        events,
+        which="training",
+        columns=("continuous", "categorical", "event_id", "normalization_weights", "product_of_weights", "evaluation_mask")
+        ):
+        return self.apply_indices(events, which, columns)
 
 def apply_tokenization(expected_inputs, events, categorical_features):
     for uid in list(events.keys()):
@@ -232,12 +272,11 @@ def get_batch_statistics_from_sampler(sampler=None, padding_values=None, feature
         num_f = len(features)
         mean = torch.zeros(num_f)
         std = torch.ones(num_f)
-        logger_inst.warning(
+        logger_inst.info(
             "\nNo normalization statistics are calculated, since return_dummy is True."
             "Returning dummy values: mean = 0 and std = 1"
             )
         return mean, std
-
 
     logger_inst.info("Calculate mean and std over all subphase spaces")
     # filter keys after processes
@@ -246,7 +285,6 @@ def get_batch_statistics_from_sampler(sampler=None, padding_values=None, feature
     features_dict = sampler.continuous()
     weights_dict = sampler.relative_weight()
     sum_of_weights = sum(list(weights_dict.values()))
-
     # for each process id calculate weighted mean, std for each feature representing batch statistics
     for current_pid_idx, pid in enumerate(features_dict.keys(), start = 1):
         # get array of specific process id - [num_events x num_features]
@@ -258,11 +296,13 @@ def get_batch_statistics_from_sampler(sampler=None, padding_values=None, feature
         # mean and var calculation should exclude padding values
         # if padding value shape is 1 -> expand to num_feature or equals num_features
         num_f = array.shape[-1]
+
         ignore_tensor = torch.tensor(padding_values)
         if ignore_tensor.shape == torch.Size([]):
             ignore_tensor = torch.full((1, num_f), fill_value=padding_values)
         elif ignore_tensor.shape != torch.Size([num_f]):
             raise ValueError(f"Padding values need to be of shape [num_features] or single value, got {ignore_tensor.shape}")
+
         # create and apply mask to include values
         include_mask = ~(array == ignore_tensor)
         masked_mean = torch.masked.mean(input=array, mask=include_mask, dim=0, dtype=torch.float64)
@@ -277,8 +317,9 @@ def get_batch_statistics_from_sampler(sampler=None, padding_values=None, feature
         pid_weight = weights_dict[pid]
         weighted_means.append(masked_mean * pid_weight)
         weighted_vars.append(masked_var * pid_weight)
-    print()
+
     # calculate weighted average over uid means and var
+    print()
     w_avg_mean  = torch.sum(torch.stack(weighted_means, axis=0), axis = 0) / sum_of_weights
     w_avg_var = torch.sum(torch.stack(weighted_vars, axis=0), axis = 0) / sum_of_weights
     if features:
