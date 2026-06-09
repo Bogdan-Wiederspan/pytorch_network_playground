@@ -52,24 +52,32 @@ class WeightNormalizedLinear(torch.nn.Linear):  # noqa: F811
 class PaddingLayer(torch.nn.Module):  # noqa: F811
     def __init__(
         self,
-        padding_value: float | int = 0,
-        mask_value: float | int = utils.EMPTY_FLOAT,
+        target_value: float | int = 0,
+        padding_value: float | int = utils.EMPTY_FLOAT,
+        target_dtype: torch.dtype = torch.float32,
     ):
         """
         Pads input tensor on indices which equals *mask_value* with given *padding_value*.
 
         Args:
-            padding (int, optional): Padding value. Defaults to 0.
-            mask_value (float, optional): Value where padding should be applied. Defaults to EMMPTY_FLOAT
+            target_value (int, optional): Target value to mask. Defaults to 0.
+            padding_value (float, optional): Value which is used to pad the target. Defaults to utils.EMPTY_FLOAT.
         """
         super().__init__()
 
-        self.padding_value = torch.nn.Buffer(torch.tensor(padding_value).to(torch.float32), persistent=True)
-        self.mask_value = torch.nn.Buffer(torch.tensor(mask_value).to(torch.float32), persistent=True)
+        self.target_value = torch.nn.Buffer(
+            torch.tensor(target_value).to(torch.float32),
+            persistent=True
+            )
+        self.padding_value = torch.nn.Buffer(
+            torch.tensor(padding_value).to(torch.float32),
+            persistent=True
+            )
+        self.target_dtype = target_dtype
 
     def forward(self, x):
-        x = x.to(torch.float32)
-        mask = x == self.mask_value
+        x = x.to(self.target_dtype)
+        mask = x == self.target_value
         x[mask] = self.padding_value
         return x
 
@@ -338,7 +346,6 @@ class CategoricalInputLayer(torch.nn.Module):
     def __init__(
         self,
         embedding_layer: torch.nn.Module,
-        empty: int = 15,
         padding_categorical_layer: torch.nn.Module | None = None,
 
         *args,
@@ -357,7 +364,6 @@ class CategoricalInputLayer(torch.nn.Module):
         """
 
         super().__init__()
-        self.empty = empty
         self.embedding_layer = embedding_layer
         self.ndim = self.embedding_layer.ndim
         self.padding_categorical_layer = dummy_identity(padding_categorical_layer)
@@ -371,7 +377,6 @@ class ContinuousInputLayer(torch.nn.Module):  # noqa: F811
     def __init__(
         self,
         continuous_inputs: tuple[str],
-        empty: int = 15,
         std_layer: torch.nn.Module | None = None,
         rotation_layer: torch.nn.Module | None = None,
         padding_continuous_layer: torch.nn.Module | None = None,
@@ -385,7 +390,6 @@ class ContinuousInputLayer(torch.nn.Module):  # noqa: F811
         categorical features.
         """
         super().__init__()
-        self.empty = empty
         self.ndim = len(continuous_inputs)
 
         self.rotation_layer = dummy_identity(rotation_layer)

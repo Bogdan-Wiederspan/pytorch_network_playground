@@ -71,9 +71,7 @@ class BaseModel(torch.nn.Module):
                 ref_phi_columns=self.model_building_config.ref_phi_columns,
                 rotate_columns=self.model_building_config.rotate_columns,
             )
-        else:
-            rotation_layer = None
-        return rotation_layer
+            return rotation_layer
 
     def init_standardization_layer(self)-> torch.nn.Module:
         """
@@ -98,21 +96,29 @@ class BaseModel(torch.nn.Module):
 
     def init_padding_layer(self)-> tuple[torch.nn.Module | None, torch.nn.Module | None]:
         """
-        Helper function to initialize two padding layers, one to pad continous values and the other for categorical information.
+        Helper function to initialize continuous and categorical padding layer.
         The actual padding value is defined in the model building config, if the value is None, no padding layer is created.
 
         Returns:
             tuple[torch.nn.Module | None, torch.nn.Module | None]: None or tuple of PaddingLayer instances.
         """
-        if self.model_building_config.continuous_padding_value is None:
+        m_cfg = self.model_building_config
+        if self.model_building_config.continuous_target_value is None:
             continuous_padding = None
         else:
-            continuous_padding = layers.PaddingLayer(padding_value=-4, mask_value=utils.EMPTY_FLOAT)
+            continuous_padding = layers.PaddingLayer(
+                target_value=m_cfg.continuous_target_value,
+                padding_value=m_cfg.continuous_masking_value,
+            )
 
-        if self.model_building_config.categorical_padding_value is None:
+        if self.model_building_config.categorical_target_value is None:
             categorical_padding = None
         else:
-            categorical_padding = layers.PaddingLayer(padding_value=self.model_building_config.categorical_padding_value, mask_value=utils.EMPTY_INT)
+            categorical_padding = layers.PaddingLayer(
+                target_value=m_cfg.categorical_target_value,
+                padding_value=m_cfg.categorical_masking_value,
+                )
+
         return continuous_padding, categorical_padding
 
     def init_input_layer(self) -> torch.nn.Module:
@@ -147,7 +153,7 @@ class BaseModel(torch.nn.Module):
             embedding_dim = self.model_building_config.embedding_dim,
             categories = self.dataset_config.categorical_features,
             expected_categorical_inputs = self.model_building_config.expected_embedding_inputs,
-            empty = self.model_building_config.categorical_padding_value,
+            empty = self.model_building_config.tokenizer_add_unknown_category,
             # category_dims = self.model_building_config.category_dims,
             )
         return embedding_layer
@@ -170,7 +176,6 @@ class BaseModel(torch.nn.Module):
             rot_layer = self.init_rotation_layer()
             cont_input_layer = layers.ContinuousInputLayer(
                 continuous_inputs=d_cfg.continuous_features,
-                empty=m_cfg.continuous_padding_value,
                 rotation_layer=rot_layer,
                 std_layer=std_layer,
                 padding_continuous_layer=cont_pad_layer,
@@ -182,7 +187,6 @@ class BaseModel(torch.nn.Module):
             embedding_layer = self.init_cat_embedding_layer()
             cat_input_layer = layers.CategoricalInputLayer(
                 embedding_layer=embedding_layer,
-                empty=m_cfg.categorical_padding_value,
                 padding_categorical_layer=cat_pad_layer,
                 )
         else:
@@ -474,7 +478,7 @@ class BinnedLBNDenseNet(torch.nn.Module):
 
         # helper where all layers are defined
         # std layers are filled when statitics are known
-        if config.mean is None and config.std is None:
+        if config.mean is None or config.std is None:
             std_layer = layers.StandardizeLayer(
                 mean = torch.zeros(len(continuous_features)),
                 std = torch.ones(len(continuous_features))

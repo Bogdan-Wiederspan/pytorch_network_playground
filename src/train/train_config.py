@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Tuple, Literal, Any
 import torch
 
 from data import features, load_data
-from utils.utils import choice_check, multiply_sub_process_rates
+from utils.utils import choice_check, multiply_sub_process_rates, EMPTY_FLOAT, EMPTY_INT
 
 # some values only accept certain values, not runtime check is performed!
 ERAS_CHOICE = Literal["22pre", "22post", "23pre", "23post"]
@@ -59,9 +59,18 @@ class ModelBuildingConfig:
         "res_dnn_pnet_vis_tau1",
         "res_dnn_pnet_vis_tau2",
     ) # which columns should be rotated
+
     # Padding Layers
-    categorical_padding_value: Optional[float] = None # missing values in categorical inputs are replaced by this
-    continuous_padding_value: Optional[float] = None # missing values in continuous inputs are replaced by this
+    categorical_target_value: Optional[float] = None # which categorical value is targeted by the padding, if None no value is masked
+    categorical_masking_value: Optional[float] = -1 # value that is used to mask the categorical target value
+
+    continuous_target_value: Optional[float] = None # which continuous value is targeted by the padding, if None no value is masked
+    continuous_masking_value: Optional[float] = EMPTY_FLOAT # value that is used to mask the continuous target value
+
+    # Tokenizer & Embedding Layer
+    tokenizer_add_unknown_category = None # value added to categories to symbolize unknown category. If None, no extra category is added
+    embedding_dim: int = 10 # dimension of embedding layer - Marcel 10
+    expected_embedding_inputs: Optional[dict[Tuple[int]]] = field(init=False)
 
     # DenseNet/LBN config
     nodes: int = 128 # base number of nodes of the dense blocks, due to DenseNet connection, increases with more layers
@@ -72,16 +81,14 @@ class ModelBuildingConfig:
     LBN_M: int = 10 # number of particles of the lbn network Marcel: 10
     last_activation_fn: LAST_ACTIVATION_CHOICE = "Softmax" # add activation function after last layer
     use_last_activation: bool = True # whether to use the last activation function, can be deactivated if not wanted - for example when using a loss function that already includes an activation like cross entropy, Marcel: False
+
     #STD Layers
-    mean: Optional[Any] = None
+    mean: Optional[Any] = None # these values are determined by your data
     std: Optional[Any] = None
 
-    embedding_dim: int = 10 # dimension of embedding layer - Marcel 10
-    expected_embedding_inputs: Optional[dict[Tuple[int]]] = field(init=False)
 
     eps_batchnorm: int = 0.001 # epsilon of batch norm layers
     normalize_linear: bool = False # activate weight normalization of linear layer, TODO currently BUGGED, leave at False
-
 
     def __post_init__(self):
         self.expected_embedding_inputs = features.expected_embedding_inputs()
