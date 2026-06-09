@@ -7,6 +7,27 @@ from utils import logger
 
 logger_inst = logger.get_logger(__name__)
 
+class EventWeightedLossFunction(torch.nn.Module):
+    def __init__(self, loss_cls, *args, **kwargs):
+        """
+        Extend every loss instance with an event weighted forward pass.
+
+        Args:
+            loss_cls (torch.nn.Module): Loss Function Module class
+        """
+        super().__init__()
+        self.loss_inst = loss_cls(*args, **kwargs)
+
+    def forward(self, *args, **kwargs):
+        loss = self.loss_inst(reduction="none", *args, **kwargs)
+        if torch.isnan(loss):
+            from IPython import embed; embed(header = "Loss value IsNan")
+        if kwargs.get("event_weights") is not None:
+            loss = torch.flatten(loss)
+            event_weights = torch.flatten(event_weights)
+            loss = torch.dot(loss, event_weights)
+        return loss.mean()
+
 
 class SignalEfficiency(torch.nn.Module):
     def __init__(
@@ -355,7 +376,6 @@ class BinningAwareSignificance(SignalEfficiency):
         loss = self.loss(s=s, b=b, unc_b=0, epsilon=1e-2)
         loss = loss.sum()
         return 1 / loss
-
 
 class WeightedCrossEntropy(torch.nn.CrossEntropyLoss):
     def forward(self, prediction, target, event_weights: torch.Tensor | None = None):

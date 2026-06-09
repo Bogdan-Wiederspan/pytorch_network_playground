@@ -21,21 +21,22 @@ def register_loop(name):
 
 class BaseLoop():
     """
-    Base Class that implements are registry where registered loops are cateogrized
+    Base Class that implements are registry where registered loops are categorized
     as training and validation loops.
     The registry is used to check if a given loop function exists and to call the correct function in the training script.
     """
     REGISTERED_LOOPS = {}
     MODE = None # is overwitten by child class
 
-    def __init__(self, full_config):
+    def __init__(self, full_config, necessary_columns: set[str] = {"continuous", "categorical","targets"}, *args, **kwargs):
         self.which_fn = (
             full_config.training_config.training_fn
             if self.MODE == "training"
             else full_config.training_config.validation_fn
             )
         # these column are always necessary for the loops
-        self.necessary_columns = {"continuous","categorical","targets",}
+        self.necessary_columns = necessary_columns
+        self.target_shape = (-1, len(full_config.dataset_config.target_map))
 
     def __init_subclass__(cls):
         for name, fn in cls.__dict__.items():
@@ -83,7 +84,16 @@ class TrainingLoop(BaseLoop):
         super().__init__(full_config=full_config, *args, **kwargs)
 
     @register_loop(name="sam")
-    def sam_optimizer(self, model, loss_fn, optimizer, sampler, device):
+    def sam_optimizer(
+        self,
+        model,
+        loss_fn,
+        optimizer,
+        sampler,
+        device,
+        *args,
+        **kwargs,
+        ):
         optimizer.zero_grad()
 
         cont, cat, targets = sampler.sample_batch(device=device)
@@ -111,20 +121,20 @@ class TrainingLoop(BaseLoop):
         loss_fn,
         optimizer,
         sampler,
-        sample_columns,
         device,
-        scheduler_inst=None
+        scheduler_inst=None,
+        *args,
+        **kwargs,
         ):
         # this loss never uses a binning network thus, a single prediction is expected
 
         optimizer.zero_grad()
 
         events = sampler.sample_batch(sample_from=self.necessary_columns, device=device)
-        targets = events["targets"].reshape(-1,3)
-
+        targets = events["targets"].reshape(self.target_shape)
         predictions = model(
-            categorical_inputs=events.pop("categorical"),
-            continuous_inputs=events.pop("continuous")
+            categorical_inputs=events.get("categorical"),
+            continuous_inputs=events.get("continuous")
             )
 
         # training does not need event weights. The oversampling algorithm takes care of this
@@ -145,7 +155,10 @@ class TrainingLoop(BaseLoop):
         sampler,
         sample_columns,
         device,
-        scheduler_inst=None
+        scheduler_inst=None,
+        *args,
+        **kwargs,
+
         ):
         optimizer.zero_grad()
 
@@ -160,7 +173,7 @@ class TrainingLoop(BaseLoop):
         targets = events.pop("targets")
         loss = loss_fn(
             prediction=optimization_pred,
-            truth=targets.reshape(-1,3),
+            truth=targets.reshape(self.target_shape),
             product_of_weights=events["product_of_weights"],
             evaluation_mask=events["evaluation_space_mask"],
             )
@@ -183,6 +196,8 @@ class ValidationLoop(BaseLoop):
         sample_columns: list[str],
         skip_concatenate_columns: tuple[str] = ("",),
         device: torch.device =torch.device("cpu"),
+        *args,
+        **kwargs,
         ) -> dict[torch.tensors]:
         """
         During Validation no sampling is used, instead we loop over all unsampeled Datasets.
@@ -275,7 +290,9 @@ class ValidationLoop(BaseLoop):
         loss_fn_inst,
         sampler_inst,
         sample_columns,
-        device
+        device,
+        *args,
+        **kwargs,
         ):
         """
         Used for normal loss functions like Crossentropy.
@@ -320,7 +337,7 @@ class ValidationLoop(BaseLoop):
 
         loss = loss_fn_inst(
             tensors["loss_predictions"],
-            tensors["targets"].reshape(-1,3),
+            tensors["targets"].reshape(self.target_shape),
             tensors["product_of_weights"],
             tensors["evaluation_space_mask"]
             # TODO  sampler weight is not used, but maybe should ?
