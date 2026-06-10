@@ -1,32 +1,37 @@
 from __future__ import annotations
 
-import pathlib
-import argparse
 import os
+import pathlib
 
 import torch
 
 from models import create_model
+from utils import logger
+from utils.parser import ParserBuilder
 
+logger_inst = logger.get_logger(__name__)
 
-def torch_export(
+def torch_export_pt2(
     model_inst: torch.nn.Module,
     name: str,
     fold: str,
     base_dir: str | None=None,
-    activation_fn_name: str =None) -> str:
+    activation_fn_name: str =None) -> pathlib.Path:
     """
-    Takes *model*
+    Takes *model_inst* and export it to pt2 format, with dynamic batch dimension.
+    The exported model is stored under a name defined by *name* and *fold* in the directory defined by *base_dir*.
+    If *activation_fn_name* is given, add the respective activation function as last layer to the model before exporting.
+    This is helpful, when the model for example is trained with BCEWithLogitsLoss and thus does not have a sigmoid at the end, but for inference one would like to have probabilities as output.
 
     Args:
         model_inst (torch.nn.Module): PyTorch model instance, no path.
         name (str): Name of the model, used to name the result.
         fold (str): Current fold of the model. Is part of the naming scheme
         base_dir (str | None, optional): Directory where model is stored, if None take from MODELS_DIR environment. Defaults to None.
-        add_softmax (bool, optional): Adds Softmax as last layer. Defaults to True.
+        activation_fn_name (bool, optional): Adds activation function as last layer. Defaults to None, which means no activation is added. If given, must be one of "sigmoid" or "softmax".
 
     Returns:
-        str: Path to exported pt2 model.
+        pathlib.Path: Path to exported pt2 model.
     """
     # by default set CPU device, to enable most compatible export.
     DEVICE=torch.device("cpu")
@@ -67,27 +72,7 @@ def torch_export(
     return dst
 
 
-def torch_save(
-    model: torch.nn.Module,
-    name: str,
-    fold: str,
-    base_dir: str | None) -> None:
-    """
-    Small wrapper to save *model_inst* with *name* and *fold* number in *base_dir*.
-    If *base_dir* is None a default location defined in MODELS_DIR environment is used.
-
-    Args:
-        model (torch.nn.Module): Pytorch model instance.
-        name (str): Name of the saved model.
-        fold (str): Fold number of the saved model.
-        base_dir (str | None): Path to directory where model is saved.
-    """
-    base_dir = os.environ["MODELS_DIR"]
-    dst = (pathlib.Path(base_dir) / f"{name}_fold{fold}").with_suffix(".pt")
-    torch.save(model, dst)
-
-
-def run_exported_tensor_model(
+def run_pt2_model(
     pt2_path: str,
     cat: torch.tensor,
     cont: torch.tensor) -> torch.tensor:
@@ -107,48 +92,73 @@ def run_exported_tensor_model(
     scores = exp.module()(cat, cont)
     return scores
 
-def resolve_models_path(path):
+def compare_pt2_with_original(
+    pt2_path: str,
+    original_model: torch.nn.Module,
+    cat: torch.tensor,
+    cont: torch.tensor,
+    atol: float = 1e-6) -> bool:
+    """
+    Compare the output of a pt2 model with the output of the original model for given *cat* and *cont* tensors. Returns True if outputs are close within given *atol*, False otherwise.
+    """
+    pt2_output = run_pt2_model(pt2_path, cat, cont)
+    original_output = original_model(cat, cont)
+    return torch.allclose(pt2_output, original_output, atol=atol)
+
+def resolve_models_path(path: pathlib.Path, folds) -> tuple[pathlib.Path, pathlib.Path]:
+    """
+    Small helper to resolve *path* to the model, if only model name is given, look in MODELS_DIR for it, otherwise take given path
+    Returns a tuple of the resolved pt2 path and the original pt path, which is needed to load the original model instance for comparison.
+    """
     models_path = pathlib.Path(path)
     is_only_model_name = len(path.parts) == 1
-    if is_only_model_name:
-        models_root = pathlib.Path(os.environ["MODELS_DIR"])
-        models_path = models_root / models_path.stem
-    return models_path.with_suffix(".pt2"), models_path.with_suffix(".pt")
+    paths = {}
+    for fold in folds:
+        if is_only_model_name:
+            models_root = pathlib.Path(os.environ["MODELS_DIR"])
+            models_path = models_root / f"{models_path.stem}_fold{fold}"
+        paths[fold] = models_path
+    return paths
 
-def build_model(path):
+def rebuild_model_from_checkpoint(path: pathlib.Path) -> torch.nn.Module:
+    """
+    Load checkpoint file from *path* and reconstruct correct model instance and load weight into model
+
+    Args:
+        path (pathlib.Path): Path to checkpoint file, typically with .pt suffix
+
+    Returns:
+        _type_: _description_
+    """
+    # load always on cpu
     checkpoint = torch.load(str(path), weights_only=False, map_location="cpu")
-    # when instance is saved load this, otherwise rebuild model from module and class name and load state dict
+
+    # when instance is saved load this
+    # otherwise rebuild model from module and class name and load state dict
     if "model_inst" in checkpoint:
         model_inst = checkpoint["model_inst"]
     else:
         full_cfg = checkpoint["full_config"]
 
         model_choice = full_cfg.training_config.model_choice
-        model_cls = create_model.MODEL_REGISTRY[model_choice]
-        model_inst = model_cls(full_cfg)
+        model_cls = create_model.MODEL_REGISTRY[model_choice] # pick correct cls from registered models
+        model_inst = model_cls(full_cfg) # create new instance with config
         model_inst.load_state_dict(checkpoint["model_state_dict"])
     model_inst.eval()
     return model_inst
 
 if __name__ == "__main__":
-    p = argparse.ArgumentParser(description="Export model to torch-export (.pt2) with dynamic batch dim")
-    p.add_argument("--checkpoint_path", "-m", required=True, help="Path to checkpoint file to load")
-    p.add_argument("--fold", "-f", required=True, help="Fold number", default=0)
-    p.add_argument(
-        "--add_activation",
-        required=False,
-        help="If value is given, get activation function and add at end of network",
-        default=None,
-        choices=["sigmoid", "softmax"]
-        )
-    args = p.parse_args()
 
-    pt2_path, pt_path = resolve_models_path(pathlib.Path(args.checkpoint_path))
-    fold = args.fold
+    parser = ParserBuilder("load_checkpoint", "activation_fn", description="Export model to torch-export (.pt2) with dynamic batch dim")
+    args = parser.args
 
-    model_inst = build_model(pt_path)
+    paths = resolve_models_path(args.path, args.fold)
+
     # model is dict with keys
     # epoch ,model_inst, model_state_dict, optimizer
     # we want an model_instance OR if not existing we create new model instance and load the state dict
-    torch_export(model_inst, name=str(pt2_path), fold=fold)
-    print("Done exporting")
+    for fold, path in paths.items():
+        logger_inst.info(f"Export fold {fold} with model checkpoint from {path}")
+        model_inst = rebuild_model_from_checkpoint(path.with_suffix(".pt"))
+        torch_export_pt2(model_inst, name=path.with_suffix(".pt2"), fold=fold)
+    logger_inst.info(f"Finished exporting models for folds {args.fold} with name {args.path.stem}")

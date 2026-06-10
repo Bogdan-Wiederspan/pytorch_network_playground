@@ -1,8 +1,10 @@
 import argparse
+import pathlib
+
 
 class ParserBuilder():
-    def __init__(self, *args):
-        self.parser = argparse.ArgumentParser()
+    def __init__(self, *args, description=""):
+        self.parser = argparse.ArgumentParser(description=description)
         self.build(args)
         self.args = self.parser.parse_args()
 
@@ -33,6 +35,41 @@ class ParserBuilder():
         default=False,
         help="Save cache (default: False)"
         )
+
+    def add_load_checkpoint(self):
+
+        self.parser.add_argument(
+            "--src",
+            "-s",
+            dest="path",
+            type=pathlib.Path,
+            required=True,
+            action="store",
+            help="Path to model checkpoint to load, typically with .pt suffix"
+        )
+
+        def parse_folds(value):
+            return [int(x) for x in value.split(",")]
+
+        self.parser.add_argument(
+            "--fold",
+            "-f",
+            dest="fold",
+            required=True,
+            default="0",
+            type=parse_folds,
+            help="Comma separated list of folds to pick the correct models and their respective test data."
+        )
+
+    def add_activation_fn(self):
+        self.parser.add_argument(
+            "--add_activation",
+            required=False,
+            help="If value is given, get activation function and add at end of network",
+            default=None,
+            choices=["sigmoid", "softmax", None]
+        )
+
 
     def build(self, args):
         commands = [f"add_{arg}" for arg in args]
