@@ -1,22 +1,31 @@
 from __future__ import annotations
 
 import typing
-
 from collections import defaultdict
 from collections.abc import Iterable
+
+import torch
 
 EMPTY_INT = -99999
 EMPTY_FLOAT = -99999.0
 
-import torch
-import awkward as ak
+CPU_DEVICE = torch.device("cpu")
+CUDA_DEVICE = torch.device("cuda") if torch.cuda.is_available() else CPU_DEVICE
 
 def multiply_sub_process_rates(which_sub_process, sub_process_rates):
+    """
+    Helper function to multiply sub process rates together up to 2 nested level down.
+
+
+    Args:
+        which_sub_process (_type_): Describes the current sub process
+        sub_process_rates (_type_):
+    """
     def validate_exactly_two_levels(d):
-        for outer_key, inner in d.items():
+        for _, inner in d.items():
             # only dictionaries on top level are accepted
             if not isinstance(inner, dict):
-                raise TypeError(f"Expected dict at top-level key")
+                raise TypeError("Expected dict at top-level key")
 
             # no more than another dict is accepted
             has_dict_values = any(isinstance(v, dict) for v in inner.values())
@@ -39,161 +48,7 @@ def multiply_sub_process_rates(which_sub_process, sub_process_rates):
 
 
 def choice_check(selected, choices):
+    # helper to verify that a selected value is part of a set of valid choices, can be used for runtime checks of config values
     choices = typing.get_args(choices)
-    is_inside = any([selected in choices for choice in choices])
-    if not is_inside:
+    if selected not in choices:
         raise ValueError(f"Selected ({selected}) is not part of valid choices {choices}")
-
-
-def clip_gradients(parameters: Iterable[torch.nn.Parameter], clip_value: float = 1.0):
-    for p in parameters:
-        p.register_hook(lambda grad: torch.clamp(grad, -clip_value, clip_value))
-
-def get_standardization_parameter(
-    data_map: list[ParquetDataset],
-    columns: Iterable[Route | str],
-) -> dict[str, ak.Array]:
-    # open parquet files and concatenate to get statistics for whole datasets
-    # beware missing values are currently ignored
-    all_data = ak.concatenate(list(map(lambda x: x.data, data_map)))
-    # make sure columns are Routes
-    columns = list(map(Route, columns))
-
-    statistics = {}
-    for _route in columns:
-        # ignore empty fields
-        arr = _route.apply(all_data)
-        # filter missing values out
-        empty_mask = arr == EMPTY_FLOAT
-        masked_arr = arr[~empty_mask]
-        std = ak.std(masked_arr, axis=None)
-        mean = ak.mean(masked_arr, axis=None)
-        # reshape to 1D array, torch has no interface for 0D
-        statistics[_route.column] = {"std": std.reshape(1), "mean": mean.reshape(1)}
-    return statistics
-
-
-def expand_columns(*columns):
-    if isinstance(columns, str):
-        columns = [columns]
-
-    _columns = set()
-    for column_expression in columns:
-        if isinstance(column_expression, Route):
-            # do nothing if already a route
-            break
-        expanded_columns = law.util.brace_expand(column_expression)
-        routed_columns = set(map(Route, expanded_columns))
-        _columns.update(routed_columns)
-    return sorted(_columns)
-
-
-def reorganize_list_idx(entries):
-    first = entries[0]
-    if isinstance(first, int):
-        return entries
-    elif isinstance(first, dict):
-        return reorganize_dict_idx(entries)
-    elif isinstance(first, (list, tuple)):
-        sub_dict = defaultdict(list)
-        for e in entries:
-            # only the last entry is the idx, all other entries
-            # in the list/tuple will be used as keys
-            data = e[-1]
-            key = tuple(e[:-1])
-            if isinstance(data, (list, tuple)):
-                sub_dict[key].extend(data)
-            else:
-                sub_dict[key].append(e[-1])
-        return sub_dict
-
-
-def reorganize_dict_idx(batch):
-    return_dict = dict()
-    for key, entries in batch.items():
-        # type shouldn't change within one set of entries,
-        # so just check first
-        return_dict[key] = reorganize_list_idx(entries)
-    return return_dict
-
-
-def reorganize_idx(batch):
-    if isinstance(batch, dict):
-        return reorganize_dict_idx(batch)
-    else:
-        return reorganize_list_idx(batch)
-
-
-
-def LookUpTable(array: torch.Tensor, EMPTY=EMPTY_INT, placeholder: int = 15):
-    """Maps multiple categories given in *array* into a sparse vectoriced lookuptable.
-    Empty values are replaced with *EMPTY*.
-
-    Args:
-        array (torch.Tensor): 2D array of categories.
-        EMPTY (int, optional): Replacement value if empty. Defaults to columnflow EMPTY_INT.
-
-    Returns:
-        tuple([torch.Tensor]): Returns minimum and LookUpTable
-    """
-    # add placeholder value to array
-    array = torch.cat([array, torch.ones(array.shape[0], dtype=torch.int32).reshape(-1, 1) * placeholder], axis=-1)
-    # shift input by minimum, pushing the categories to the valid indice space
-    minimum = array.min(axis=-1).values
-    indice_array = array - minimum.reshape(-1, 1)
-    upper_bound = torch.max(indice_array) + 1
-
-    # warn for big categories
-    if upper_bound > 100:
-        print("Be aware that a large number of categories will result in a large sparse lookup array")
-
-    # create mapping placeholder
-    mapping_array = torch.full(
-        size=(len(minimum), upper_bound),
-        fill_value=EMPTY,
-        dtype=torch.int32,
-    )
-
-    # fill placeholder with vocabulary
-
-    stride = 0
-    # transpose from event to feature loop
-    for feature_idx, feature in enumerate(indice_array):
-        unique = torch.unique(feature, dim=None)
-        mapping_array[feature_idx, unique] = torch.arange(
-            stride, stride + len(unique),
-            dtype=torch.int32,
-        )
-        stride += len(unique)
-    return minimum, mapping_array
-
-class CategoricalTokenizer(torch.nn.Module):
-    def __init__(self, translation: torch.Tensor, minimum: torch.Tensor):
-        """
-        This translaytion layer tokenizes categorical features into a sparse representation.
-        The input tensor is a 2D tensor with shape (N, M) where N is the number of events and M of features.
-        The output tensor will have shape (N, K) where K is the number of unique categories across all features.
-
-        Args:
-            translation (torch.tensor): Sparse representation of the categories, created by LookUpTable.
-            minimum (torch.tensor): Array of minimas used to shift the input tensor into the valid index space.
-        """
-        super().__init__()
-        self.map = translation
-        self.min = minimum
-        self.indices = torch.arange(len(minimum))
-
-    @property
-    def num_dim(self):
-        return torch.max(self.map) + 1
-
-    def forward(self, x):
-        # shift input array by their respective minimum and slice translation accordingly
-        return self.map[self.indices, x - self.min]
-
-    def to(self, *args, **kwargs):
-        # make sure to move the translation array to the same device as the input
-        self.map = self.map.to(*args, **kwargs)
-        self.min = self.min.to(*args, **kwargs)
-        self.indices = self.indices.to(*args, **kwargs)
-        return super().to(*args, **kwargs)

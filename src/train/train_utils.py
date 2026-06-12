@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 import torch
 
 from train import plotting
 from utils import logger
 
-functions = {}
 logger_inst = logger.get_logger(__name__)
 
 def do_scheduler_step(
@@ -76,7 +77,7 @@ def log_metrics(
         missing_keys = [k for k in keys if k not in data.keys()]
         if any(missing_keys):
             if exist_check:
-                name = keys if log_name is None else log_name
+                # name = keys if log_name is None else log_name # TODO what is this for?
                 logger_inst.warning(f"Can't produce log of - {log_name} - missing: {missing_keys}")
             return False
         return True
@@ -144,3 +145,7 @@ def log_metrics(
     if _optional("kernels", log_name="Lernable Bin Edges"):
         kernel_fig, kernel_ax = plotting.visualize_bins(data["kernels"])
         tensorboard_inst.log_figure("bin edges", kernel_fig, step=iteration_step)
+
+def clip_gradients(parameters: Iterable[torch.nn.Parameter], clip_value: float = 1.0):
+    for p in parameters:
+        p.register_hook(lambda grad: torch.clamp(grad, -clip_value, clip_value))

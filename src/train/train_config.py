@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
-from typing import Dict, List, Optional, Tuple, Literal, Any
+from dataclasses import asdict, dataclass, field
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import torch
 
-from data import features, load_data
-from utils.utils import choice_check, multiply_sub_process_rates, EMPTY_FLOAT, EMPTY_INT
+from data import features
+from data.utils import find_datasets
+from utils.utils import EMPTY_FLOAT, choice_check, multiply_sub_process_rates
 
 # some values only accept certain values, not runtime check is performed!
 ERAS_CHOICE = Literal["22pre", "22post", "23pre", "23post"]
@@ -42,7 +43,7 @@ class DataConfig:
 
     def __post_init__(self):
         # a dictionary of all files corresponding to a certain dataset
-        self.datasets = load_data.find_datasets(self.dataset_pattern, self.eras, file_type="root", verbose=False)
+        self.datasets = find_datasets(self.dataset_pattern, self.eras, file_type="root", verbose=False)
     # TODO HASH ?
 
 
@@ -123,10 +124,10 @@ class BinningConfig:
 @dataclass
 class TrainingConfig:
     log_metrics: bool = True # whether to log metrics to tensorboard during training, if false only validation loss is logged
-    model_choice: MODEL_CHOICE = "binned_lbn_dense"
-    loss_fn: LOSS_CHOICE = "signal_efficiency"
-    training_fn: TRAINING_LOOP_CHOICE = "signal_efficiency" # name of the training loop
-    validation_fn: VALIDATION_LOOP_CHOICE = "signal_efficiency" # name of the validation loop
+    model_choice: MODEL_CHOICE = "lbn_dense"
+    loss_fn: LOSS_CHOICE = "cross_entropy"
+    training_fn: TRAINING_LOOP_CHOICE = "cross_entropy" # name of the training loop
+    validation_fn: VALIDATION_LOOP_CHOICE = "cross_entropy" # name of the validation loop
     loss_mode: SIGNAL_EFFICIENCY_LOSS_MODE = "no_unc" # only relevant if signal_efficiency loss is chosen, determines which formula is used for the asimov calculation
     loss_uncertainty: float = 0.0 # # only relevant if signal_efficiency loss is chosen, determines the background uncertainty used in the asimov calculation
 

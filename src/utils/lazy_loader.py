@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 import importlib
-import types
 import sys
-
+import types
 from importlib.util import find_spec
+
 
 def lazy_import(package_name, globals_dict, name):
     try:
         module = importlib.import_module(f"{package_name}.{name}")
         globals_dict[name] = module  # cache
         return module
-    except ModuleNotFoundError:
-        raise AttributeError(f"module {package_name} has no attribute {name}")
+    except ModuleNotFoundError as exception:
+        raise AttributeError(f"{exception}\n module {package_name} has no attribute {name}")
 
 
 def maybe_import(module_name):

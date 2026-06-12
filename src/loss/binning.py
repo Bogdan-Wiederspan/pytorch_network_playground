@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import torch
 import abc
+
+import torch
 
 __all__ = ["BinningBase", "EqualDistant"]
 # TODO understand this function before using better

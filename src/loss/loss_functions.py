@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import torch
 
-from loss import kernel, binning
+from loss import kernel
 from utils import logger
 
 logger_inst = logger.get_logger(__name__)
@@ -19,10 +19,11 @@ class EventWeightedLossFunction(torch.nn.Module):
         self.loss_inst = loss_cls(*args, **kwargs)
 
     def forward(self, *args, **kwargs):
-        loss = self.loss_inst(reduction="none", *args, **kwargs)
+        loss = self.loss_inst(*args, **kwargs, reduction="none")
         if torch.isnan(loss):
-            from IPython import embed; embed(header = "Loss value IsNan")
-        if kwargs.get("event_weights") is not None:
+            from IPython import embed
+            embed(header = "Loss value IsNan")
+        if event_weights:=kwargs.get("event_weights") is not None:
             loss = torch.flatten(loss)
             event_weights = torch.flatten(event_weights)
             loss = torch.dot(loss, event_weights)
@@ -245,7 +246,8 @@ class SignalEfficiency(torch.nn.Module):
         if loss == 0:
             return 0
         if torch.isnan(1 / loss):
-            from IPython import embed; embed(header = "IsNan line: 176 in loss.py")
+            from IPython import embed
+            embed(header = "IsNan line: 176 in loss.py")
 
         return 1 / loss
 
@@ -342,8 +344,8 @@ class BinningAwareSignificance(SignalEfficiency):
         # for each kernel a scaling is calculated
         # in the end a sum over all kernel result is done
         binned_yield = []
-        for kernel in self.kernels:
-            scale = kernel(prediction) # tensor of shape len(events)
+        for _kernel in self.kernels:
+            scale = _kernel(prediction) # tensor of shape len(events)
             weighted_yield = torch.sum(weighted_predictions * scale) # term 1
             binned_yield.append(weighted_yield * transfer_factor)
         binned_yield = torch.stack(binned_yield, axis=0)

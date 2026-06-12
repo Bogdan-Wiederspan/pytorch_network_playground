@@ -33,7 +33,7 @@ class DataCacher():
         logger_inst.i_info(f"Try saving cache at {self.path}:")
         with open(f"{self.path}", "wb") as file:
             pickle.dump(data, file, protocol=pickle.HIGHEST_PROTOCOL)
-        logger_inst.info(f"Done saving cache")
+        logger_inst.info("Done saving cache")
 
     def load_cache(self):
         if not self.path.exists():
@@ -42,5 +42,5 @@ class DataCacher():
         logger_inst.i_info(f"Loading cache from {self.path}")
         with open(self.path, "rb") as file:
             events = pickle.load(file)
-        logger_inst.info(f"Done loading cache")
+        logger_inst.info("Done loading cache")
         return events

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import numpy as np
+import torch
+
 from utils.utils import maybe_import
 
 onnx = maybe_import("onnx")
 rt = maybe_import("onnxruntime")
 
-import torch
-import numpy as np
 
 def export_ensemble_onnx(
     ensemble_wrapper,

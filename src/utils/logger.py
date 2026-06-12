@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import logging
-import sys
 import os
+import sys
 from pathlib import Path
 
 _custom_levels_registered = False
@@ -136,9 +136,6 @@ class TensorboardLogger():
         self.hash = name
         self.path = self.logger_path() if path is None else self.log_dir / path
         self.writer = self.create_tensorboard_writer(log_dir=self.path)
-
-    def log_scalar(self, tag, value, step):
-        self.writer.add_scalar(tag, value, step)
 
     def log_loss(self, values, step):
         self.writer.add_scalars("Loss", values, global_step=step)

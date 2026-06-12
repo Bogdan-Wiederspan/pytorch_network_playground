@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import torch
 from typing import TYPE_CHECKING
+
+import torch
 
 from utils import logger
 
 if TYPE_CHECKING:
     from data.sampler import ProcessSampler
 
-functions = {}
 logger_inst = logger.get_logger(__name__)
 
 def register_loop(name):
@@ -28,18 +28,18 @@ class BaseLoop():
     REGISTERED_LOOPS = {}
     MODE = None # is overwitten by child class
 
-    def __init__(self, full_config, necessary_columns: set[str] = {"continuous", "categorical","targets"}, *args, **kwargs):
+    def __init__(self, full_config, necessary_columns: set[str] | None = None, *args, **kwargs):
         self.which_fn = (
             full_config.training_config.training_fn
             if self.MODE == "training"
             else full_config.training_config.validation_fn
             )
         # these column are always necessary for the loops
-        self.necessary_columns = necessary_columns
+        self.necessary_columns = {"continuous", "categorical","targets"} if necessary_columns is None else necessary_columns
         self.target_shape = (-1, len(full_config.dataset_config.target_map))
 
     def __init_subclass__(cls):
-        for name, fn in cls.__dict__.items():
+        for _name, fn in cls.__dict__.items():
             # only add methods if is part of self
             if getattr(fn, "_is_loop_method", False):
                 cls.REGISTERED_LOOPS.setdefault(cls.MODE, {}) # make sure that dict for mode exists
@@ -81,7 +81,7 @@ class TrainingLoop(BaseLoop):
     MODE = "training"
 
     def __init__(self, full_config, *args, **kwargs):
-        super().__init__(full_config=full_config, *args, **kwargs)
+        super().__init__(*args, **kwargs, full_config=full_config)
 
     @register_loop(name="sam")
     def sam_optimizer(
@@ -187,7 +187,7 @@ class TrainingLoop(BaseLoop):
 class ValidationLoop(BaseLoop):
     MODE = "validation"
     def __init__(self, full_config, *args, **kwargs):
-        super().__init__(full_config=full_config, *args, **kwargs)
+        super().__init__(*args, **kwargs, full_config=full_config)
 
     def collect_from_generators(
         self,
@@ -195,7 +195,7 @@ class ValidationLoop(BaseLoop):
         sampler_inst: ProcessSampler,
         sample_columns: list[str],
         skip_concatenate_columns: tuple[str] = ("",),
-        device: torch.device =torch.device("cpu"),
+        device: str | torch.device = "cpu",
         *args,
         **kwargs,
         ) -> dict[torch.tensors]:
@@ -216,6 +216,8 @@ class ValidationLoop(BaseLoop):
         Returns:
             dict[torch.tensors]: Dictonary with all aggregated tensors.
         """
+        device = torch.device(device) if isinstance(device, str) else device
+
         model_inst.eval()
         collected_data = {
             "class_predictions" : [],

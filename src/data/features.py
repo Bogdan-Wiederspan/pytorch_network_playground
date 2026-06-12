@@ -2,7 +2,17 @@ import os
 import pathlib
 
 
-def expand(str_list):
+def expand_braces(input: tuple[str]) -> tuple[str]:
+    """
+    Expand all braces of given strings and return tuple of all extended strings.
+    For example, input ("a{b,c}d", "e{f,g}h") will return ("abd", "acd", "efh", "egh").
+
+    Args:
+        input (tuple[str]): Iterable of strings with braces to be expanded.
+
+    Returns:
+        tuple[str]: Tuple of expanded strings.
+    """
     def brace_expand(s):
         # "a{b,c}d" -> ["abd", "acd"]
         if "{" not in s:
@@ -16,15 +26,10 @@ def expand(str_list):
                 expanded.append(pre + part + rest)
         return expanded
     cols = []
-    for _str in str_list:
+    for _str in input:
         cols.extend(brace_expand(_str))
-    return cols
+    return tuple(cols)
 
-def add_prefix(string, prefix, ignore_code="_"):
-    if string.startswith(ignore_code):
-        return string[1:] # remove ignoring code
-    else:
-        return prefix + string
 
 def prefix_map():
     stem = pathlib.Path(os.environ["INPUT_DATA_DIR"]).stem
@@ -54,44 +59,12 @@ def expected_embedding_inputs():
     return embedding_expected_inputs
 
 
-def input_features(debug=False, debug_length=3):
-    data_prefix = prefix_map()
-    categorical_features: list[str] = [
-        "pair_type",
-        # "_channel_id",
-        "dm1",
-        "dm2",
-        "vis_tau1_charge",
-        "vis_tau2_charge",
-        "has_jet_pair",
-        "has_fatjet",
-    ]
-
-    continous_features: list[str] = [
-        "met_px", "met_py",
-        "met_cov00", "met_cov01", "met_cov11",
-        "vis_tau1_px", "vis_tau1_py", "vis_tau1_pz", "vis_tau1_e",
-        "vis_tau2_px", "vis_tau2_py", "vis_tau2_pz", "vis_tau2_e",
-        "bjet1_px", "bjet1_py", "bjet1_pz", "bjet1_e",
-        "bjet1_tag_b", "bjet1_tag_cvsb", "bjet1_tag_cvsl", "bjet1_hhbtag",
-        "bjet2_px", "bjet2_py", "bjet2_pz", "bjet2_e",
-        "bjet2_tag_b", "bjet2_tag_cvsb", "bjet2_tag_cvsl", "bjet2_hhbtag",
-        "fatjet_px", "fatjet_py", "fatjet_pz", "fatjet_e",
-        "htt_e", "htt_px", "htt_py", "htt_pz",
-        "hbb_e", "hbb_px", "hbb_py", "hbb_pz",
-        "htthbb_e", "htthbb_px", "htthbb_py", "htthbb_pz",
-        "httfatjet_e", "httfatjet_px", "httfatjet_py", "httfatjet_pz",
-        "nu1_px", "nu1_py", "nu1_pz",
-        "nu2_px", "nu2_py", "nu2_pz",
-    ]
-
-    continous_features =  [add_prefix(f, f"{data_prefix}_", ignore_code="_") for f in continous_features]
-    categorical_features =  [add_prefix(f, f"{data_prefix}_", ignore_code="_") for f in categorical_features]
-
-    if debug:
-        continous_features = continous_features[:debug_length]
-        categorical_features = categorical_features[:debug_length]
-    return continous_features, categorical_features
+def add_prefix(string, prefix, ignore_code="_"):
+    # small helper to add prefix to a string, but ignore it if it starts with ignore_code (e.g. "_")
+    if string.startswith(ignore_code):
+        return string[1:]
+    else:
+        return prefix + string
 
 def feature(feature):
     data_prefix = prefix_map()

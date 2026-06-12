@@ -1,13 +1,9 @@
 from __future__ import annotations
 
-import torch
-import tqdm
-import numpy as np
-import awkward as ak
-import sklearn
 import matplotlib.pyplot as plt
-
-import utils
+import numpy as np
+import sklearn
+import torch
 
 
 def dummy_figure() -> tuple[plt.Figures, plt.Axes]:
@@ -21,40 +17,40 @@ def dummy_figure() -> tuple[plt.Figures, plt.Axes]:
     ax.text((0.5, 0.5), "Not existing", fontsize="large", color="red")
     return fig, ax
 
+# TODO plotting input features is currently not used, but can be used for control plots to check the input data distribution.
+# def plot_input_features(data_map, columns):
+#     all_data = ak.concatenate([x.data for x in data_map])
+#     columns = list(map(Route, columns))
+#     # layout plots
+#     num_features = len(columns)
+#     num_cols = 4
+#     num_row = int(np.ceil(num_features / num_cols))
+#     fig_size = (5 * num_cols, 4 * num_row) # wide, tall
 
-def plot_input_features(data_map, columns):
-    all_data = ak.concatenate([x.data for x in data_map])
-    columns = list(map(Route, columns))
-    # layout plots
-    num_features = len(columns)
-    num_cols = 4
-    num_row = int(np.ceil(num_features / num_cols))
-    fig_size = (5 * num_cols, 4 * num_row) # wide, tall
+#     fig, axes = plt.subplots(nrows=num_row, ncols=num_cols, figsize=fig_size)
+#     for ax, _route in zip(axes.flatten(), columns):
+#         data = _route.apply(all_data).to_numpy().astype(np.float32)
+#         # mask NaNs
+#         empty_mask = data == utils.EMPTY_FLOAT
 
-    fig, axes = plt.subplots(nrows=num_row, ncols=num_cols, figsize=fig_size)
-    for ax, _route in zip(axes.flatten(), columns):
-        data = _route.apply(all_data).to_numpy().astype(np.float32)
-        # mask NaNs
-        empty_mask = data == utils.EMPTY_FLOAT
+#         ax.set_xlabel(_route.column)
+#         ax.set_ylabel("frequency")
+#         ax.set_yscale("log")
 
-        ax.set_xlabel(_route.column)
-        ax.set_ylabel("frequency")
-        ax.set_yscale("log")
+#         # get lowest value without empty values and add offset
+#         _bin = 20
+#         bins = np.linspace(
+#             np.min(data[~empty_mask]),
+#             data.max(),
+#             _bin,
+#         )
+#         # set offset to 3 bins to display underflow, clip data to lower edge and preserve bin width
+#         lower_edge = bins[0] - 3 * (bins[1] - bins[0])
+#         bins = np.linspace(lower_edge, bins[-1], _bin + 3)
 
-        # get lowest value without empty values and add offset
-        _bin = 20
-        bins = np.linspace(
-            np.min(data[~empty_mask]),
-            data.max(),
-            _bin,
-        )
-        # set offset to 3 bins to display underflow, clip data to lower edge and preserve bin width
-        lower_edge = bins[0] - 3 * (bins[1] - bins[0])
-        bins = np.linspace(lower_edge, bins[-1], _bin + 3)
-
-        # plot without empty values, set empty values to underflow bin
-        _ = ax.hist(np.clip(data, a_min=lower_edge, a_max=None), bins=bins)
-    return fig, axes
+#         # plot without empty values, set empty values to underflow bin
+#         _ = ax.hist(np.clip(data, a_min=lower_edge, a_max=None), bins=bins)
+#     return fig, axes
 
 # def network_binary_predictions(y_true, y_pred, target_map, normalize=True, single_legend=False, **kwargs):
 #     # create a figure with subplots for each node, where the score is shown
@@ -166,8 +162,8 @@ class BinningTimeSeries():
         self.bin_edges_per_iteration[key] = value
 
     def plot(self):
-        xlabel="Batch Iteration"
-        ylabel="Bin Population"
+        # xlabel="Batch Iteration"
+        # ylabel="Bin Population"
 
         bin_width = 1.0
         bottom = np.zeros(len(self.bin_edges_per_iteration.keys()))
@@ -188,7 +184,7 @@ class BinningTimeSeries():
     # ...:             bottom = bin_value
 
 
-        for iteration, bin_value in bins.items():
+        for _, bin_value in bins.items():
             p = ax.bar(x, bin_value, bin_width, bottom=bottom)
             bottom += bin_value
 
@@ -359,7 +355,7 @@ def confusion_matrix(y_true, y_pred, target_map, sample_weight=None, normalized=
 
 def roc_curve(target, pred, sample_weight=None, labels=None, **kwargs):
     fig, ax = plt.subplots(figsize=(6, 6))
-    colors = plt.cm.get_cmap("tab10").colors if kwargs.get("colors") is None else colors
+    colors = plt.cm.get_cmap("tab10").colors if kwargs.get("colors") is None else kwargs["colors"]
 
     if sample_weight is None:
         sample_weight = torch.ones(target.shape[0])
@@ -438,23 +434,6 @@ def plot_1D(x, annotations=None, **kwargs):
         ax.annotate(f"sensitivity: {sensitivity:.2f}", (0.5, 0.45), xycoords="axes fraction")
 
     return fig, ax
-
-def control_plot_1d(train_loader, dataset_handler):
-    d = {}
-    for dataset, file_handler in training_loader.data_map.items():
-        d[dataset] = ak.concatenate(list(map(lambda x: x.data, file_handler)))
-
-    for cat in dataset_handler.categorical_featuress:
-        plt.clf()
-        data = []
-        labels = []
-        for dataset, arrays in d.items():
-            data.append(Route(cat).apply(arrays))
-            labels.append(dataset)
-        plt.hist(data, histtype="barstacked", alpha=0.5, label=labels)
-        plt.xlabel(cat)
-        plt.legend()
-        plt.savefig(f"{cat}_all.png")
 
 
 def plot_batch(self, input, target, loss, iteration, target_map=None, labels=None):

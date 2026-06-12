@@ -1,0 +1,58 @@
+[tool.vulture]
+# Ignore specific files
+exclude = [
+    "src/utils/logger.py", # reason: most settings are unused
+    "src/utils/parser.py", # reason: uses a lot of building blocks that are loaded dynamically
+    "src/train/train_config.py", # reason: configuration file - some settings are only used indirectly
+    "src/utils/utils.py"
+]
+
+# Ignore specific function, variable, or class names (supports wildcards like ? and *)
+ignore_names = [
+    "expand_braces",
+    "TODO *",
+    "requires_grad",
+    "clip_gradient",
+    "",
+    "",
+    "",
+    "",
+
+
+]
+
+# Ignore specific decorators
+ignore_decorators = [
+    "@register_loop*",
+    "@property",
+    "@register_model*",
+    "*.register_learning_mode",
+    "@dataclass*"
+
+
+]
+
+# linting
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "F",  # pyflakes
+    "W",  # pycodestyle warnings
+    "B",  # flake8-bugbear
+    "I",  # isort
+]
+
+ignore = [
+    "E501",
+    "E702", # multiple statements in one line
+    "B904", # raise-without-from-inside-except - reduces information in stack trace
+    "B905", # older python version < 3.10 don't support this
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

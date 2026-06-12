@@ -1,6 +1,8 @@
 import torch
+
 from optimizer import weight_decay
 from optimizer.SAM import SAM
+
 
 def init_optimizer(full_config, model_inst):
     # only linear layers contribute to weight decay, prepare config that separates them for the optimizer

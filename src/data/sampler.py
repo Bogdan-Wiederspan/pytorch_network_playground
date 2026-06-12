@@ -1,8 +1,10 @@
-import torch
-import torch.utils.data as t_data
 from collections import defaultdict
 
+import torch
+import torch.utils.data as t_data
+
 from utils import logger
+from utils.utils import CPU_DEVICE
 
 logger_inst = logger.get_logger(__name__)
 
@@ -95,7 +97,7 @@ class Process(t_data.Dataset):
         else:
             self.indices = torch.arange(len(self))
 
-    def sample(self,sample_from: tuple[str], number: str=None ,device=torch.device("cpu"))-> dict[torch.Tensor]:
+    def sample(self,sample_from: tuple[str], number: str=None, device=CPU_DEVICE) -> dict[torch.Tensor]:
         """
         Sample *number* of events from attributes defined by *sample_from*.
         Samples from the start again, if maximum number of samples is reached.
@@ -131,7 +133,7 @@ class Process(t_data.Dataset):
 
         # return self.continuous[idx].to(device), self.categorical[idx].to(device), self.targets[idx].to(device)
 
-    def create_sample_generator(self, sample_from, batch_size=-1, device=torch.device("cpu")):
+    def create_sample_generator(self, sample_from, batch_size=-1, device=CPU_DEVICE):
         """
         Creates a generator object that returns a dict of torch tensors, defined by *sample_from*.
         If *batch
@@ -171,10 +173,10 @@ class ProcessSampler(t_data.Sampler):
     def __init__(
         self,
         batch_size: int=1,
-        sample_ratio: dict[float]={"dy": 0.25, "tt": 0.25, "hh": 0.5},
+        sample_ratio: dict[float]=None,
         sub_sample_ratio: dict[float] = None,
         min_size: int=0,
-        target_map: dict[int] = {"hh": 0, "tt": 1, "dy": 2},
+        target_map: dict[int] = None,
         weight_aggregator_inst = None,
         ):
         """
@@ -200,10 +202,10 @@ class ProcessSampler(t_data.Sampler):
         # self.total_product_of_weights_per_process_type = {"dy":0, "tt":0, "hh":0}
 
         self.batch_size = torch.tensor([batch_size], dtype=torch.int32)
-        self.sample_ratio = sample_ratio
+        self.sample_ratio = {"dy": 0.25, "tt": 0.25, "hh": 0.5} if sample_ratio is None else sample_ratio
         self.sub_sample_ratio = sub_sample_ratio
         self.min_size = min_size
-        self.target_map = target_map
+        self.target_map = {"hh": 0, "tt": 1, "dy": 2} if target_map is None else target_map
         self.weights_aggregator_inst = weight_aggregator_inst
 
         # set attributes to access dataset properties directly from sampler, enabling dot notation
@@ -311,11 +313,11 @@ class ProcessSampler(t_data.Sampler):
 
         # print all processes with their sample size
         _msg = "\n".join([
-            f"{dataset_type.upper()}:\n\t" + f"\n  ".join(uid_with_samples)
+            f"{dataset_type.upper()}:\n\t" + "\n  ".join(uid_with_samples)
             for dataset_type, uid_with_samples in msg.items()
             ])
         logger_inst.debug(
-            f"Sample rates for Dataset of Era (PID | Sample Rate)\n" +
+            "Sample rates for Dataset of Era (PID | Sample Rate)\n" +
             _msg
         )
         # print summary statistic per dataset type
@@ -325,7 +327,7 @@ class ProcessSampler(t_data.Sampler):
 
         ])
         logger_inst.debug(
-            f"Summary statitics:\n" +
+            "Summary statitics:\n" +
             _msg
         )
 
@@ -431,7 +433,7 @@ class ProcessSampler(t_data.Sampler):
 
         # conver to int but check if values changed, just to be safe
         if (floored_sizes.to(torch.int32).sum() - floored_sizes.sum()) != 0:
-            raise TypeError(f"Change of type changed value")
+            raise TypeError("Change of type changed value")
         floored_sizes = floored_sizes.to(torch.int32)
 
         # if one still mismatch add it on lowest or remove from highest
@@ -455,7 +457,7 @@ class ProcessSampler(t_data.Sampler):
         for k, w in zip(list(self.process_inst[process_type].keys()), floored_sizes):
             self.process_inst[process_type][k].sample_size = w.item()
 
-    def sample_batch(self, sample_from: list[str], device: torch.device=torch.device("cpu")):
+    def sample_batch(self, sample_from: list[str], device: torch.device=CPU_DEVICE):
         """
         This function samples a specific number of events from all datasets instances connected to the sampler.
         Which attribute is samplet is defined by a list of strings in "sample_from". By default ["continuous", "categorical", "target"] is sampled.
@@ -518,12 +520,16 @@ def create_sampler(
     batch_size,
     min_size=1,
     train=True,
-    sample_ratio={"dy": 0.25, "tt": 0.25, "hh": 0.5},
+    sample_ratio=None,
     sub_sample_ratio=None,
     ):
+
+    if sample_ratio is None:
+        sample_ratio = {"dy": 0.25, "tt": 0.25, "hh": 0.5}
+
     # extract data from events and wrap into Datasets
     if not events:
-        raise ValueError(f"Sampler is not created due to feeding empty events")
+        raise ValueError("Sampler is not created due to feeding empty events")
 
     # sampler has information about all processes, information required for sampling
     # and weights accross all processes

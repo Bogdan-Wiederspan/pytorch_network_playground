@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import abc
+
 import torch
 
-import abc
 
 class BaseKernel(abc.ABC):
 
@@ -911,7 +912,6 @@ class GaussianKernelFinal(BaseKernel):
 
 
 if __name__ == "__main__":
-    from IPython import embed; embed(header="MESSAGE Line 506 | File: kernel.py")
     import matplotlib.pyplot as plt
     bin_edges = torch.linspace(0,1,10)
     x = torch.linspace(0,1,100)
@@ -954,9 +954,7 @@ if __name__ == "__main__":
     normal.control_plot(torch.linspace(0,1,400))
     overflow.control_plot(torch.linspace(0,1,400))
     underflow.control_plot(torch.linspace(0,1,400))
-    plt.savefig("test.png");
-
-    from IPython import embed; embed(header = " line: 130 in kernel.py")
+    plt.savefig("test.png")
 
     # from IPython import embed; embed(header = " line: 130 in kernel.py")
     # a = create_kernels(bin_edges, kernel_cls=GaussianKernel, kernel_cfg=kernel_cfg)

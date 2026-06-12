@@ -1,7 +1,8 @@
-import torch
-import numpy as np
-
 from collections import defaultdict
+
+import numpy as np
+import torch
+
 from utils.logger import get_logger
 
 logger_inst = get_logger(__name__)
@@ -103,10 +104,10 @@ class FoldAndSplitCoordinator():
         """
 
         if k_fold <= 0:
-            raise ValueError(f"k_fold parameter needs to be > 0")
+            raise ValueError("k_fold parameter needs to be > 0")
 
         if (training_percentage > 1) or (training_percentage < 0):
-            raise ValueError(f"Training percentage needs to be in range of (inclusive) 0 and 1")
+            raise ValueError("Training percentage needs to be in range of (inclusive) 0 and 1")
 
 
         self.current_fold = c_fold
@@ -308,7 +309,8 @@ def get_batch_statistics_from_sampler(sampler=None, padding_values=None, feature
         masked_mean = torch.masked.mean(input=array, mask=include_mask, dim=0, dtype=torch.float64)
         masked_var = torch.masked.var(input=array, mask=include_mask, dim=0, dtype=torch.float64)
         if torch.any(masked_mean.isnan()):
-            from IPython import embed; embed(header=f"{pid} is nan check feature_array and sampler")
+            from IPython import embed
+            embed(header=f"{pid} is nan check feature_array and sampler")
 
         # weight mean and add to collection
         # pid_weight = weights_dict[pid]
@@ -360,7 +362,8 @@ def get_batch_statistics(events=None, padding_value=0):
             masked_mean = masked_array.mean(axis=0)
             masked_std = masked_array.std(axis=0)
             if torch.isnan(masked_mean):
-                from IPython import embed; embed(header=f"{uid} is nan check f and events")
+                from IPython import embed
+                embed(header=f"{uid} is nan check f and events")
 
             f_means.append(masked_mean)
             f_stds.append(masked_std)
@@ -415,7 +418,8 @@ def get_batch_statistics_per_dataset(events, padding_value=0):
                 f_stds.append(f[~padding_mask].std(axis=0))
 
                 if torch.isnan(f[~padding_mask].mean(axis=0)):
-                    from IPython import embed; embed(header="See which feature is nan")
+                    from IPython import embed
+                    embed(header="See which feature is nan")
             means.append(f_means)
             stds.append(f_stds)
         means = torch.tensor(means)

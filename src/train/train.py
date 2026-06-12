@@ -8,16 +8,15 @@ import numpy as np
 import torch
 
 # personal imports
-from data import load_data, preprocessing, sampler, cache
-from utils import logger
-
-from optimizer.utils import init_optimizer, init_scheduler
-from optimizer.early_stopping import CheckPoint
+from data import cache, load_data, preprocessing, sampler
 from loss.utils import init_loss
 from models.utils import init_model
-from train.train_config import full_config
+from optimizer.early_stopping import CheckPoint
+from optimizer.utils import init_optimizer, init_scheduler
 from train.loops import TrainingLoop, ValidationLoop
+from train.train_config import full_config
 from train.train_utils import log_metrics
+from utils import logger
 
 CPU = torch.device("cpu")
 CUDA = torch.device("cuda")
@@ -66,7 +65,7 @@ def main(**kwargs):
         for key in list(events.keys()):
             del events[key]
 
-        logger_inst.info(f"Start creation of Sampler")
+        logger_inst.info("Start creation of Sampler")
 
         _sampler_config = {
             "weight_aggregator_inst" : weight_aggregator,
@@ -90,7 +89,7 @@ def main(**kwargs):
         # share relative weight from training batch statistic to validation sampler
         training_sampler.share_weights_between_sampler(validation_sampler)
         # get weighted mean and std of expected batch composition
-        logger_inst.info(f"Start model building and configuration")
+        logger_inst.info("Start model building and configuration")
 
         full_config.model_building_config.mean, full_config.model_building_config.std = preprocessing.get_batch_statistics_from_sampler(
             training_sampler,
@@ -114,7 +113,7 @@ def main(**kwargs):
         #----
         ### training loop
         #----
-        logger_inst.info(f"Start training loop")
+        logger_inst.info("Start training loop")
         for current_iteration in range(1_000_000):
             t_loss = training_loop(
                 model = model_inst,
@@ -218,7 +217,8 @@ def main(**kwargs):
                         # overwrite old lr in checkpoint with lr after scheduler step
                         optimizer_inst.param_groups[0]["lr"] = current_lr
 
-        from IPython import embed; embed(header="Training ends: Check if everything is as you thought it would be")
+        from IPython import embed
+        embed(header="Training ends: Check if everything is as you thought it would be")
 
 if __name__ == "__main__":
     from utils.parser import ParserBuilder
