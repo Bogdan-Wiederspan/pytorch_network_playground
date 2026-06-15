@@ -14,31 +14,6 @@ EMPTY_FLOAT = -99999.0
 CPU_DEVICE = torch.device("cpu")
 CUDA_DEVICE = torch.device("cuda") if torch.cuda.is_available() else CPU_DEVICE
 
-def rebuild_dataclass_from_dict(full_cfg: dict[dict]) -> dataclasses.dataclass:
-    """
-    Pickle of dataclasses relies on the dataclass being available. To prevent conversion to dict is used.
-    This comes with a lost of information (like post_inits being not serialized).
-    To at least reuse code that relies on accessing dataclasses, this converts the dictionary back to a dataclass.
-    When *full_cfg* is already a dataclass nothing will be done and it will be returned.
-
-    Args:
-        full_cfg (dict[dict]): Dictionary of dictionary, where first level describes a dataclass, while second one are the normal values.
-
-    Returns:
-        dataclasses.dataclass: A dataclass with dataclasses as attributes
-    """
-    if dataclasses.is_dataclass(full_cfg):
-        return full_cfg
-
-    # create sub-configs
-    sub_dataclasses = {}
-    for cls_cfg, sub_cfg in full_cfg.items():
-        sub_dataclasses[cls_cfg] = (dataclasses.make_dataclass(cls_cfg, [(k, type(v)) for k,v in sub_cfg.items()])(**sub_cfg))
-
-    # create full config that hosts all sub-configs
-    full_config = dataclasses.make_dataclass("full_config", [(dataclass, type(dataclass)) for dataclass in sub_dataclasses])(**sub_dataclasses)
-    return full_config
-
 def multiply_sub_process_rates(which_sub_process, sub_process_rates):
     """
     Helper function to multiply sub process rates together up to 2 nested level down.
