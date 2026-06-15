@@ -6,6 +6,7 @@ import pathlib
 import torch
 
 from utils.logger import get_logger
+from dataclasses import asdict
 
 logger_inst = get_logger(__name__)
 
@@ -111,7 +112,7 @@ class CheckPoint:
             "optimizer_state_dict": optimizer.state_dict().copy(),
             "lr_scheduler": scheduler,
             "iteration": current_iteration,
-            "full_config": full_config,
+            "full_config": asdict(full_config),
         }
 
         self.last_checkpoint = checkpoint

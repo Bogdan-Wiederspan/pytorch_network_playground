@@ -5,6 +5,7 @@ export CACHE_DIR=${STORE_DIR}/cache # directory where preprocessed data is store
 export PICTURE_DIR=${STORE_DIR}/pictures
 export MODELS_DIR=${STORE_DIR}/models # saved models
 export TENSORBOARD_DIR=${STORE_DIR}/tensorboard # tensorboard storage
+export EVALUATION_DIR=${STORE_DIR}/evaluation # directory when evaluating outputs
 
 # debug level: DEBUG; INFO; WARNING
 export LOG_LEVEL="DEBUG"

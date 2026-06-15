@@ -8,6 +8,7 @@ import torch
 from models import create_model
 from utils import logger
 from utils.parser import ParserBuilder
+from utils.load_models import rebuild_model_from_checkpoint
 
 logger_inst = logger.get_logger(__name__)
 
@@ -119,33 +120,6 @@ def resolve_models_path(path: pathlib.Path, folds) -> tuple[pathlib.Path, pathli
             models_path = models_root / f"{models_path.stem}_fold{fold}"
         paths[fold] = models_path
     return paths
-
-def rebuild_model_from_checkpoint(path: pathlib.Path) -> torch.nn.Module:
-    """
-    Load checkpoint file from *path* and reconstruct correct model instance and load weight into model
-
-    Args:
-        path (pathlib.Path): Path to checkpoint file, typically with .pt suffix
-
-    Returns:
-        _type_: _description_
-    """
-    # load always on cpu
-    checkpoint = torch.load(str(path), weights_only=False, map_location="cpu")
-
-    # when instance is saved load this
-    # otherwise rebuild model from module and class name and load state dict
-    if "model_inst" in checkpoint:
-        model_inst = checkpoint["model_inst"]
-    else:
-        full_cfg = checkpoint["full_config"]
-
-        model_choice = full_cfg.training_config.model_choice
-        model_cls = create_model.MODEL_REGISTRY[model_choice] # pick correct cls from registered models
-        model_inst = model_cls(full_cfg) # create new instance with config
-        model_inst.load_state_dict(checkpoint["model_state_dict"])
-    model_inst.eval()
-    return model_inst
 
 if __name__ == "__main__":
 

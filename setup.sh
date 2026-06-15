@@ -38,6 +38,7 @@ create_dirs(){
         "${PICTURE_DIR}"
         "${MODELS_DIR}"
         "${TENSORBOARD_DIR}"
+        "${EVALUATION_DIR}"
     )
 
     if [ ! -d "${STORE_DIR}" ]; then

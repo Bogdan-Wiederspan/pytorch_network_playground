@@ -1,4 +1,5 @@
 import argparse
+import os
 import pathlib
 
 
@@ -58,7 +59,7 @@ class ParserBuilder():
             required=True,
             default="0",
             type=parse_folds,
-            help="Comma separated list of folds to pick the correct models and their respective test data."
+            help="Comma separated list of folds respective test data."
         )
 
     def add_activation_fn(self):
@@ -67,8 +68,58 @@ class ParserBuilder():
             required=False,
             help="If value is given, get activation function and add at end of network",
             default=None,
-            choices=["sigmoid", "softmax", None]
+            choices=["sigmoid", "softmax", None],
         )
+
+    def add_save_path(self):
+
+        def valid_output_path(value: str) -> pathlib.Path:
+            path = pathlib.Path(value)
+
+            if path.is_absolute():
+                if not path.parent.exists():
+                    raise argparse.ArgumentTypeError(f"Parent directory does not exist: {path.parent}")
+            else:
+                eval_dir = pathlib.Path(os.environ["EVALUATION_DIR"])
+                path = eval_dir / path
+            return path.with_suffix(".pt")
+
+        self.parser.add_argument(
+            "--file_path",
+            "-fp",
+            type=valid_output_path,
+            required=True,
+            help=(
+            """
+            Path to destination of saved output scores.
+            If absolute path is given a parental check is performed, else data is saved in EVALUATION_DIR.
+            """
+            )
+        )
+
+    def add_evaluate_choices(self):
+        def choices(value):
+            value = (value,) if isinstance(value, str) else value
+            value_possible_choices = ("test", "training", "validation")
+
+            if not any([value not in value_possible_choices]):
+                raise ValueError(f"Evaluate is {value}, but can only be one of these: {value_possible_choices}")
+            return value
+
+        self.parser.add_argument(
+            "--evaluate_on",
+            "-e",
+            dest="evaluate_on",
+            default="test",
+            type=choices,
+            required=True,
+            help=(
+            """
+            Comma separated list of choices one can have to evaluate the data.
+            """
+            )
+        )
+
 
 
     def build(self, args):
