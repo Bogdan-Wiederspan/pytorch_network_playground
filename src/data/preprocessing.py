@@ -205,7 +205,7 @@ class FoldAndSplitCoordinator():
         # just stop applying indices and remove this process from the splitted_events
         for uid in list(splitted_events.keys()):
             if splitted_events[uid]["continuous"].numel() == 0:
-                logger_inst.warning(f"removed {uid} from {splitted_events} since zero elements left after k-fold split")
+                logger_inst.warning(f"removed {uid} from splitted events since zero elements left after k-fold split")
                 splitted_events.pop(uid)
         return splitted_events
 
