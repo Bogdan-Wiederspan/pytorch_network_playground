@@ -106,15 +106,18 @@ class SignalEfficiency(torch.nn.Module):
             return self.uncertainty
         return self.uncertainty * b + 1
 
-    def asimov_small_signal_approximation(self, s, b, *args, **kwargs):
+    @staticmethod
+    def asimov_small_signal_approximation(s, b, *args, **kwargs):
         # approximation for small signal yield  3.3
         return s / torch.sqrt(s + b)
 
-    def asimov_no_uncertainty(self, s, b, epsilon=0, *args, **kwargs):
+    @staticmethod
+    def asimov_no_uncertainty(s, b, epsilon=0, *args, **kwargs):
         # approximation coming from asimov for no background uncertainty: https://arxiv.org/abs/1806.00322 3.2
         return torch.sqrt(2 * ((s + b) * torch.log(1 + s / b) - s))
 
-    def asimov_full(self, s, b, unc_b, *args, **kwargs):
+    @staticmethod
+    def asimov_full(s, b, unc_b, *args, **kwargs):
         # full asimov formula with background uncertainty: https://arxiv.org/abs/1806.00322 3.1
         ln_nominator_1 = ( s + b ) * ( b + unc_b**2 )
         ln_denominator_1 = ( b**2 + ( s + b ) )

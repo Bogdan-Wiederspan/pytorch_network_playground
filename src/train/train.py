@@ -155,6 +155,7 @@ def main(**kwargs):
                     )
                 # TODO when edges should be tracked add this in a way that is universal and does not break for models without binning layer, e.g. add property to model that returns None if no binning layer is present and add check in log_metrics
                 if full_config.training_config.log_metrics:
+                    # TODO
                     log_metrics(
                         tensorboard_inst = tensorboard_writer,
                         iteration_step = current_iteration,
@@ -163,13 +164,13 @@ def main(**kwargs):
                         mode = "train",
                         loss = eval_t_loss.item(),
                         lr = optimizer_inst.param_groups[0]["lr"],
+
+                        binning_edges = model_inst.binning_layer.bin_edges.flatten(),
                         # binning_edges = model_inst.binning_layer.edges.detach().cpu(),
                         # binning_edges = ,
                         current_iteration = current_iteration,
                         # kernels = model_inst.binning_layer.kernels,
                     )
-
-
 
                     log_metrics(
                         tensorboard_inst = tensorboard_writer,
@@ -179,8 +180,8 @@ def main(**kwargs):
                         mode = "validation",
                         loss = eval_v_loss.item(),
                         # TODO binning edges and kernels are only defined for BinnedLBN make universal
-                        # binning_edges = model_inst.binning_layer.edges.detach().cpu(),
-                        binning_edges = full_config.binning_config.num_bins,
+                        binning_edges = model_inst.binning_layer.bin_edges.flatten(),
+                        # binning_edges = full_config.binning_config.num_bins,
                         current_iteration = current_iteration,
                         # kernels=model_inst.binning_layer.kernels,
                     )

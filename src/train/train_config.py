@@ -100,12 +100,13 @@ class ModelBuildingConfig:
             raise ValueError("Norm of Linear Layer is currently buggy and is therefore disabled for now")
 
 
-
+from utils.transformations import logit
 @dataclass
 class BinningConfig:
-    num_bins: int = 15
+    num_bins: int = 10
     bounds: tuple[int] = (0, 1)
-    binning_fn: Any = torch.linspace  # keep as a callable, if needed
+    # binning_fn: Any = torch.linspace  # keep as a callable, if needed
+    binning_fn: Any = logit
     kernel_cls: KERNEL_CHOICE = "GaussianKernelFinal"
     kernel_config: Dict[str, Dict[str, Any]] = field(
         default_factory=lambda: {
@@ -123,11 +124,12 @@ class BinningConfig:
 
 @dataclass
 class TrainingConfig:
+    save_model_name: str = "test" # name of the model used to save
     log_metrics: bool = True # whether to log metrics to tensorboard during training, if false only validation loss is logged
-    model_choice: MODEL_CHOICE = "lbn_dense"
-    loss_fn: LOSS_CHOICE = "cross_entropy"
-    training_fn: TRAINING_LOOP_CHOICE = "cross_entropy" # name of the training loop
-    validation_fn: VALIDATION_LOOP_CHOICE = "cross_entropy" # name of the validation loop
+    model_choice: MODEL_CHOICE = "binned_lbn_dense"
+    loss_fn: LOSS_CHOICE = "signal_efficiency"
+    training_fn: TRAINING_LOOP_CHOICE = "signal_efficiency" # name of the training loop
+    validation_fn: VALIDATION_LOOP_CHOICE = "signal_efficiency" # name of the validation loop
     loss_mode: SIGNAL_EFFICIENCY_LOSS_MODE = "no_unc" # only relevant if signal_efficiency loss is chosen, determines which formula is used for the asimov calculation
     loss_uncertainty: float = 0.0 # # only relevant if signal_efficiency loss is chosen, determines the background uncertainty used in the asimov calculation
 
@@ -142,7 +144,7 @@ class TrainingConfig:
     train_ratio: float = 0.75 # split ratio for k-fold data into train and validation
     t_batch_size: int = 4096 * 10
     v_batch_size: int = -1 # validation batch size, -1 = full set,
-    save_model_name: str = "parametrized_binning" # name of the model used to save
+
 
     # Sampler Settings
     sample_ratio: Dict[str, float] = field(default_factory=lambda:{"dy": 1 / 3, "tt": 1 / 3, "hh": 1 / 3}) # decide the ratio of tt, dy and hh within a batch
@@ -183,7 +185,7 @@ class TrainingConfig:
 
 @dataclass
 class SchedulerConfig:
-    scheduler_chain: Tuple[SCHEDULER_CHOICE, ...] = ("linear", "step") # schedulers used in chain
+    scheduler_chain: Tuple[SCHEDULER_CHOICE, ...] = ("linear", "cosine_annealing") # schedulers used in chain
     config_chain: Optional[Tuple[Any, ...]] = None # list of configs corresponding to the schedulers in the scheduler chain
     scheduler_cls_chain: Optional[Tuple[Any, ...]] = None # list of scheduler classes corresponding to the schedulers in the scheduler chain, if None is given, it is assumed that the scheduler class can be derived from the scheduler choice by adding "LR" at the end, for example "CosineAnnealingLR" for "cosine"
     milestones: Tuple[int, ...] = (500,) # intervals after which the LR scheduler is swapped
@@ -193,8 +195,7 @@ class SchedulerConfig:
     class StepLRConfig(): # used by marcel
         step_size: int = 10 # number of iterations between two learning rate reductions
         gamma: float = 0.5 # learning rate reduction factor
-        # min_delta: float = 0.0 # minimum improvement before increase patience - Marcel: 0
-
+        min_delta: float = 0.0 # minimum improvement before increase patience - Marcel: 0
 
     @dataclass
     class CosineAnnealingLRConfig():

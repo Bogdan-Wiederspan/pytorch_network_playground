@@ -122,7 +122,16 @@ def log_metrics(
         labels=list(target_map.keys())
     )
     tensorboard_inst.log_figure(f"{mode} roc curve one vs rest", roc_fig, step=iteration_step)
-
+    if _optional("binning_edges", log_name="Asimov Per Bin"):
+        asimov_fig, asimov_ax = plotting.asimov_per_bin(
+            tar,
+            pred,
+            target_map,
+            data["binning_edges"],
+            which_asimov="small_signal",
+            current_iteration=iteration_step
+        )
+        tensorboard_inst.log_figure(f"{mode} asimov", asimov_fig, step=iteration_step)
 
     if _optional("loss", log_name="Loss"):
         tensorboard_inst.log_loss({mode: data["loss"]}, step=iteration_step)
