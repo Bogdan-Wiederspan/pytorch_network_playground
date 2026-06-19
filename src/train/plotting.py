@@ -594,4 +594,3 @@ def asimov_per_bin(
     axes.set_ylabel(f"{_label_map[which_asimov]}")
     axes.grid()
     return fig, axes
-    #
