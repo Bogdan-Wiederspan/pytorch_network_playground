@@ -1,18 +1,5 @@
 import torch
 
-from models.create_model import MODEL_REGISTRY
-
-def init_model(full_config):
-    model_choice = full_config.training_config.model_choice
-
-    model_cls = MODEL_REGISTRY[model_choice]
-    model_inst = model_cls(full_config)
-
-    # extra settings for specific models
-    if model_choice in ("binned_lbn_dense",):
-        model_inst.set_learning_mode("model_only")
-    return model_inst
-
 
 class AddBinningLayer(torch.nn.Module):
     def __init__(
@@ -34,8 +21,6 @@ class AddBinningLayer(torch.nn.Module):
             kernel_cfg=kernel_cfg,
             )
         self.signal_cls = ... if signal_cls is None else signal_cls # used for class slicing
-        # for attr in self.model.mark_attributes():
-        #     setattr(self, attr)
 
     def forward(self, categorical_inputs, continuous_inputs):
         x = self.unbinned_model(categorical_inputs, continuous_inputs)[:, self.signal_cls] # normal prediction as probabilities
@@ -48,14 +33,10 @@ class AddActFnToModel(torch.nn.Module):
     def __init__(self, model, act_fn, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.model = model
-        # self.categorical_features = model.categorical_features
-        # self.continuous_features = model.continuous_features
 
         self.act_func = self._get_attr(torch.nn.modules.activation, act_fn)(dim=1)
         self.categorical_features = model.categorical_features
         self.continuous_features = model.continuous_features
-        # for attr in self.model.mark_attributes():
-        #     setattr(self, attr)
 
     def _get_attr(self, obj, attr):
         for o in dir(obj):
