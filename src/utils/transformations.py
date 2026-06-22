@@ -1,5 +1,6 @@
 import torch
 
+
 class logit():
     def __init__(self):
         pass

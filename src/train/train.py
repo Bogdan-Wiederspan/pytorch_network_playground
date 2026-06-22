@@ -9,14 +9,15 @@ import torch
 
 # personal imports
 from data import cache, load_data, preprocessing, sampler
-from loss.utils import init_loss
+from loss import init_loss
 from models.utils import init_model
 from optimizer.early_stopping import CheckPoint
 from optimizer.utils import init_optimizer, init_scheduler
-from train.loops import TrainingLoop, ValidationLoop
-from train.train_config import full_config
-from train.train_utils import log_metrics
 from utils import logger
+
+from .loops import TrainingLoop, ValidationLoop
+from .train_config import full_config
+from .train_utils import log_metrics
 
 CPU = torch.device("cpu")
 CUDA = torch.device("cuda")

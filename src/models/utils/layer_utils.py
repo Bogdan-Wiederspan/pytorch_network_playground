@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import torch
 
-from models.register import MODEL_REGISTRY
-
+from ..register import MODEL_REGISTRY
+from ..preprocessing import EmptyLayer
 
 class WeightNormalizedLinear(torch.nn.Linear):  # noqa: F811
     def __init__(self ,*args, normalize=False, **kwargs):
@@ -29,7 +29,7 @@ def optional_layer(layer: torch.nn.Module | None) -> torch.nn.Module:
 
 def dummy_empty(condition, layer: torch.nn.Module | None) -> torch.nn.Module:
     if condition:
-        return torch.nn.EmptyLayer()
+        return EmptyLayer()
     return layer
 
 def init_model(full_config):

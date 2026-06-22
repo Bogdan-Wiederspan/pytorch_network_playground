@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import torch
 
-from utils import EMPTY_FLOAT, logger
-
-logger_inst = logger.get_logger(__name__)
+from utils import EMPTY_FLOAT
 
 
 class PaddingLayer(torch.nn.Module):  # noqa: F811

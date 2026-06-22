@@ -5,8 +5,9 @@ from typing import Literal
 
 import torch
 
-from models.create_model import MODEL_REGISTRY
-from utils.utils import CPU_DEVICE
+from models.register import MODEL_REGISTRY
+
+from .utils import CPU_DEVICE
 
 
 def rebuild_dataclass_from_dict(full_cfg: dict[dict]) -> dataclasses.dataclass:

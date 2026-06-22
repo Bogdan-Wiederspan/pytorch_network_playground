@@ -2,9 +2,6 @@ from __future__ import annotations
 
 import torch
 
-from utils import logger
-
-logger_inst = logger.get_logger(__name__)
 
 class StandardizeLayer(torch.nn.Module):  # noqa: F811
     def __init__(

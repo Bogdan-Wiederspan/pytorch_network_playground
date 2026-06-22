@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import torch
 
-from models.preprocessing.embedding import CatEmbeddingLayer
-from models.utils.layer_utils import optional_layer
+from ..preprocessing.embedding import CatEmbeddingLayer
+from ..utils.layer_utils import optional_layer
 
 
 class OptionalInputLayer(torch.nn.Module):  # noqa: F811

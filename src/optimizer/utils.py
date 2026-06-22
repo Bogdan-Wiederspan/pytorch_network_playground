@@ -1,7 +1,7 @@
 import torch
 
-from optimizer import weight_decay
-from optimizer.SAM import SAM
+from . import weight_decay
+from .SAM import SAM
 
 
 def init_optimizer(full_config, model_inst):

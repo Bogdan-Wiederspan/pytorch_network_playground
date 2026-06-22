@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import torch
 
-from models.preprocessing.tokenizer import CategoricalTokenizer
 from utils import logger
+
+from .tokenizer import CategoricalTokenizer
 
 logger_inst = logger.get_logger(__name__)
 

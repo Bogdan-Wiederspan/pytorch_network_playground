@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import torch
 
-from models.physics import LBN, LBNFeatureExtractor
+from . import LBN, LBNFeatureExtractor
 
 
 class LBNPipeline(torch.nn.Module):

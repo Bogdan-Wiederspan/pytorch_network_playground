@@ -3,8 +3,7 @@ from __future__ import annotations
 import torch
 
 from ..input import CategoricalInputLayer, ContinuousInputLayer, InputLayer, OptionalInputLayer
-from ..preprocessing import CatEmbeddingLayer, PaddingLayer, RotatePhiLayer, StandardizeLayer
-from ..utils import EmptyLayer
+from ..preprocessing import CatEmbeddingLayer, EmptyLayer, PaddingLayer, RotatePhiLayer, StandardizeLayer
 
 
 class BaseModel(torch.nn.Module):

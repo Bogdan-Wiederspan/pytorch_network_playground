@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import torch
 
-from models.utils.layer_utils import optional_layer
+from ..utils.layer_utils import optional_layer
 
 
 class CategoricalInputLayer(torch.nn.Module):

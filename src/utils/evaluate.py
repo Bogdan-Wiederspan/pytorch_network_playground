@@ -10,9 +10,10 @@ import torch
 # personal imports
 from data import load_data, preprocessing
 from train.train_config import full_config
-from utils import logger
-from utils.load_models import rebuild_checkpoint_information
-from utils.parser import ParserBuilder
+
+from . import logger
+from .load_models import rebuild_checkpoint_information
+from .parser import ParserBuilder
 
 logger_inst = logger.get_logger(__name__)
 

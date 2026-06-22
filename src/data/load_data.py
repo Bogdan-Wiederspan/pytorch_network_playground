@@ -7,9 +7,10 @@ import numpy as np
 import torch
 import uproot
 
-from data.cache import DataCacher
-from data.utils import depthCount
 from utils import logger
+
+from .cache import DataCacher
+from .utils import depthCount
 
 logger_inst = logger.get_logger(__name__)
 

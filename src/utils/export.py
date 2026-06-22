@@ -6,9 +6,10 @@ import pathlib
 import torch
 
 from models import create_model
-from utils import logger
-from utils.parser import ParserBuilder
-from utils.load_models import rebuild_model_from_checkpoint
+
+from . import logger
+from .load_models import rebuild_model_from_checkpoint
+from .parser import ParserBuilder
 
 logger_inst = logger.get_logger(__name__)
 
