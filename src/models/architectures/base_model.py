@@ -29,6 +29,8 @@ class BaseModel(torch.nn.Module):
         # traverse the mro diagram classes to get all learning modes from previous models.
         # if a more modern version of a learning_mode exist it will overwrite by default
         # the older version of the learning mode, due to reverse order of the mro (starting from base ending at current)
+        # HINT: this creates unbound fn, shared by class - this is very cheap in memory, due to being run once!
+        # but this also means that first argument (cls) is not set, so fn(self) needs to be used when called
         for parent in reversed(cls.mro()):
             for name, fn in parent.__dict__.items():
                 if name.startswith("learning_mode_"):
@@ -227,15 +229,14 @@ class BaseModel(torch.nn.Module):
         Args:
             mode (str): String that determines the learning mode. Needs to be registered with the register_learning_mode decorator.
         """
-        mode = f"_{mode}"
         if mode not in self.LEARNING_MODES:
             raise ValueError(f"Learning mode {mode} is not registered. Available learning modes are: {list(self.LEARNING_MODES.keys())}")
         # set all layers to non trainable
-        self.LEARNING_MODES["_freeze_all"]()
+        self.LEARNING_MODES["freeze_all"](self)
         # set specific layers to trainable depending on mode
-        self.LEARNING_MODES[mode]()
+        self.LEARNING_MODES[mode](self)
 
-    def learning_mode_freeze_all_parameter(self):
+    def learning_mode_freeze_all(self):
         for _, layer in self.named_children():
             layer.requires_grad = False
 
