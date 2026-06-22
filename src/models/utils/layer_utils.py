@@ -1,4 +1,9 @@
+from __future__ import annotations
+
 import torch
+
+from models.register import MODEL_REGISTRY
+
 
 class WeightNormalizedLinear(torch.nn.Linear):  # noqa: F811
     def __init__(self ,*args, normalize=False, **kwargs):
@@ -27,10 +32,17 @@ def dummy_empty(condition, layer: torch.nn.Module | None) -> torch.nn.Module:
         return torch.nn.EmptyLayer()
     return layer
 
-
-from models.create_model import MODEL_REGISTRY
-
 def init_model(full_config):
+    """
+    Helper function to init model. Take a full config object and pick correct
+    model from register and init it. Returns model instance.
+
+    Args:
+        full_config (_type_): FullConfig Instance, combining all config instances.
+
+    Returns:
+        _type_: _description_
+    """
     model_choice = full_config.training_config.model_choice
 
     model_cls = MODEL_REGISTRY[model_choice]

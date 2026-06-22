@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 import torch
 from torch.nn.utils import parametrize
 
 from train.plotting import plot_edges_number_line
 
 
-class BinningLayerRight(torch.nn.Module):
+class BinningLayer(torch.nn.Module):
     def __init__(
         self,
         num_bins: int,

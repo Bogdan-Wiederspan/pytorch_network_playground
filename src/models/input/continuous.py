@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import torch
 
 from models.utils.layer_utils import optional_layer

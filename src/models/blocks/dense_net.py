@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import torch
 
-from models.utils import WeightNormalizedLinear
+from ..utils import WeightNormalizedLinear
 
 
 class DenseNetBlock(torch.nn.Module):

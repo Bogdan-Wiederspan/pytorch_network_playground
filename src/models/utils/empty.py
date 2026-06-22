@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import torch
+
 
 class EmptyLayer(torch.nn.Module):
     """

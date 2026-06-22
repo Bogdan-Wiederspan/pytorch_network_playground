@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import torch
 
-from models.utils import WeightNormalizedLinear
+from ..utils import WeightNormalizedLinear
 
 
 class ResNetBlock(torch.nn.Module):  # noqa: F811
@@ -29,7 +31,7 @@ class ResNetBlock(torch.nn.Module):  # noqa: F811
             activation_functions (str, optional): Name of the pytorch activation function, case insenstive.
                 Defaults to "LeakyReLu".
             skip_connection_init (int, optional): Start value of the skipconnection. Defaults to 1.
-            freeze_skip_connection (bool, optional): Freeze leanable skipconnection parameter. Defaults to False.
+            freeze_skip_connection (bool, optional): Freeze learnable skipconnection parameter. Defaults to False.
         """
         super().__init__(*args, **kwargs)
 

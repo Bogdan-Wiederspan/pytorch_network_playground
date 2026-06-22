@@ -1,5 +1,9 @@
-import torch
+from __future__ import annotations
+
 from typing import Sequence
+
+import torch
+
 
 class LBN(torch.nn.Module):
     """
@@ -69,6 +73,7 @@ class LBN(torch.nn.Module):
         )
         return n
 
+    @property
     def ndim(self):
         # dim normal features: m * 4
         non_pair_features_dim = len([f for f in self.features if "pair" not in f]) * self.M

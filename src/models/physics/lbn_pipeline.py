@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import torch
 
 from models.physics import LBN, LBNFeatureExtractor
@@ -18,13 +20,18 @@ class LBNPipeline(torch.nn.Module):
         super().__init__()
         self.lbn_feature_extractor = LBNFeatureExtractor(continuous_features=continuous_features)
 
-        self.lbn = LBN(M=M, N=self.lbn_feature_extractor.num_particles, clip_weights=clip_weights, eps=eps, weight_init_scale=weight_init_scale)
-        self.lbn_batch_norm = torch.nn.BatchNorm1d(self.lbn.ndim())
+        self.lbn = LBN(
+            N=self.lbn_feature_extractor.num_particles,
+            M=M, clip_weights=clip_weights,
+            eps=eps,
+            weight_init_scale=weight_init_scale
+            )
+        self.lbn_batch_norm = torch.nn.BatchNorm1d(self.lbn.ndim)
 
 
     @property
     def ndim(self):
-        return self.lbn.ndim()
+        return self.lbn.ndim
 
     def forward(self, x):
         x = self.lbn_feature_extractor(x)
