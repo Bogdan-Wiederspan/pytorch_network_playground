@@ -38,14 +38,10 @@ class BinnedLBNDenseNet(LBNDenseNet):
                 num_bins=self.binning_config.num_bins,
                 bounds=self.binning_config.bounds,
                 binning_fn=self.binning_config.binning_fn,
+                binning_cfg=self.binning_config.binning_cfg,
                 kernel_cls=getattr(kernel, self.binning_config.kernel_cls),
                 kernel_cfg=self.binning_config.kernel_config[self.binning_config.kernel_cls],
                 )
-
-    def forward(self, categorical_inputs, continuous_inputs):
-        normal_network_output = super().forward(categorical_inputs, continuous_inputs)
-        binned_output = self.binning_layer(normal_network_output) # increases dimension at axis 0
-        return normal_network_output, binned_output
 
     def learning_mode_bin_only(self):
         all_layers = dict(self.named_children())
@@ -57,3 +53,8 @@ class BinnedLBNDenseNet(LBNDenseNet):
         all_layers_except_binning.pop("binning_layer")
         for _, layer in all_layers_except_binning.items():
             layer.requires_grad = True
+
+    def forward(self, categorical_inputs, continuous_inputs):
+        normal_network_output = super().forward(categorical_inputs, continuous_inputs)
+        binned_output = self.binning_layer(normal_network_output) # increases dimension at axis 0
+        return normal_network_output, binned_output

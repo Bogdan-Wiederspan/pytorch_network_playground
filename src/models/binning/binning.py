@@ -11,6 +11,7 @@ class BinningLayer(torch.nn.Module):
         bounds: tuple[float],
 
         binning_fn: callable, # like linspace or logspace to create initial edges
+        binning_cfg,
         kernel_cls,
         kernel_cfg,
         *args,
@@ -40,6 +41,7 @@ class BinningLayer(torch.nn.Module):
         self.num_bins = num_bins
         self.bounds = bounds
         self.binning_fn = binning_fn
+        self.binning_cfg = binning_cfg
         self.init_learnable_edges()
 
         self.kernel_cls = kernel_cls
@@ -90,8 +92,8 @@ class BinningLayer(torch.nn.Module):
             return torch.linspace(self.lower_edge, self.upper_edge, self.num_bins + 1)
 
         # create intervalls using linspace in transformed space
-        transformed_lower_edge = self.binning_fn.forward(self.lower_edge, eps=eps)
-        transformed_upper_edge = self.binning_fn.forward(self.upper_edge, eps=eps)
+        transformed_lower_edge = self.binning_fn.forward(self.lower_edge, **self.binning_cfg)
+        transformed_upper_edge = self.binning_fn.forward(self.upper_edge, **self.binning_cfg)
 
         interval = torch.linspace(
             transformed_lower_edge,
@@ -99,6 +101,7 @@ class BinningLayer(torch.nn.Module):
             self.num_bins + 1
             )
 
+        # THIS REVERSE BIN EDGES back into original space!
         # TODO maybe leave inverse out and perform in forward also transformated binning?
         # return to normal space
         interval = self.binning_fn.inverse(interval, eps=eps)
@@ -154,6 +157,7 @@ class BinningLayer(torch.nn.Module):
 
     def forward(self, x):
         scaled_x = []
+        # x = self.binning_fn.forward(self.lower_edge, **self.binning_cfg)
         kernels = self.kernels(load_cache=False)
         for kernel in kernels:
             scale = kernel(x)

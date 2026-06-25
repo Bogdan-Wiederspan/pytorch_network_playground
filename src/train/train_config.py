@@ -21,7 +21,7 @@ TRAINING_LOOP_CHOICE = Literal["cross_entropy", "sam", "signal_efficiency"]
 VALIDATION_LOOP_CHOICE = Literal["signal_efficiency", "cross_entropy"]
 SIGNAL_EFFICIENCY_LOSS_MODE = Literal["full", "no_unc", "approximation"]
 SCHEDULER_CHOICE = Literal["linear", "cosine_annealing", "reduce_on_plateau", "step", "exponential"]
-
+BINNING_CHOICE = Literal["logit", "tangent", "linear", "cubic"]
 
 
 @dataclass
@@ -71,7 +71,7 @@ class ModelBuildingConfig:
     continuous_masking_value: Optional[float] = EMPTY_FLOAT # value that is used to mask the continuous target value
 
     # Tokenizer & Embedding Layer
-    tokenizer_add_unknown_category = None # value added to categories to symbolize unknown category. If None, no extra category is added
+    tokenizer_add_unknown_category: Optional[None] = None # value added to categories to symbolize unknown category. If None, no extra category is added
     embedding_dim: int = 10 # dimension of embedding layer - Marcel 10
     expected_embedding_inputs: Optional[dict[Tuple[int]]] = field(init=False)
 
@@ -102,13 +102,16 @@ class ModelBuildingConfig:
             raise ValueError("Norm of Linear Layer is currently buggy and is therefore disabled for now")
 
 
-from utils.transformations import logit
+from utils.transformations import logit, linspace, tangent, cubic
 @dataclass
 class BinningConfig:
-    num_bins: int = 10
+    num_bins: int = 15
     bounds: tuple[int] = (0, 1)
     # binning_fn: Any = torch.linspace  # keep as a callable, if needed
-    binning_fn: Any = logit
+    binning_choice: BINNING_CHOICE = "logit"
+    binning_cfg: Optional[None] = field(init=False)
+    binning_fn: Optional[None] = field(init=False)
+
     kernel_cls: KERNEL_CHOICE = "GaussianKernelFinal"
     kernel_config: Dict[str, Dict[str, Any]] = field(
         default_factory=lambda: {
@@ -121,12 +124,41 @@ class BinningConfig:
             }
         }
     )
+    @dataclass
+    class LinearConfig():
+        pass
+
+    @dataclass
+    class LogitConfig():
+        eps: float=torch.as_tensor(1e-6)
+
+    @dataclass
+    class TangentConfig():
+        shift: float=torch.as_tensor(0.5)
+
+    @dataclass
+    class CubicConfig():
+        shift: float=torch.as_tensor(0.5),
+        min: float | None=None,
+        max: float | None=None,
+        stretching_factor: float| None=None,
+
     def __post_init__(self):
         choice_check(self.kernel_cls, KERNEL_CHOICE)
+        binning_register = {
+            "logit" : (self.LogitConfig, logit),
+            "tangent" : (self.TangentConfig, tangent),
+            "linear" : (self.LinearConfig, linspace),
+            "cubic" : (self.CubicConfig, cubic),
+        }
+        binning_cfg, self.binning_fn = binning_register[self.binning_choice]
+        self.binning_cfg = binning_cfg()
+
+
 
 @dataclass
 class TrainingConfig:
-    save_model_name: str = "test" # name of the model used to save
+    save_model_name: str = "LogitRealSpace_15" # name of the model used to save
     log_metrics: bool = True # whether to log metrics to tensorboard during training, if false only validation loss is logged
     model_choice: MODEL_CHOICE = "binned_lbn_dense"
     loss_fn: LOSS_CHOICE = "signal_efficiency"
@@ -135,7 +167,7 @@ class TrainingConfig:
     loss_mode: SIGNAL_EFFICIENCY_LOSS_MODE = "no_unc" # only relevant if signal_efficiency loss is chosen, determines which formula is used for the asimov calculation
     loss_uncertainty: float = 0.0 # # only relevant if signal_efficiency loss is chosen, determines the background uncertainty used in the asimov calculation
 
-    max_train_iteration: int = 60000 # max number of batches
+    max_train_iteration: int = 15000 # max number of batches
     verbose_interval: int = 5 # interval between two logger outputs of training loss
     validation_interval: int = 100 # interval between two validation passes / plots are done during validation
     gamma: float = 0.5
@@ -149,7 +181,7 @@ class TrainingConfig:
 
 
     # Sampler Settings
-    sample_ratio: Dict[str, float] = field(default_factory=lambda:{"dy": 1 / 3, "tt": 1 / 3, "hh": 1 / 3}) # decide the ratio of tt, dy and hh within a batch
+    sample_ratio: Dict[str, float] = field(default_factory=lambda:{"dy": 1 / 4, "tt": 1 / 4, "hh": 1 / 2}) # decide the ratio of tt, dy and hh within a batch
     sub_process_ratios: Dict[str, float] = field(default_factory=lambda:{ # decide the
         # HINT: each rate is multiplied together to final rate, e.g. if process id exist 2x with rate 2, final rate is 4
         "signal":{}, # empty categorizes are set to 1 by default
@@ -201,7 +233,7 @@ class SchedulerConfig:
 
     @dataclass
     class CosineAnnealingLRConfig():
-        T_max: int = 10000 # maximum number of iterations
+        T_max: int = 5000 # maximum number of iterations
         eta_min: float = 1e-7 # minimum learning rate
 
     @dataclass

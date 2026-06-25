@@ -78,14 +78,11 @@ def rebuild_model_from_checkpoint(path: pathlib.Path) -> torch.nn.Module:
 
     # when instance is saved load this
     # otherwise rebuild model from module and class name and load state dict
-    if "model_inst" in checkpoint:
-        model_inst = checkpoint["model_inst"]
-    else:
-        full_cfg = checkpoint["full_config"]
-
-        model_choice = full_cfg.training_config.model_choice
-        model_cls = MODEL_REGISTRY[model_choice] # pick correct cls from registered models
-        model_inst = model_cls(full_cfg) # create new instance with config
-        model_inst.load_state_dict(checkpoint["model_state_dict"])
+    full_cfg = checkpoint["full_config"]
+    full_cfg = rebuild_dataclass_from_dict(full_cfg)
+    model_choice = full_cfg.training_config.model_choice
+    model_cls = MODEL_REGISTRY[model_choice] # pick correct cls from registered models
+    model_inst = model_cls(full_cfg) # create new instance with config
+    model_inst.load_state_dict(checkpoint["model_state_dict"])
     model_inst.eval()
     return model_inst

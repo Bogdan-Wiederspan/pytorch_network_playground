@@ -15,6 +15,18 @@ class logit():
         denom = (1 + torch.exp(y))
         return num / denom
 
+class linspace():
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def forward(x, **kwargs):
+        return x
+
+    @staticmethod
+    def inverse(y, **kwargs):
+        return y
+
 class tangent():
     """
     Tangent naturally decompresses around edges. Shift by 0.5 result in symmetric for 0 to 1
@@ -23,16 +35,16 @@ class tangent():
         pass
 
     @staticmethod
-    def forward(x, shift=0.5):
+    def forward(x, shift=torch.as_tensor(0.5), **kwargs):
         return torch.tan(torch.pi * ( x - shift))
 
     @staticmethod
-    def inverse(y, shift=0.5):
+    def inverse(y, shift=torch.as_tensor(0.5), **kwargs):
         return torch.arctan(torch.pi * (y - shift))
 
 # TODO Not completed
 class cubic():
-    def __init__(self, shift=0.5, min=None, max=None, stretching_factor=None):
+    def __init__(self, shift=torch.as_tensor(0.5), min=None, max=None, stretching_factor=None, **kwargs):
         self.shift = shift
         if stretching_factor is None:
             self.a = self.calculate_a(min, max)
