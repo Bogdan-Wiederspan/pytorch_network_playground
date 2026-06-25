@@ -220,7 +220,7 @@ class BaseModel(torch.nn.Module):
                 return last_activation_fn(dim=1)
             elif self.model_building_config.last_activation_fn == "Sigmoid":
                 return last_activation_fn()
-        return None
+        return torch.nn.Identity()
 
     def set_learning_mode(self, mode):
         """
