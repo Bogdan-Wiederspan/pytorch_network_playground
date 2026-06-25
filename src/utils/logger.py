@@ -143,7 +143,8 @@ class TensorboardLogger():
     def log_scalar(self, values, step, name):
         self.writer.add_scalars(name, values, global_step=step)
 
-    def log_lr(self, value, step):
+    def log_lr(self, optimizer, step):
+        value = optimizer.param_groups[0]["lr"]
         self.writer.add_scalar("Learning_Rate", value, step)
 
     def log_precision(self, values, step, mode="train"):

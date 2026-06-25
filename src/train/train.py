@@ -6,7 +6,6 @@ import dataclasses
 # package imports
 import numpy as np
 import torch
-
 # personal imports
 from data import cache, load_data, preprocessing, sampler
 from loss import init_loss
@@ -17,7 +16,9 @@ from utils import logger
 
 from .loops import TrainingLoop, ValidationLoop
 from .train_config import full_config
-from .train_utils import log_metrics
+
+# from .train_utils import log_metrics
+from monitoring import EvalContext,EvaluationRunner, PlotContext, load_registers
 
 CPU = torch.device("cpu")
 CUDA = torch.device("cuda")
@@ -34,6 +35,8 @@ def main(**kwargs):
         name=cache.hash_dictionary(dataclasses.asdict(full_config.training_config)),
         path=kwargs["tensorboard_name"],
         )
+    evaluation_runner_inst = EvaluationRunner(tensorboard_writer)
+    load_registers()
     # TODO add LOGGER FILEPATH in same directory of tensorboard
     logger_inst.i_info(f"Tensorboard logs: {tensorboard_writer.path}")
 
@@ -110,7 +113,6 @@ def main(**kwargs):
         training_loss_inst, validation_loss_inst = init_loss(full_config=full_config, device=DEVICE, training_sampler=training_sampler)
         scheduler_inst = init_scheduler(full_config=full_config, optimizer_inst=optimizer_inst)
         checkpoint_inst = CheckPoint(checkpoint_name=full_config.training_config.save_model_name, checkpoint_fold=current_fold)
-
         #----
         ### training loop
         #----
@@ -125,10 +127,17 @@ def main(**kwargs):
                 sample_columns = full_config.training_config.sample_attributes,
                 scheduler_inst = scheduler_inst,
             )
+            # ----
+            # Verbose and Metrics that are triggered often
+            # ----
+
             if current_iteration % full_config.training_config.verbose_interval == 0:
+                tensorboard_writer.log_lr(optimizer_inst, current_iteration)
                 tensorboard_writer.log_loss({"batch_loss": t_loss.item()}, step=current_iteration)
                 current_lr = optimizer_inst.param_groups[0]["lr"]
                 logger_inst.training(f"T-It: {current_iteration} - LR: {current_lr} - batch loss: {t_loss.item():.2E}")
+
+
             #----
             #### Evaluation of training and validation data, logging and checkpointing
             #----
@@ -156,36 +165,73 @@ def main(**kwargs):
                     )
                 # TODO when edges should be tracked add this in a way that is universal and does not break for models without binning layer, e.g. add property to model that returns None if no binning layer is present and add check in log_metrics
                 if full_config.training_config.log_metrics:
-                    # TODO
-                    log_metrics(
-                        tensorboard_inst = tensorboard_writer,
-                        iteration_step = current_iteration,
-                        sampler_output = (eval_t_pred, eval_t_tar, eval_t_weights),
-                        target_map = full_config.dataset_config.target_map,
-                        mode = "train",
-                        loss = eval_t_loss.item(),
-                        lr = optimizer_inst.param_groups[0]["lr"],
-
-                        binning_edges = model_inst.binning_layer.bin_edges.flatten(),
-                        # binning_edges = model_inst.binning_layer.edges.detach().cpu(),
-                        # binning_edges = ,
-                        current_iteration = current_iteration,
-                        # kernels = model_inst.binning_layer.kernels,
+                    # create contexr
+                    ctx_train = EvalContext(
+                        predictions=eval_t_pred,
+                        targets=eval_t_tar,
+                        target_map=full_config.dataset_config.target_map,
+                        event_weights=eval_t_weights,
                     )
 
-                    log_metrics(
-                        tensorboard_inst = tensorboard_writer,
-                        iteration_step = current_iteration,
-                        sampler_output = (eval_v_pred, eval_v_tar, eval_v_weights),
-                        target_map = full_config.dataset_config.target_map,
-                        mode = "validation",
-                        loss = eval_v_loss.item(),
-                        # TODO binning edges and kernels are only defined for BinnedLBN make universal
-                        binning_edges = model_inst.binning_layer.bin_edges.flatten(),
-                        # binning_edges = full_config.binning_config.num_bins,
-                        current_iteration = current_iteration,
-                        # kernels=model_inst.binning_layer.kernels,
+                    ctx_validation = EvalContext(
+                        predictions=eval_v_pred,
+                        targets=eval_v_tar,
+                        target_map=full_config.dataset_config.target_map,
+                        event_weights=eval_v_weights,
                     )
+
+                    ctx_train.add_feature("loss", eval_t_loss.item())
+                    ctx_validation.add_feature("loss", eval_v_loss.item())
+                    for _ctx in (ctx_train, ctx_validation):
+                        _ctx.add_feature("binning_edges", model_inst.binning_layer.bin_edges.flatten())
+
+
+                    # run metrics and store them
+                    evaluation_runner_inst.run_plots(
+                        ctx_train,
+                        plots=[
+                            "confusion_matrix",
+                            "roc",
+                            "asimov",
+                            "output_score_hh_node",
+                            "bin_edges"
+                        ],
+                        step=current_iteration,
+                        mode="train"
+                    )
+
+
+                    evaluation_runner_inst.run_scalars(
+                        ctx=ctx_train,
+                        artifact_names={
+                            "CrossEntropy/Evaluation Training" : "cross_entropy",
+                            "Loss/Evaluation Training Loss" :"loss",
+                            },
+                        step=current_iteration,
+                    )
+
+                    evaluation_runner_inst.run_plots(
+                        ctx_validation,
+                        plots=[
+                            "confusion_matrix",
+                            "roc",
+                            "asimov",
+                            "output_score_hh_node",
+                        ],
+                        step=current_iteration,
+                        mode="validation"
+                    )
+
+                    evaluation_runner_inst.run_scalars(
+                        ctx=ctx_validation,
+                        artifact_names={
+                            "CrossEntropy/Evaluation Validation": "cross_entropy",
+                            "Loss/Validation VLoss": "loss"
+                            },
+                        step=current_iteration,
+
+                    )
+
                 logger_inst.training(f"Iteration: {current_iteration} - TLoss: {eval_t_loss:.2E} VLoss: {eval_v_loss:.2E}")
 
 

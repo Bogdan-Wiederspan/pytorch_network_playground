@@ -20,7 +20,7 @@ LOSS_CHOICE = Literal["cross_entropy", "signal_efficiency", "signal_efficiency_b
 TRAINING_LOOP_CHOICE = Literal["cross_entropy", "sam", "signal_efficiency"]
 VALIDATION_LOOP_CHOICE = Literal["signal_efficiency", "cross_entropy"]
 SIGNAL_EFFICIENCY_LOSS_MODE = Literal["full", "no_unc", "approximation"]
-SCHEDULER_CHOICE = Literal["linear", "cosine_annealing", "reduce_on_plateau", "step"]
+SCHEDULER_CHOICE = Literal["linear", "cosine_annealing", "reduce_on_plateau", "step", "exponential"]
 
 
 
@@ -62,9 +62,11 @@ class ModelBuildingConfig:
     ) # which columns should be rotated
 
     # Padding Layers
-    categorical_target_value: Optional[float] = None # which categorical value is targeted by the padding, if None no value is masked
+    enable_categorical_padding: bool = False
+    categorical_target_value: Optional[float] = None # which categorical value is targeted by the padding
     categorical_masking_value: Optional[float] = -1 # value that is used to mask the categorical target value
 
+    enable_continous_padding: bool = False
     continuous_target_value: Optional[float] = None # which continuous value is targeted by the padding, if None no value is masked
     continuous_masking_value: Optional[float] = EMPTY_FLOAT # value that is used to mask the continuous target value
 
@@ -218,6 +220,11 @@ class SchedulerConfig:
         end_factor: float = 1.0 # the final learning rate will be the end_factor times the base learning rate
         total_iters: int = 100 # number of iterations over which the multiplier increases from start_factor to end_factor
 
+    @dataclass
+    class ExponentialLRConfig():
+        gamma:  (float) = 0.9 # Multiplicative factor of learning rate decay.
+        last_epoch: (int) = -1# The index of last epoch. Default: -1.
+
 
     def __post_init__(self):
         schedulers = torch.optim.lr_scheduler
@@ -227,6 +234,7 @@ class SchedulerConfig:
             "reduce_on_plateau" : (self.ReduceLROnPlateauConfig, schedulers.ReduceLROnPlateau),
             "linear" : (self.LinearLRConfig, schedulers.LinearLR),
             "step" : (self.StepLRConfig, schedulers.StepLR),
+            "exponential" : (self.ExponentialLRConfig, schedulers.ExponentialLR),
         }
 
         scheduler_configs = []

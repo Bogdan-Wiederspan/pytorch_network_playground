@@ -51,6 +51,7 @@ ignore = [
     "E702", # multiple statements in one line
     "B904", # raise-without-from-inside-except - reduces information in stack trace
     "B905", # older python version < 3.10 don't support this
+    "B008", # function calls when defining defaults, most important case for me torch.tensors
 ]
 
 [tool.ruff.format]

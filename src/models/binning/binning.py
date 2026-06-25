@@ -3,8 +3,6 @@ from __future__ import annotations
 import torch
 from torch.nn.utils import parametrize
 
-from train.plotting import plot_edges_number_line
-
 
 class BinningLayer(torch.nn.Module):
     def __init__(
@@ -48,8 +46,9 @@ class BinningLayer(torch.nn.Module):
         self.kernel_cfg = kernel_cfg
         self.kernel_cache = None
 
-    def visualize(self):
-        plot_edges_number_line(self.bin_intervals)
+    # def visualize(self):
+    #     from train.plotting import plot_edges_number_line
+    #     plot_edges_number_line(self.bin_intervals)
 
     @property
     def lower_edge(self):
