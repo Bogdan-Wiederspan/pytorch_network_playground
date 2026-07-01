@@ -27,11 +27,26 @@ np.random.seed(full_config.training_config.seed)
 logger_inst = logger.get_logger(__name__)
 logger_inst.info(f"DEVICE: {DEVICE}")
 
+def last_fn_picker(last_fn):
+    def sigmoid(x):
+        return torch.sigmoid(x)
+
+    def softmax(x):
+        return torch.softmax(x, dim=-1)
+
+    choices = {
+        "sigmoid": sigmoid,
+        "softmax": softmax,
+        None: lambda x: x
+    }
+    return choices[last_fn]
+
 def evaluate_model_on_fold(
     model_inst: torch.nn.Module,
     full_config: Literal["DataClass"],
     folds: Iterable[int],
     evaluate_on: Iterable[str],
+    last_activation_fn: Literal["sigmoid", "softmax", None] = None
     ) -> torch.tensor:
     """
     Function to evaluate *folds* with given *model_inst*.
@@ -68,6 +83,8 @@ def evaluate_model_on_fold(
                 training_percentage=full_config.training_config.train_ratio,
                 randomize=False,
             )
+
+        last_fn = last_fn_picker(last_activation_fn)
         # --- run model on specific splits ---
         for _evaluate_on in evaluate_on:
             logger_inst.info(f"Evaluate {_evaluate_on} data of fold {fold}")
@@ -78,6 +95,7 @@ def evaluate_model_on_fold(
             for uid, uid_events in splitted_events.items():
                 continuous_inputs, categorical_inputs = uid_events["continuous"], uid_events["categorical"]
                 scores = model_inst(categorical_inputs=categorical_inputs, continuous_inputs=continuous_inputs)
+                scores = last_fn(scores)
                 dnn_scores[fold][_evaluate_on][uid] = scores
         return dnn_scores
 
@@ -103,6 +121,7 @@ if __name__ == "__main__":
         full_config=full_config,
         folds=args.fold,
         evaluate_on=args.evaluate_on,
+        last_activation_fn=args.add_activation
         )
 
     torch.save(evaluated_data, args.file_path)
