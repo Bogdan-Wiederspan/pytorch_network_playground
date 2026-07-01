@@ -1,19 +1,22 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-
-from ..metrics.physics.asimov import asimov, asimov_no_background, asimov_small_signal_and_no_background
-from ..utils.tensor import prepare_tensor
-from ..register import register_plot
-
 from matplotlib.figure import Figure
 from matplotlib.pyplot import Axes
-_map = {
-    "small_signal" : asimov,
-    "approximation" : asimov_no_background,
-    "full" : asimov_small_signal_and_no_background
-}
 
+from ..metrics.physics.asimov import (
+    asimov_metric,
+    asimov_no_background_metric,
+    asimov_small_signal_and_no_background_metric,
+)
+from ..register import register_plot
+from ..utils.tensor import prepare_tensor
+
+_map = {
+    "small_signal" : asimov_small_signal_and_no_background_metric,
+    "approximation" : asimov_no_background_metric,
+    "full" : asimov_metric,
+}
 
 @register_plot(
     "asimov",
@@ -37,7 +40,7 @@ def plot_asimov_per_bin(
     }
 
     fn = _map[which_asimov]
-    score = fn(s=s,b=b)
+    score = fn(s=s,b=b, **kwargs)
     # setting nan to 0
     nan_mask = ~torch.isnan(score)
     score = torch.where(nan_mask, score, torch.zeros_like(score))

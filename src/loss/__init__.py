@@ -1,7 +1,7 @@
 from utils.lazy_loader import lazy_import
 
 from . import binning
-from .Asimov import BinningAwareSignificance, SignalEfficiency
+from .SignalEfficiency import BinningAwareSignificance, SignalEfficiency
 from .CrossEntropy import WeightedCrossEntropy
 from .FocalLoss import FocalLoss
 from .utils import init_loss

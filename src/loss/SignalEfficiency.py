@@ -1,8 +1,16 @@
-from __future__ import annotations
+
+from statistics.asimov import asimov, asimov_no_background, asimov_small_signal_and_no_background
 
 import torch
 
 from models.binning import GaussianKernelV2
+
+# mapping of asimov functions to a name
+asimov_functions = {
+    "full" : asimov,
+    "no_unc" : asimov_no_background,
+    "approximation" : asimov_small_signal_and_no_background,
+    }
 
 
 class SignalEfficiency(torch.nn.Module):
@@ -11,8 +19,7 @@ class SignalEfficiency(torch.nn.Module):
         sampler_inst,
         device,
         train=True,
-        mode="full",
-        uncertainty=0.1,
+        asimov_cfg=None,
         *args,
         **kwargs,
         ) -> torch.tensor:
@@ -40,10 +47,15 @@ class SignalEfficiency(torch.nn.Module):
         self.train = train
         self.total_product_of_weights = sampler_inst.weights_aggregator_inst("product_of_weights", "whole_sum")
         self.target_map = sampler_inst.target_map
-        self.uncertainty = uncertainty
 
-        self.mode = mode
-        self.loss = self._loss()
+        self.asimov_name = asimov_cfg.asimov_mode
+        self.asimov_fn = asimov_functions[self.asimov_name]
+        self.uncertainty = asimov_cfg.background_uncertainty
+        self.asimov_epsilon = {
+            "eps_log" : asimov_cfg.epsilon_log,
+            "eps_sqrt" : asimov_cfg.epsilon_sqrt,
+            "eps" : asimov_cfg.epsilon_small_signal,
+        }
 
         self.s_cls = self.target_map["hh"] # definition of signal class
         self.device = device
@@ -56,185 +68,139 @@ class SignalEfficiency(torch.nn.Module):
             self.eval_weights = sampler_inst.weights_aggregator_inst("product_of_weights", "evaluation_sum")
             self.total_process_weights = sampler_inst.weights_aggregator_inst("product_of_weights", "validation_sum")
 
-    def _loss(self):
-        """
-        Function that returns the correct loss function according to the set mode of the instance.
-
-        Raises:
-            ValueError: If mode is not one of "full", "no_unc", "approximation"
-
-        Returns:
-            function: The loss function corresponding to the set mode.
-        """
-        losses = {
-            "full" : self.asimov_full,
-            "no_unc" : self.asimov_no_uncertainty,
-            "approximation" : self.asimov_small_signal_approximation,
-            }
-
-        if self.mode in losses:
-            return losses[self.mode]
-        raise ValueError(f"Unknown mode {self.mode} for SignalEfficiency loss, choose between {tuple(losses.keys())}")
-
     def _uncertainty(self, b):
         if self.uncertainty >=1:
             return self.uncertainty
         return self.uncertainty * b + 1
 
-    @staticmethod
-    def asimov_small_signal_approximation(s, b, *args, **kwargs):
-        # approximation for small signal yield  3.3
-        return s / torch.sqrt(s + b)
-
-    @staticmethod
-    def asimov_no_uncertainty(s, b, epsilon=0, *args, **kwargs):
-        # approximation coming from asimov for no background uncertainty: https://arxiv.org/abs/1806.00322 3.2
-        return torch.sqrt(2 * ((s + b) * torch.log(1 + s / b) - s))
-
-    @staticmethod
-    def asimov_full(s, b, unc_b, *args, **kwargs):
-        # full asimov formula with background uncertainty: https://arxiv.org/abs/1806.00322 3.1
-        ln_nominator_1 = ( s + b ) * ( b + unc_b**2 )
-        ln_denominator_1 = ( b**2 + ( s + b ) )
-        part_1 = ( s + b ) * torch.log( ln_nominator_1 / ln_denominator_1 )
-
-        ln_nominator_2 = 1 + (unc_b**2 * s)
-        ln_denominator_2 = b * ( b + unc_b**2 )
-        part_2 = b**2 / unc_b**2 * torch.log( ln_nominator_2 / ln_denominator_2)
-
-        _asimov = torch.sqrt(
-        2 * ( part_1 - part_2 )
-        )
-        return _asimov
-
-    def approximation_sb_parts(
+    def build_selected_weight_and_prediction(
         self,
-        prediction: torch.tensor,
-        truth: torch.tensor,
-        product_of_weights: dict[torch.tensor],
-        evaluation_phase_space_mask: dict[torch.tensor],
-        is_signal: bool
-        ) -> tuple[torch.tensor]:
+        truth: torch.Tensor,
+        weights: dict[torch.Tensor],
+        is_signal: bool) -> tuple[torch.Tensor, torch.Tensor]:
         """
-        Calculate the different factors of the Signal and Background Approximation.
-        The resulting tuple contains a weight transfer factor and the weighted predictions, that still needs to be summed up.
-
-        Approximation of (s)ignal and (b)ackground yield as defined in 4.1 and 4.2 in https://arxiv.org/abs/1806.00322
-        The approximation is calculated batchwise and only defined for binary classification, which is calculated is defined by *is_signal*.
-        The physics weight information is handed over by *product_of_weights* and *evaluation_phase_space_mask*.
-        The actual network output is handed over by *prediction* and *truth*.
+        Filter *weights* after signal or background events.
+        The selection depends on the *is_signal* flag.
 
         Args:
-            prediction (torch.tensor): torch tensor coming from model output, containing the predicted probabilities for each class.
-            truth (torch.tensor): torch tensor containing the true class labels, one-hot encoded.
-            product_of_weights (dict[torch.tensor]): Dictionary of torch tensors containing the product of all weights for different processes
-            evaluation_phase_space_mask (dict[torch.tensor]): Dictionary of torch tensors containing a mask for the evaluation phase space, which is 1 for events in the evaluation phase space and 0 otherwise
+            prediction (torch.Tensor): SoftMaxed model output.
+            truth (torch.Tensor): True class labels, one-hot encoded.
+            weights (dict[torch.Tensor]): Dictionary holding all weights for different processes
             is_signal (bool): bool to signal if calculation for s or b is done
 
         Returns:
-            tuple(torch.tensor): tuple of torch tensor describing: (transfer factor from batch to evaluation, weighted predictions)
+            tuple[torch.Tensor]: Filtered weights, every other entry is 0.
         """
-        # create filter to filter all results after signal or background
-        # since filtered batch is 0 for either signal or background this reduces the sum
-        # to be specifically only over signal OR background events
-        signal_background_filter = truth if is_signal else (1 - truth)
-        filtered_signal_background_batch_weight = signal_background_filter * product_of_weights
+        selector = truth if is_signal else (1 - truth)
+        selected_weight = selector * weights
+        return selected_weight
 
-        # term 1
-        weighted_predictions = prediction * filtered_signal_background_batch_weight
+    def compute_transfer_factor(
+        self,
+        event_weight: torch.Tensor,
+        evaluation_mask: dict[torch.Tensor],
+        is_signal: bool
+        ) -> torch.Tensor:
+        """
+        Calculate the Transfer Factor which moves result from batch space to total evaluation space.
+        Computation changes in training and evaluation mode.
+        During Training calculation is done on batch base.
+        During Validation no batch exist, but whole data phase space is used instead
 
-        # calculate sum of weights
+        Args:
+            event_weight (torch.Tensor): Filtered weight for Signal or Background
+            evaluation_mask (dict[torch.Tensor]): Mask to describe evaluation events
+            is_signal (bool): Flag to indicate if event belongs to signal node or not.
+
+        Returns:
+            torch.Tensor: Transfer weight factor to describe movement from batch to evaluation space.
+
+        """
         if self.train:
             # when in trainings mode, calculate factors on batch base
-            # term 3
-            evaluation_phase_space_yield = torch.sum(filtered_signal_background_batch_weight * evaluation_phase_space_mask)
-            # term 2
-            batch_yield = torch.sum(filtered_signal_background_batch_weight)
+            eval_yield = torch.sum(event_weight * evaluation_mask) # term 3
+            batch_yield = torch.sum(event_weight) # term 2
         else:
-            # for validation batches cover whole validation space, not just a batch
+            # for validation a batch cover whole validation space, not just a batch
             # these reduces the factors to constants, where s is hh and b is dy + tt factor
-            # for background or signal different
             if is_signal:
-                evaluation_phase_space_yield = self.eval_weights["hh"]
+                eval_yield = self.eval_weights["hh"]
                 batch_yield = self.total_process_weights["hh"]
             else:
-                evaluation_phase_space_yield = self.eval_weights["dy"] + self.eval_weights["tt"]
+                eval_yield = self.eval_weights["dy"] + self.eval_weights["tt"]
                 batch_yield = self.total_process_weights["dy"] + self.total_process_weights["tt"]
-        weight_transfer_factor_from_batch_to_evaluation = evaluation_phase_space_yield  / batch_yield
 
-        return weight_transfer_factor_from_batch_to_evaluation, weighted_predictions
+        return eval_yield  / batch_yield
 
 
-    def approximation_sb(
-        self,
-        prediction: torch.tensor,
-        truth: torch.tensor,
-        product_of_weights: dict[torch.tensor],
-        evaluation_phase_space_mask: dict[torch.tensor],
-        is_signal: bool,
-        epsilon=None,
-        ):
-        """
-        Function to assemble together the result of the approximation parts.
+    def reduce_yield(self, event):
+        # sum over all predictions in bins
+        return torch.sum(event, dim = -1)
 
-        Args:
-            prediction (torch.tensor): torch tensor coming from model output, containing the predicted probabilities for each class.
-            truth (torch.tensor): torch tensor containing the true class labels, one-hot encoded.
-            product_of_weights (dict[torch.tensor]): Dictionary of torch tensors containing the product of all weights for different processes
-            evaluation_phase_space_mask (dict[torch.tensor]): Dictionary of torch tensors containing a mask for the evaluation phase space, which is 1 for events in the evaluation phase space and 0 otherwise
-            is_signal (bool): bool to signal if calculation for s or b is done
+    def stabilize(self, x, eps):
+        return torch.clamp(x, min=eps)
 
-        Returns:
-            torch.tensor: torch tensor to be either s or b, depending on *is_signal*
-        """
-        transfer_factor, weighted_predictions = self.approximation_sb_parts(
-            prediction=prediction,
-            truth=truth,
-            product_of_weights=product_of_weights,
-            evaluation_phase_space_mask=evaluation_phase_space_mask,
-            is_signal=is_signal,
-        )
-        weighted_yield = torch.sum(weighted_predictions, dim = 1) # sum over all predictions in bins
-        # have atleast epsilon yield to avoid 0 yields, which are not physical and cause problems in the loss calculation
-        if epsilon is not None:
-            weighted_yield = torch.clamp(weighted_yield, min=epsilon)
-        return transfer_factor * weighted_yield
+    def _loss(self, x):
+        return 1 / x.sum()
 
+    def loss(self, *args, **kwargs):
+        return self._loss(*args, **kwargs)
 
     def forward(self, prediction, truth, product_of_weights, evaluation_mask):
-        signal_node_truth = truth[..., self.s_cls]
+        # prediction can be of shape [bin, event, node] or [event, node]
+        signal_node_prediction = prediction[..., self.s_cls] # can be 2D or 1D
+        signal_node_truth = truth[..., self.s_cls] # is 1D
 
-        # prediction = torch.softmax(prediction, dim = -1) # network does not contain softmax
-        signal_node_prediction = prediction[..., self.s_cls]
+        # filter weights after signal and background only events
+        s_weights = self.build_selected_weight_and_prediction(
+            truth=signal_node_truth,
+            weights=product_of_weights,
+            is_signal=True
+        )
 
-        sb = {
-            "prediction" : signal_node_prediction,
-            "truth" : signal_node_truth,
-            "product_of_weights" : product_of_weights,
-            "evaluation_phase_space_mask" : evaluation_mask,
-            "epsilon" : 1e-2,
-        }
+        b_weights = self.build_selected_weight_and_prediction(
+            truth=signal_node_truth,
+            weights=product_of_weights,
+            is_signal=False
+        )
+        # calculate weighted predictions for signal and background
+        s_weighted_prediction = s_weights * signal_node_prediction
+        b_weighted_prediction = b_weights * signal_node_prediction
 
-        s = self.approximation_sb(is_signal=True, **sb)
-        b = self.approximation_sb(is_signal=False, **sb)
+        # compute transfer factor
+        tf_s = self.compute_transfer_factor(
+            event_weight=s_weights,
+            evaluation_mask=evaluation_mask,
+            is_signal=True
+        )
 
-        uncertainty = self._uncertainty(b)
-        loss = self.loss(s= s, b=b, unc_b=uncertainty)
-        loss = torch.sum(loss)
-        if loss == 0:
-            return 0
-        if torch.isnan(1 / loss):
-            from IPython import embed
-            embed(header = "IsNan line: 176 in loss.py")
+        tf_b = self.compute_transfer_factor(
+            event_weight=b_weights,
+            evaluation_mask=evaluation_mask,
+            is_signal=False
+        )
 
-        return 1 / loss
+        # reduction
+        s = tf_s * self.reduce_yield(s_weighted_prediction)
+        b = tf_b * self.reduce_yield(b_weighted_prediction)
+
+        asimov = self.asimov_fn(
+            s=s,
+            b=b,
+            unc_b=self._uncertainty(b),
+            **self.asimov_epsilon
+            )
+        loss = self.loss(asimov)
+        return loss
+
+
 
 class BinningAwareSignificance(SignalEfficiency):
     def __init__(
         self,
         model_inst: torch.nn.Module=None,
         bins: torch.tensor=None,
-        binning_cfg: dict=None,
+        binning_config: dict=None,
         *args,
         **kwargs
         ):
@@ -253,6 +219,11 @@ class BinningAwareSignificance(SignalEfficiency):
         self.edges = bins
         if self.edges is not None:
             self.build_kernels()
+
+        self.binning_config = self.binning_config
+
+    def reduce_yield():
+        raise NotImplementedError
 
     def build_kernels(self):
         kernels = []
@@ -273,6 +244,7 @@ class BinningAwareSignificance(SignalEfficiency):
 
 
     def digitize_masks(self, x, bin_edges, include_left_edge = True):
+        # TODO maybe Delete
         # create masks for each bin and save them in a mask dictionary, where the key is the bin number
         # torch implemented right as "right border is open" and "left is closed"
         indices = torch.bucketize(x, torch.tensor(bin_edges).to(x.device), right=include_left_edge)
@@ -326,14 +298,16 @@ class BinningAwareSignificance(SignalEfficiency):
             scale = _kernel(prediction) # tensor of shape len(events)
             weighted_yield = torch.sum(weighted_predictions * scale) # term 1
             binned_yield.append(weighted_yield * transfer_factor)
-        binned_yield = torch.stack(binned_yield, axis=0)
+        binned_yield = torch.stack(binned_yield, dim=0)
         if epsilon is not None:
-            binned_yield = torch.clamp(binned_yield, min=epsilon)
+            self.stabilize(binned_yield, epsilon)
         return binned_yield
+
+    def stabilize(y, eps):
+        return torch.clamp(y, min=eps)
 
     def forward(self, prediction, truth, product_of_weights, evaluation_mask):
         signal_node_truth = truth[:, self.s_cls]
-        prediction = torch.softmax(prediction, dim = 1) # network does not contain softmax
         signal_node_prediction = prediction[:, self.s_cls]
         # signal can be 0, since this will yield 0
         s = self.approximation_sb(
@@ -353,6 +327,6 @@ class BinningAwareSignificance(SignalEfficiency):
             is_signal=False,
             epsilon=1e-4
             )
-        loss = self.loss(s=s, b=b, unc_b=0, epsilon=1e-2)
+        loss = self.asimov_fn(s=s, b=b, unc_b=0, epsilon=1e-2)
         loss = loss.sum()
         return 1 / loss
