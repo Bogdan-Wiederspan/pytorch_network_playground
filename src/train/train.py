@@ -234,7 +234,7 @@ def main(**kwargs):
 
                 logger_inst.training(f"Iteration: {current_iteration} - TLoss: {eval_t_loss:.2E} VLoss: {eval_v_loss:.2E}")
 
-
+                # from IPython import embed; embed(header="MESSAGE Line 237 | File: train.py")
                 ### checkpoint criteria checks and saving
                 if checkpoint_inst.check_criteria(eval_v_loss):
                     checkpoint_inst.create_checkpoint(

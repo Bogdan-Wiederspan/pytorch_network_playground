@@ -843,12 +843,12 @@ class GaussianKernelFinal(BaseKernel):
         full_integral = linear_integral + gaussian_integral
         return full_integral
 
-    def control_plot(self, x, show=True, with_h_lines=True):
+    def control_plot(self, x, x_ticks=(0,1,21), with_h_lines=True):
         # helper plot to visualize the kernel
         import matplotlib.pyplot as plt
         y = self(x).cpu()
         plt.plot(x.cpu(), y)
-        plt.xticks(torch.linspace(0,1,21).numpy(), rotation=45)
+        plt.xticks(torch.linspace(*x_ticks).numpy(), rotation=45)
         if with_h_lines:
             # gaussian v line reaching 10%
             low, up = self.coordinates
@@ -859,8 +859,7 @@ class GaussianKernelFinal(BaseKernel):
 
             # horizontal marking 10%
             plt.hlines(0.1, 0, 1, color = "black", linestyles=":")
-        if show:
-            plt.show()
+        return plt.gcf(), plt.gca()
 
 
 

@@ -39,7 +39,9 @@ class BinningLayer(torch.nn.Module):
         # TODO currently no fusion allowed
 
         self.num_bins = num_bins
+        self.original_bounds = bounds
         self.bounds = bounds
+        self.is_transformed = False
         self.binning_fn = binning_fn
         self.binning_cfg = binning_cfg
         self.init_learnable_edges()
@@ -88,13 +90,15 @@ class BinningLayer(torch.nn.Module):
         if not torch.is_tensor(eps):
             eps = torch.tensor(eps)
 
-        if self.binning_fn is None:
+        if self.binning_fn is None or self.is_transformed is True:
             return torch.linspace(self.lower_edge, self.upper_edge, self.num_bins + 1)
 
         # create intervalls using linspace in transformed space
         transformed_lower_edge = self.binning_fn.forward(self.lower_edge, **self.binning_cfg)
         transformed_upper_edge = self.binning_fn.forward(self.upper_edge, **self.binning_cfg)
 
+        self.bounds = (transformed_lower_edge, transformed_upper_edge)
+        self.is_transformed = True
         interval = torch.linspace(
             transformed_lower_edge,
             transformed_upper_edge,
@@ -104,9 +108,9 @@ class BinningLayer(torch.nn.Module):
         # THIS REVERSE BIN EDGES back into original space!
         # TODO maybe leave inverse out and perform in forward also transformated binning?
         # return to normal space
-        interval = self.binning_fn.inverse(interval, eps=eps)
-        interval[0] = self.lower_edge
-        interval[-1] = self.upper_edge
+        # interval = self.binning_fn.inverse(interval, eps=eps)
+        # interval[0] = self.lower_edge
+        # interval[-1] = self.upper_edge
         # but lower and upper bound are replaced with init bounds
         return interval
 
@@ -123,7 +127,6 @@ class BinningLayer(torch.nn.Module):
 
         self.relative_bin_width = torch.nn.Buffer(relative_width)
         parametrize.register_parametrization(self, "relative_bin_width", torch.nn.Softmax(dim=0))
-
 
     def kernels(self ,load_cache=False):
         """

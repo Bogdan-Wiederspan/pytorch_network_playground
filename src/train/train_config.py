@@ -152,7 +152,7 @@ class BinningConfig:
             "cubic" : (self.CubicConfig, cubic),
         }
         binning_cfg, self.binning_fn = binning_register[self.binning_choice]
-        self.binning_cfg = binning_cfg()
+        self.binning_cfg = asdict(binning_cfg())
 
 
 
@@ -161,12 +161,8 @@ class TrainingConfig:
     save_model_name: str = "LogitRealSpace_15" # name of the model used to save
     log_metrics: bool = True # whether to log metrics to tensorboard during training, if false only validation loss is logged
     model_choice: MODEL_CHOICE = "binned_lbn_dense"
-    loss_fn: LOSS_CHOICE = "signal_efficiency"
     training_fn: TRAINING_LOOP_CHOICE = "signal_efficiency" # name of the training loop
     validation_fn: VALIDATION_LOOP_CHOICE = "signal_efficiency" # name of the validation loop
-    loss_mode: SIGNAL_EFFICIENCY_LOSS_MODE = "no_unc" # only relevant if signal_efficiency loss is chosen, determines which formula is used for the asimov calculation
-    loss_uncertainty: float = 0.0 # # only relevant if signal_efficiency loss is chosen, determines the background uncertainty used in the asimov calculation
-
     max_train_iteration: int = 15000 # max number of batches
     verbose_interval: int = 5 # interval between two logger outputs of training loss
     validation_interval: int = 100 # interval between two validation passes / plots are done during validation
@@ -178,7 +174,6 @@ class TrainingConfig:
     train_ratio: float = 0.75 # split ratio for k-fold data into train and validation
     t_batch_size: int = 4096 * 10
     v_batch_size: int = -1 # validation batch size, -1 = full set,
-
 
     # Sampler Settings
     sample_ratio: Dict[str, float] = field(default_factory=lambda:{"dy": 1 / 4, "tt": 1 / 4, "hh": 1 / 2}) # decide the ratio of tt, dy and hh within a batch
@@ -210,10 +205,45 @@ class TrainingConfig:
             raise ValueError(f"Sample Attributes need to contain: {necessary_field}" )
         choice_check(self.training_fn, TRAINING_LOOP_CHOICE)
         choice_check(self.validation_fn, VALIDATION_LOOP_CHOICE)
-        choice_check(self.loss_mode, SIGNAL_EFFICIENCY_LOSS_MODE)
-        choice_check(self.loss_fn, LOSS_CHOICE)
         choice_check(self.model_choice, MODEL_CHOICE)
         self.sub_process_ratios = multiply_sub_process_rates(self.use_sub_process_ratios, self.sub_process_ratios)
+
+# TODO currently LOSS is not configurable change this
+@dataclass
+class LossConfig:
+    loss_fn: LOSS_CHOICE = "signal_efficiency"
+
+    @dataclass
+    class SignalEfficiencyLossConfig():
+        asimov_mode: SIGNAL_EFFICIENCY_LOSS_MODE = "no_unc" # which asimov is used
+        epsilon_small_signal: float = 1e-2 # epsilon of "asimov_small_signal_and_no_background"
+        epsilon_sqrt: float = 1e-6 # epsilon to stablize sqrt part of "asimov_no_background"
+        epsilon_log: float = 1e-6 # epsilon of "asimov_no_background" to stablize the log part of the formula
+        background_uncertainty: float = 0.0 # uncertainty of "asimov", when above 1 absolut, 0 < x < 1 relative to background
+
+    @dataclass
+    class WeightedCrossEntropyConfig():
+        weight: float = 1.0 # weight of the positive class, 1.0 = no weighting
+        reduction: str = "mean" # reduction method, one of "none", "mean", "sum"
+        label_smoothing: float = 0.0 # label smoothing factor, 0.0 = no smoothing
+
+    signal_efficiency: SignalEfficiencyLossConfig = field(
+            default_factory=SignalEfficiencyLossConfig
+        )
+    weighted_cross_entropy: WeightedCrossEntropyConfig = field(
+            default_factory=WeightedCrossEntropyConfig
+        )
+
+    @property
+    def active_config(self):
+        return {
+            "signal_efficiency": self.signal_efficiency,
+            "weighted_cross_entropy": self.weighted_cross_entropy,
+        }[self.loss_fn]
+
+    def __post_init__(self):
+        choice_check(self.loss_fn, LOSS_CHOICE)
+        choice_check(self.signal_efficiency.asimov_mode, SIGNAL_EFFICIENCY_LOSS_MODE)
 
 
 
@@ -326,6 +356,7 @@ class FullConfig:
     scheduler_config: SchedulerConfig = field(default_factory=SchedulerConfig)
     optimizer_config: OptimizerConfig = field(default_factory=OptimizerConfig)
     debug_config: DebugConfig = field(default_factory=DebugConfig)
+    loss_config: LossConfig = field(default_factory=LossConfig)
 
     def __post_init__(self):
         # when using optimizer sam specific training routine needs to be used
