@@ -11,6 +11,7 @@ def build_asimov_inputs(ctx, **kwargs):
     y_true = ctx.targets
     y_pred = ctx.predictions
     target_map = ctx.target_map
+    event_weights = ctx.event_weights
     binning_edges = ctx.get("binning_edges")
 
     signal_idx = target_map["hh"]
@@ -26,14 +27,20 @@ def build_asimov_inputs(ctx, **kwargs):
         for name in target_map
     }
 
+    weights = {
+        name: event_weights[event_classification_masks[name]]
+        for name in target_map
+    }
+
     # calculate s and b in signal node
     s, _ = torch.histogram(
         scores["hh"],
-        bins=binning_edges
+        bins=binning_edges,
+        weight=weights["hh"],
     )
     # combine b scores
     b = (
-        torch.histogram(scores["dy"], bins=binning_edges)[0] +
-        torch.histogram(scores["tt"], bins=binning_edges)[0]
+        torch.histogram(scores["dy"], bins=binning_edges, weight=weights["dy"])[0] +
+        torch.histogram(scores["tt"], bins=binning_edges, weight=weights["tt"])[0]
     )
     return {"s_hist": s, "b_hist": b}

@@ -24,13 +24,12 @@ _map = {
     )
 def plot_asimov_per_bin(
     ctx,
-    which_asimov="approximation",
+    which_asimov="small_signal",
     **kwargs,
 ) -> tuple[Figure, Axes]:
     s = ctx.get("s_hist")
     b = ctx.get("b_hist")
     binning_edges = ctx.get("binning_edges")
-
     # Attention, values need to be tensors, since fn is using torch functions mostly
 
     _label_map = {

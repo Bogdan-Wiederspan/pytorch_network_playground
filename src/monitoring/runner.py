@@ -1,4 +1,4 @@
-from .register import BUILDER_REGISTRY, PLOT_REGISTRY, SCALAR_REGISTRY
+from .register import BUILDER_REGISTRY, PLOT_REGISTRY
 
 
 def build_provider_map():
