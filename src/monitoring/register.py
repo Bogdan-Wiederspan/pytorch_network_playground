@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Callable, Set
 
+
 @dataclass
 class SignalSpec:
     fn: Callable
