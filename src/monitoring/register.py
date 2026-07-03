@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Set
 
 
@@ -13,6 +13,7 @@ class SignalSpec:
 class PlotSpec:
     fn: Callable
     requires: Set[str] = None
+    kwargs: dict = field(default_factory=dict)
 
 @dataclass
 class BuilderSpec:
@@ -57,14 +58,28 @@ def register_builder(name, * ,requires=None, provides=None):
     return wrapper
 
 
-def register_plot(name, requires=None):
+def register_plot(name, requires=None, **kwargs):
+    # kwargs contain extra arguments passed to the decorated function
     def wrapper(fn):
         PLOT_REGISTRY[name] = PlotSpec(
             fn=fn,
-            requires=set(requires or [])
+            requires=set(requires or []),
+            kwargs=kwargs,
         )
         return fn
     return wrapper
+
+def register_plot_variant(
+    name,
+    base,
+    **kwargs,
+):
+    spec = PLOT_REGISTRY[base]
+    PLOT_REGISTRY[name] = PlotSpec(
+        fn=spec.fn,
+        requires=spec.requires,
+        kwargs=kwargs,
+    )
 
 def register_scalar(name, requires=None):
     def wrapper(fn):
