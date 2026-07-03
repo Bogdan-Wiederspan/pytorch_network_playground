@@ -91,12 +91,16 @@ check_required_vars() {
 
 # venv handling
 prepare_venv(){
+    # extend Paths to CUDA enviroment (necessary when not correct installed)
+    export LD_LIBRARY_PATH="${VENV_ROOT}/${ML_ENV}/lib/${VENV_PYTHON}/site-packages/nvidia/cudnn/lib:$LD_LIBRARY_PATH"
+    export LD_LIBRARY_PATH="${VENV_ROOT}/${ML_ENV}/lib/${VENV_PYTHON}/site-packages/nvidia/nccl/lib:$LD_LIBRARY_PATH"
     # check if venv root exist, return 1 if false
     _path="${VENV_ROOT}/${ML_ENV}/bin/"
     if [ ! -n "${_path}" ]; then
         echo "Venv root does not exist check ${_path}"
         return 1
     fi
+
 }
 
 activate_venv(){

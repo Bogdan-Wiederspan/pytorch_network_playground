@@ -31,6 +31,8 @@ export CF_SANDBOX="venv_hbt_dev" #  sandbox name within columnflow
 export VENV_ROOT="/data/dust/user/${USER}/pyenv_virtualenvs" # place to look for existing virtualenvs
 export PYENV_ROOT="/afs/desy.de/user/w/${USER}/.pyenv" # root of pyenv installation
 export ML_ENV="ml_torch" # name of your virtualenv, so it can be activated by source setup.sh
+export VENV_PYTHON="python3.9" # used python in venv
+
 
 # flags to stop unnecessary dir checks, can be undone to recreate dirs
 export CREATE_DIR=1
