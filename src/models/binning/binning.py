@@ -63,7 +63,7 @@ class BinningLayer(torch.nn.Module):
         return self.bounds[1]
 
     @property
-    def bin_intervals(self):
+    def calculate_bin_intervals(self):
         # TODO bin edges ignore transformation currently
         # calculate absolute widht of bins
         # from IPython import embed; embed(header="MESSAGE Line 1414 | File: layers.py")
@@ -80,9 +80,29 @@ class BinningLayer(torch.nn.Module):
         left_edge = right_edge - abs_width
         return torch.stack((left_edge, right_edge), dim = 1)
 
+    def get_bin_intervals(self, transformed=None):
+        intervals = self.bin_edges
+        # return currently used interval when no transformed status is given
+        if transformed is None:
+            return intervals
+
+        # if required already exist return it
+        if (self.is_transformed and transformed) or (not self.is_transformed and not transformed):
+            return intervals
+
+        # when not transformed and transform is requested, apply transformation
+        # when transformed and
+        if not self.is_transformed and transformed:
+            bin_fn = self.binning_fn.forward
+        elif self.is_transformed and not transformed:
+            bin_fn = self.binning_fn.inverse
+
+        transformed_intervals = bin_fn(intervals, **self.binning_cfg)
+        return transformed_intervals
+
     @property
     def bin_edges(self):
-        intervals = self.bin_intervals
+        intervals = self.calculate_bin_intervals
         edges = [intervals[:, 0].reshape(-1, 1), intervals[-1, 1].reshape(-1, 1)]
         return torch.flatten(torch.concatenate(edges, dim = 0))
 
@@ -140,7 +160,7 @@ class BinningLayer(torch.nn.Module):
             return self.kernel_cache
 
         kernels = []
-        for bin_num, edge in enumerate(self.bin_intervals):
+        for bin_num, edge in enumerate(self.calculate_bin_intervals):
             if bin_num == 0:
                 bin_type = "underflow"
             elif bin_num == (self.num_bins - 1):
@@ -160,9 +180,11 @@ class BinningLayer(torch.nn.Module):
 
     def forward(self, x):
         scaled_x = []
-        # x = self.binning_fn.forward(self.lower_edge, **self.binning_cfg)
+
+        # this is used to determine the BIN position for the scale
+        determine_scale_x = (self.binning_fn.forward(x, **self.binning_cfg)).detach()
         kernels = self.kernels(load_cache=False)
         for kernel in kernels:
-            scale = kernel(x)
+            scale = kernel(determine_scale_x)
             scaled_x.append(scale * x)
         return torch.stack(scaled_x, dim=0)

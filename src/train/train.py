@@ -6,19 +6,20 @@ import dataclasses
 # package imports
 import numpy as np
 import torch
+
 # personal imports
 from data import cache, load_data, preprocessing, sampler
 from loss import init_loss
 from models.utils import init_model
+
+# from .train_utils import log_metrics
+from monitoring import EvalContext, EvaluationRunner, load_registers
 from optimizer.early_stopping import CheckPoint
 from optimizer.utils import init_optimizer, init_scheduler
 from utils import logger
 
 from .loops import TrainingLoop, ValidationLoop
 from .train_config import full_config
-
-# from .train_utils import log_metrics
-from monitoring import EvalContext,EvaluationRunner, PlotContext, load_registers
 
 CPU = torch.device("cpu")
 CUDA = torch.device("cuda")
@@ -183,7 +184,15 @@ def main(**kwargs):
                     ctx_train.add_feature("loss", eval_t_loss.item())
                     ctx_validation.add_feature("loss", eval_v_loss.item())
                     for _ctx in (ctx_train, ctx_validation):
-                        _ctx.add_feature("binning_edges", model_inst.binning_layer.bin_edges.flatten())
+                        _ctx.add_feature(
+                            "binning_edges",model_inst.binning_layer.get_bin_intervals(None)
+                            )
+                        _ctx.add_feature(
+                            "untransformed_binning_edges",model_inst.binning_layer.get_bin_intervals(False)
+                            )
+                        _ctx.add_feature(
+                            "transformed_binning_edges",model_inst.binning_layer.get_bin_intervals(True)
+                            )
 
 
                     # run metrics and store them
@@ -192,9 +201,11 @@ def main(**kwargs):
                         plots=[
                             "confusion_matrix",
                             "roc",
-                            "asimov",
+                            "asimov_small_signal",
                             "output_score_hh_node",
-                            "bin_edges"
+                            "bin_edges",
+                            "output_score_hh_node_untransformed",
+
                         ],
                         step=current_iteration,
                         mode="train"
@@ -215,8 +226,9 @@ def main(**kwargs):
                         plots=[
                             "confusion_matrix",
                             "roc",
-                            "asimov",
+                            "asimov_small_signal",
                             "output_score_hh_node",
+                            "output_score_hh_node_untransformed",
                         ],
                         step=current_iteration,
                         mode="validation"
