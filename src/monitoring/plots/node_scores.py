@@ -68,8 +68,8 @@ def plot_network_predictions(
     return fig, axes
 
 
-@register_plot("output_score_hh_node", requires={"binning_edges"})
-def plot_network_predictions_hh(
+@register_plot("output_score_hh_node_untransformed", requires={"untransformed_binning_edges"})
+def plot_network_predictions_hh_untransformed(
     ctx,
     normalize=True,
     **kwargs
@@ -126,5 +126,72 @@ def plot_network_predictions_hh(
         ax.set_ylabel("frequency", size=25)
         ax.set_ylim((-0.1,1.1))
         ax.set_xlim((-0.1,1.1))
+        ax.grid()
+    return fig, axes
+
+@register_plot("output_score_hh_node", requires={"binning_edges"})
+def plot_network_predictions_hh_training_bin_edges(
+    ctx,
+    normalize=True,
+    **kwargs
+    ) -> tuple[Figure, Axes]:
+
+    y_true = ctx.targets
+    y_pred = ctx.predictions
+    # TODO somehow get information which kind if transformation is applied to the binning edges, since this is not stored in the context
+    import utils.transformations as fn
+    y_pred = fn.logit.forward(y_pred)
+
+    target_map = ctx.target_map
+    binning_edges = ctx.get("binning_edges").flatten()
+
+    # create a figure with subplots for hh node in normal and log
+    signal_idx = target_map["hh"]
+    num_plots = 2
+    fig, axes = plt.subplots(1, num_plots, figsize=(12 * num_plots, 12))
+    fig.suptitle(kwargs.pop("title", None))
+    # identify events uses TRUTH information to create masks
+    masks = {process: (y_true[:, idx] == 1) for process, idx in target_map.items()}
+    # to get node information apply index filtering on PREDICTION
+    hh_node = {process: y_pred[masks[process]][:, signal_idx] for process, idx in target_map.items()}
+    hh_node["background"] = np.concatenate([hh_node["dy"], hh_node["tt"]], axis=0)
+
+    # number of events are not evenly distributed outside of sampler
+    # normalize is a factor that also shows up in the legend
+    # by default weight is set to 1
+    weights = {process: None for process in target_map}
+    if normalize:
+        weights = {process: np.full(value.shape, 1 / len(value)) for process, value in hh_node.items()}
+
+    # plotting
+    # first for the 2 plots with combined background,
+    # last for the one with separated background
+    plt_cfg = {
+        "histtype" : kwargs.get("histtype", "step"),
+        "alpha" : kwargs.get("alpha", 0.7),
+        "bins" : binning_edges, # needs to be given from outside, since this is a dynamic variable
+    }
+
+    _ = axes[0].hist(hh_node["hh"], label="signal", weights=weights["hh"], hatch="/", **plt_cfg)
+    _ = axes[0].hist(hh_node["background"], label="background", weights=weights["background"], hatch="\\", **plt_cfg)
+    _ = axes[1].hist(hh_node["hh"], label="hh", weights=weights["hh"], hatch="/", **plt_cfg)
+    _ = axes[1].hist( hh_node["dy"],label="dy",weights=weights["dy"],hatch="\\",**plt_cfg)
+    _ = axes[1].hist(hh_node["tt"], label="tt", weights=weights["tt"], hatch="*", **plt_cfg)
+
+    # apply extra setting per axis
+    additional_legend_infos = (
+        # f"batch: {current_iteration}",
+        "\n".join([f"{process}: {len(hh_node[process])}" for process in target_map.keys()])
+    )
+
+    left_bound, right_bound = binning_edges[0] - 0.1, binning_edges[-1] + 1.1
+
+    for ax in axes:
+        # legend, adding iteration number and weigh factor
+        append_text_to_legend(ax, additional_legend_infos)
+        ax.set_xlabel("HH node", size=25)
+        ax.set_ylabel("frequency", size=25)
+        ax.set_ylim((-0.1, 1.1))
+        ax.set_xlim((left_bound, right_bound))
         ax.grid()
     return fig, axes

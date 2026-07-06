@@ -52,8 +52,13 @@ def asimov_no_background(
 
     # equivalent to:
     # torch.sqrt(2 * ((s + b) * (torch.log(s+b + eps_log / 2) - torch.log(b + eps_log / 2) -s) + eps_sqrt)
+    b = b + eps_log
+    s = s + eps_sqrt
+    # return torch.sqrt(
+    #     2 * ((s + b) * torch.log(1 + s / (b + eps_log)) - s) + eps_sqrt
+    #     )
     return torch.sqrt(
-        2 * ((s + b) * torch.log(1 + s / (b + eps_log)) - s) + eps_sqrt
+        2 * ((s + b) * torch.log(1 + s / (b )) - s)
         )
 
 

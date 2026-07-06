@@ -117,7 +117,7 @@ class BinningConfig:
         default_factory=lambda: {
             "GaussianKernelFinal": {
                 "abs_mode": False, # all values are interpreted as absolute values, recommended to be relative
-                "smoothing_width": 0.1, # width of gaussian where it goes from 100% to 10%
+                "smoothing_width": 0.0, # width of gaussian where it goes from 100% to 10%
                 "left_notch": 0.0, # shift of gaussian into linear part from left
                 "right_notch": 0.0, # shift of gaussian into linear part from right
                 "bin_height" : 1,
@@ -165,7 +165,7 @@ class TrainingConfig:
     validation_fn: VALIDATION_LOOP_CHOICE = "signal_efficiency" # name of the validation loop
     max_train_iteration: int = 15000 # max number of batches
     verbose_interval: int = 5 # interval between two logger outputs of training loss
-    validation_interval: int = 100 # interval between two validation passes / plots are done during validation
+    validation_interval: int = 30 # interval between two validation passes / plots are done during validation
     gamma: float = 0.5
     label_smoothing: float = 0.0
     train_folds: Tuple[int, ...] = (0,) # which training folds to use
@@ -215,8 +215,8 @@ class LossConfig:
 
     @dataclass
     class SignalEfficiencyLossConfig():
-        asimov_mode: SIGNAL_EFFICIENCY_LOSS_MODE = "no_unc" # which asimov is used
-        epsilon_small_signal: float = 1e-2 # epsilon of "asimov_small_signal_and_no_background"
+        asimov_mode: SIGNAL_EFFICIENCY_LOSS_MODE = "approximation" # which asimov is used
+        epsilon_small_signal: float = 1e-6 # epsilon of "asimov_small_signal_and_no_background"
         epsilon_sqrt: float = 1e-6 # epsilon to stablize sqrt part of "asimov_no_background"
         epsilon_log: float = 1e-6 # epsilon of "asimov_no_background" to stablize the log part of the formula
         background_uncertainty: float = 0.0 # uncertainty of "asimov", when above 1 absolut, 0 < x < 1 relative to background
