@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from utils.utils import maybe_import
+from .utils import maybe_import
 
 onnx = maybe_import("onnx")
 rt = maybe_import("onnxruntime")

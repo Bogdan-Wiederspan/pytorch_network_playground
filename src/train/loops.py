@@ -168,7 +168,7 @@ class TrainingLoop(BaseLoop):
             continuous_inputs=events.pop("continuous"),
             )
 
-        _ , optimization_pred = self.separate_prediction(pred)
+        _, optimization_pred = self.separate_prediction(pred)
 
         targets = events.pop("targets")
         loss = loss_fn(

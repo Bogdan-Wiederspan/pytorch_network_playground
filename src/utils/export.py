@@ -5,10 +5,13 @@ import pathlib
 
 import torch
 
-from models import create_model
-from utils import logger
-from utils.parser import ParserBuilder
-from utils.load_models import rebuild_model_from_checkpoint
+# from models import create_model
+
+from . import logger
+from .load_models import rebuild_model_from_checkpoint, rebuild_checkpoint_information
+from .parser import ParserBuilder
+
+
 
 logger_inst = logger.get_logger(__name__)
 
@@ -36,7 +39,6 @@ def torch_export_pt2(
     """
     # by default set CPU device, to enable most compatible export.
     DEVICE=torch.device("cpu")
-
     if activation_fn_name is not None:
         model_inst = create_model.utils.AddActFnToModel(model_inst, activation_fn_name)
 
@@ -131,8 +133,10 @@ if __name__ == "__main__":
     # model is dict with keys
     # epoch ,model_inst, model_state_dict, optimizer
     # we want an model_instance OR if not existing we create new model instance and load the state dict
+    # TODO add_activation_FN
     for fold, path in paths.items():
         logger_inst.info(f"Export fold {fold} with model checkpoint from {path}")
-        model_inst = rebuild_model_from_checkpoint(path.with_suffix(".pt"))
+        model_inst, full_cfg = rebuild_checkpoint_information(path.with_suffix(".pt"))
+        # model_inst = rebuild_model_from_checkpoint()
         torch_export_pt2(model_inst, name=path.with_suffix(".pt2"), fold=fold)
     logger_inst.info(f"Finished exporting models for folds {args.fold} with name {args.path.stem}")

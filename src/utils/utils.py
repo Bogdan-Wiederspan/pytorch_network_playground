@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import typing
-import dataclasses
 from collections import defaultdict
 from collections.abc import Iterable
 
 import torch
-
 
 EMPTY_INT = -99999
 EMPTY_FLOAT = -99999.0

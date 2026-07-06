@@ -20,8 +20,8 @@ LOSS_CHOICE = Literal["cross_entropy", "signal_efficiency", "signal_efficiency_b
 TRAINING_LOOP_CHOICE = Literal["cross_entropy", "sam", "signal_efficiency"]
 VALIDATION_LOOP_CHOICE = Literal["signal_efficiency", "cross_entropy"]
 SIGNAL_EFFICIENCY_LOSS_MODE = Literal["full", "no_unc", "approximation"]
-SCHEDULER_CHOICE = Literal["linear", "cosine_annealing", "reduce_on_plateau", "step"]
-
+SCHEDULER_CHOICE = Literal["linear", "cosine_annealing", "reduce_on_plateau", "step", "exponential"]
+BINNING_CHOICE = Literal["logit", "tangent", "linear", "cubic"]
 
 
 @dataclass
@@ -62,14 +62,16 @@ class ModelBuildingConfig:
     ) # which columns should be rotated
 
     # Padding Layers
-    categorical_target_value: Optional[float] = None # which categorical value is targeted by the padding, if None no value is masked
+    enable_categorical_padding: bool = False
+    categorical_target_value: Optional[float] = None # which categorical value is targeted by the padding
     categorical_masking_value: Optional[float] = -1 # value that is used to mask the categorical target value
 
+    enable_continous_padding: bool = False
     continuous_target_value: Optional[float] = None # which continuous value is targeted by the padding, if None no value is masked
     continuous_masking_value: Optional[float] = EMPTY_FLOAT # value that is used to mask the continuous target value
 
     # Tokenizer & Embedding Layer
-    tokenizer_add_unknown_category = None # value added to categories to symbolize unknown category. If None, no extra category is added
+    tokenizer_add_unknown_category: Optional[None] = None # value added to categories to symbolize unknown category. If None, no extra category is added
     embedding_dim: int = 10 # dimension of embedding layer - Marcel 10
     expected_embedding_inputs: Optional[dict[Tuple[int]]] = field(init=False)
 
@@ -100,42 +102,70 @@ class ModelBuildingConfig:
             raise ValueError("Norm of Linear Layer is currently buggy and is therefore disabled for now")
 
 
-from utils.transformations import logit
+from utils.transformations import logit, linspace, tangent, cubic
 @dataclass
 class BinningConfig:
-    num_bins: int = 10
+    num_bins: int = 15
     bounds: tuple[int] = (0, 1)
     # binning_fn: Any = torch.linspace  # keep as a callable, if needed
-    binning_fn: Any = logit
+    binning_choice: BINNING_CHOICE = "logit"
+    binning_cfg: Optional[None] = field(init=False)
+    binning_fn: Optional[None] = field(init=False)
+
     kernel_cls: KERNEL_CHOICE = "GaussianKernelFinal"
     kernel_config: Dict[str, Dict[str, Any]] = field(
         default_factory=lambda: {
             "GaussianKernelFinal": {
                 "abs_mode": False, # all values are interpreted as absolute values, recommended to be relative
-                "smoothing_width": 0.1, # width of gaussian where it goes from 100% to 10%
+                "smoothing_width": 0.0, # width of gaussian where it goes from 100% to 10%
                 "left_notch": 0.0, # shift of gaussian into linear part from left
                 "right_notch": 0.0, # shift of gaussian into linear part from right
                 "bin_height" : 1,
             }
         }
     )
+    @dataclass
+    class LinearConfig():
+        pass
+
+    @dataclass
+    class LogitConfig():
+        eps: float=torch.as_tensor(1e-6)
+
+    @dataclass
+    class TangentConfig():
+        shift: float=torch.as_tensor(0.5)
+
+    @dataclass
+    class CubicConfig():
+        shift: float=torch.as_tensor(0.5),
+        min: float | None=None,
+        max: float | None=None,
+        stretching_factor: float| None=None,
+
     def __post_init__(self):
         choice_check(self.kernel_cls, KERNEL_CHOICE)
+        binning_register = {
+            "logit" : (self.LogitConfig, logit),
+            "tangent" : (self.TangentConfig, tangent),
+            "linear" : (self.LinearConfig, linspace),
+            "cubic" : (self.CubicConfig, cubic),
+        }
+        binning_cfg, self.binning_fn = binning_register[self.binning_choice]
+        self.binning_cfg = asdict(binning_cfg())
+
+
 
 @dataclass
 class TrainingConfig:
-    save_model_name: str = "test" # name of the model used to save
+    save_model_name: str = "LogitRealSpace_15" # name of the model used to save
     log_metrics: bool = True # whether to log metrics to tensorboard during training, if false only validation loss is logged
     model_choice: MODEL_CHOICE = "binned_lbn_dense"
-    loss_fn: LOSS_CHOICE = "signal_efficiency"
     training_fn: TRAINING_LOOP_CHOICE = "signal_efficiency" # name of the training loop
     validation_fn: VALIDATION_LOOP_CHOICE = "signal_efficiency" # name of the validation loop
-    loss_mode: SIGNAL_EFFICIENCY_LOSS_MODE = "no_unc" # only relevant if signal_efficiency loss is chosen, determines which formula is used for the asimov calculation
-    loss_uncertainty: float = 0.0 # # only relevant if signal_efficiency loss is chosen, determines the background uncertainty used in the asimov calculation
-
-    max_train_iteration: int = 60000 # max number of batches
+    max_train_iteration: int = 15000 # max number of batches
     verbose_interval: int = 5 # interval between two logger outputs of training loss
-    validation_interval: int = 100 # interval between two validation passes / plots are done during validation
+    validation_interval: int = 30 # interval between two validation passes / plots are done during validation
     gamma: float = 0.5
     label_smoothing: float = 0.0
     train_folds: Tuple[int, ...] = (0,) # which training folds to use
@@ -145,9 +175,8 @@ class TrainingConfig:
     t_batch_size: int = 4096 * 10
     v_batch_size: int = -1 # validation batch size, -1 = full set,
 
-
     # Sampler Settings
-    sample_ratio: Dict[str, float] = field(default_factory=lambda:{"dy": 1 / 3, "tt": 1 / 3, "hh": 1 / 3}) # decide the ratio of tt, dy and hh within a batch
+    sample_ratio: Dict[str, float] = field(default_factory=lambda:{"dy": 1 / 4, "tt": 1 / 4, "hh": 1 / 2}) # decide the ratio of tt, dy and hh within a batch
     sub_process_ratios: Dict[str, float] = field(default_factory=lambda:{ # decide the
         # HINT: each rate is multiplied together to final rate, e.g. if process id exist 2x with rate 2, final rate is 4
         "signal":{}, # empty categorizes are set to 1 by default
@@ -176,10 +205,45 @@ class TrainingConfig:
             raise ValueError(f"Sample Attributes need to contain: {necessary_field}" )
         choice_check(self.training_fn, TRAINING_LOOP_CHOICE)
         choice_check(self.validation_fn, VALIDATION_LOOP_CHOICE)
-        choice_check(self.loss_mode, SIGNAL_EFFICIENCY_LOSS_MODE)
-        choice_check(self.loss_fn, LOSS_CHOICE)
         choice_check(self.model_choice, MODEL_CHOICE)
         self.sub_process_ratios = multiply_sub_process_rates(self.use_sub_process_ratios, self.sub_process_ratios)
+
+# TODO currently LOSS is not configurable change this
+@dataclass
+class LossConfig:
+    loss_fn: LOSS_CHOICE = "signal_efficiency"
+
+    @dataclass
+    class SignalEfficiencyLossConfig():
+        asimov_mode: SIGNAL_EFFICIENCY_LOSS_MODE = "approximation" # which asimov is used
+        epsilon_small_signal: float = 1e-6 # epsilon of "asimov_small_signal_and_no_background"
+        epsilon_sqrt: float = 1e-6 # epsilon to stablize sqrt part of "asimov_no_background"
+        epsilon_log: float = 1e-6 # epsilon of "asimov_no_background" to stablize the log part of the formula
+        background_uncertainty: float = 0.0 # uncertainty of "asimov", when above 1 absolut, 0 < x < 1 relative to background
+
+    @dataclass
+    class WeightedCrossEntropyConfig():
+        weight: float = 1.0 # weight of the positive class, 1.0 = no weighting
+        reduction: str = "mean" # reduction method, one of "none", "mean", "sum"
+        label_smoothing: float = 0.0 # label smoothing factor, 0.0 = no smoothing
+
+    signal_efficiency: SignalEfficiencyLossConfig = field(
+            default_factory=SignalEfficiencyLossConfig
+        )
+    weighted_cross_entropy: WeightedCrossEntropyConfig = field(
+            default_factory=WeightedCrossEntropyConfig
+        )
+
+    @property
+    def active_config(self):
+        return {
+            "signal_efficiency": self.signal_efficiency,
+            "weighted_cross_entropy": self.weighted_cross_entropy,
+        }[self.loss_fn]
+
+    def __post_init__(self):
+        choice_check(self.loss_fn, LOSS_CHOICE)
+        choice_check(self.signal_efficiency.asimov_mode, SIGNAL_EFFICIENCY_LOSS_MODE)
 
 
 
@@ -199,7 +263,7 @@ class SchedulerConfig:
 
     @dataclass
     class CosineAnnealingLRConfig():
-        T_max: int = 10000 # maximum number of iterations
+        T_max: int = 5000 # maximum number of iterations
         eta_min: float = 1e-7 # minimum learning rate
 
     @dataclass
@@ -218,6 +282,11 @@ class SchedulerConfig:
         end_factor: float = 1.0 # the final learning rate will be the end_factor times the base learning rate
         total_iters: int = 100 # number of iterations over which the multiplier increases from start_factor to end_factor
 
+    @dataclass
+    class ExponentialLRConfig():
+        gamma:  (float) = 0.9 # Multiplicative factor of learning rate decay.
+        last_epoch: (int) = -1# The index of last epoch. Default: -1.
+
 
     def __post_init__(self):
         schedulers = torch.optim.lr_scheduler
@@ -227,6 +296,7 @@ class SchedulerConfig:
             "reduce_on_plateau" : (self.ReduceLROnPlateauConfig, schedulers.ReduceLROnPlateau),
             "linear" : (self.LinearLRConfig, schedulers.LinearLR),
             "step" : (self.StepLRConfig, schedulers.StepLR),
+            "exponential" : (self.ExponentialLRConfig, schedulers.ExponentialLR),
         }
 
         scheduler_configs = []
@@ -286,6 +356,7 @@ class FullConfig:
     scheduler_config: SchedulerConfig = field(default_factory=SchedulerConfig)
     optimizer_config: OptimizerConfig = field(default_factory=OptimizerConfig)
     debug_config: DebugConfig = field(default_factory=DebugConfig)
+    loss_config: LossConfig = field(default_factory=LossConfig)
 
     def __post_init__(self):
         # when using optimizer sam specific training routine needs to be used

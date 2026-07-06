@@ -13,11 +13,11 @@ create_dirs(){
     #   PICTURE_DIR       Image output directory
     #   MODELS_DIR        Model storage directory
     #   TENSORBOARD_DIR   Tensorboard log directory
-    #   SETUP_DIRS_DONE   Setup flag (0/1)
+    #   CREATE_DIR   Setup flag (0/1)
     #
     # Side effects:
     #   - Creates missing directories
-    #   - Updates SETUP_DIRS_DONE in config.sh
+    #   - Updates CREATE_DIR in config.sh
     #
     # Returns:
     #   0 -> success / already completed
@@ -28,7 +28,7 @@ create_dirs(){
     source ${CONFIG_FILE}
 
     # just creating directories when they don't exist
-    if [ "${SETUP_DIRS_DONE}" -eq 1 ]; then
+    if [ "${CREATE_DIR}" -eq 1 ]; then
         echo "Skip Directory Setup, since its already done"
         return 0
     fi
@@ -57,7 +57,7 @@ create_dirs(){
         fi
     done
 
-    sed -i 's/^export SETUP_DIRS_DONE=.*/export SETUP_DIRS_DONE=1/' "${CONFIG_FILE}"
+    sed -i 's/^export CREATE_DIR=.*/export CREATE_DIR=1/' "${CONFIG_FILE}"
     echo "[INFO] Directory setup complete"
 
     return 0
@@ -91,12 +91,16 @@ check_required_vars() {
 
 # venv handling
 prepare_venv(){
+    # extend Paths to CUDA enviroment (necessary when not correct installed)
+    export LD_LIBRARY_PATH="${VENV_ROOT}/${ML_ENV}/lib/${VENV_PYTHON}/site-packages/nvidia/cudnn/lib:$LD_LIBRARY_PATH"
+    export LD_LIBRARY_PATH="${VENV_ROOT}/${ML_ENV}/lib/${VENV_PYTHON}/site-packages/nvidia/nccl/lib:$LD_LIBRARY_PATH"
     # check if venv root exist, return 1 if false
     _path="${VENV_ROOT}/${ML_ENV}/bin/"
     if [ ! -n "${_path}" ]; then
         echo "Venv root does not exist check ${_path}"
         return 1
     fi
+
 }
 
 activate_venv(){
