@@ -5,7 +5,7 @@ import torch
 from models.binning import BaseKernel
 
 
-class TanhKernel(BaseKernel):
+class GaussianKernelFinal(BaseKernel):
     def __init__(
         self,
         edges,
@@ -13,7 +13,6 @@ class TanhKernel(BaseKernel):
         right_notch: float  = 0,
         smoothing_width: float = 0.1,
         abs_mode: bool = False,
-        bin_type = "normal",
         bin_height: float = 1,
         *args,
         **kwargs,
@@ -46,10 +45,6 @@ class TanhKernel(BaseKernel):
         self.bin_type = bin_type
         self.bin_height = bin_height # TODO USE THIS
         self.checks()
-
-    @property
-    def bin_width(self):
-        return self.initial_upper_edge - self.initial_lower_edge
 
     @property
     def left_notch(self):
@@ -191,11 +186,13 @@ class TanhKernel(BaseKernel):
         full_integral = linear_integral + gaussian_integral
         return full_integral
 
-    def control_plot(self, x, x_ticks=(0,1,21), with_h_lines=True):
+    def control_plot(self, x, x_ticks=(0,1,21), with_h_lines=False):
         # helper plot to visualize the kernel
         import matplotlib.pyplot as plt
+
         y = self(x).cpu()
         plt.plot(x.cpu(), y)
+
         plt.xticks(torch.linspace(*x_ticks).numpy(), rotation=45)
         if with_h_lines:
             # gaussian v line reaching 10%
@@ -211,8 +208,5 @@ class TanhKernel(BaseKernel):
 
             # horizontal marking 10%
             plt.hlines(0.1, 0, 1, color = "black", linestyles=":")
+
         return plt.gcf(), plt.gca()
-
-
-    def __call__(self, *args, **kwds):
-        return self.kernel(*args, **kwds) #/ self.normalization

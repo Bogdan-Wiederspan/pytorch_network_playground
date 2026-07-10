@@ -7,12 +7,13 @@ import torch
 
 from data import features
 from data.utils import find_datasets
+from utils.transformations import cubic, linspace, logit, tangent
 from utils.utils import EMPTY_FLOAT, choice_check, multiply_sub_process_rates
 
 # some values only accept certain values, not runtime check is performed!
 ERAS_CHOICE = Literal["22pre", "22post", "23pre", "23post"]
 LAST_ACTIVATION_CHOICE = Literal["Softmax", "Sigmoid", None]
-KERNEL_CHOICE = Literal["GaussianKernelV3", "GaussianKernelFinal"]
+KERNEL_CHOICE = Literal["GaussianKernelV3", "GaussianKernelFinal", "Tanh"]
 OPTIMIZER_CHOICE = Literal["adamw", "sam"]
 
 MODEL_CHOICE = Literal["residual", "dense", "lbn_dense", "binned_lbn_dense"]
@@ -102,7 +103,6 @@ class ModelBuildingConfig:
             raise ValueError("Norm of Linear Layer is currently buggy and is therefore disabled for now")
 
 
-from utils.transformations import logit, linspace, tangent, cubic
 @dataclass
 class BinningConfig:
     num_bins: int = 15
@@ -112,15 +112,22 @@ class BinningConfig:
     binning_cfg: Optional[None] = field(init=False)
     binning_fn: Optional[None] = field(init=False)
 
-    kernel_cls: KERNEL_CHOICE = "GaussianKernelFinal"
+    # --- Determine the Kernel Configuration that is used for the ove
+    kernel_cls: KERNEL_CHOICE = "Tanh"
     kernel_config: Dict[str, Dict[str, Any]] = field(
         default_factory=lambda: {
+            "General": {
+                "left_notch": 0.2, # shift transition function towards bin center from left, cannot exceed half of bin width
+                "right_notch": 0.2, # shift transition function towards bin center from right
+                "bin_height" : 1, # bin height should stay 1 normally
+                "absolute_notch": False, # notches are
+            },
             "GaussianKernelFinal": {
-                "abs_mode": False, # all values are interpreted as absolute values, recommended to be relative
                 "smoothing_width": 0.0, # width of gaussian where it goes from 100% to 10%
-                "left_notch": 0.0, # shift of gaussian into linear part from left
-                "right_notch": 0.0, # shift of gaussian into linear part from right
-                "bin_height" : 1,
+            },
+            "Tanh": {
+                "eps" : 1e-3, # needs to be by default between 0 and 1
+                "full_width" : None, # full width in transformed space where function goes from 1-eps to eps
             }
         }
     )
@@ -151,8 +158,19 @@ class BinningConfig:
             "linear" : (self.LinearConfig, linspace),
             "cubic" : (self.CubicConfig, cubic),
         }
-        binning_cfg, self.binning_fn = binning_register[self.binning_choice]
-        self.binning_cfg = asdict(binning_cfg())
+        # extract configs and combine kernel configs and populate corresponding fields
+        # kernel cfg
+        kernel_general_config = self.kernel_config["General"].copy()
+        kernel_choice_config = self.kernel_config[self.kernel_cls].copy()
+        kernel_choice_config.update(kernel_general_config)
+        self.kernel_config = kernel_choice_config
+
+        # binning cfg
+        binning_cfg, binning_fn = binning_register[self.binning_choice]
+        binning_cfg = asdict(binning_cfg()).copy()
+        self.binning_fn = binning_fn
+        self.binning_cfg = binning_cfg
+
 
 
 
