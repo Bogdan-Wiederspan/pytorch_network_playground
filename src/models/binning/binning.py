@@ -12,7 +12,7 @@ class BinningLayer(torch.nn.Module):
 
         binning_fn: callable, # like linspace or logspace to create initial edges
         binning_cfg,
-        kernel_cls,
+        kernel_map, # dict with mapping to bins factories
         kernel_cfg,
         *args,
         **kwargs
@@ -37,23 +37,94 @@ class BinningLayer(torch.nn.Module):
         """
         super().__init__(*args, **kwargs)
         # TODO currently no fusion allowed
-
         self.num_bins = num_bins
         self.original_bounds = bounds
-        self.bounds = bounds
+        self.bounds = bounds # after apply trans_fn
         self.is_transformed = False
+
         self.binning_fn = binning_fn
         self.binning_cfg = binning_cfg
         self.init_learnable_edges()
 
-        self.kernel_cls = kernel_cls
+        self.kernel_map = kernel_map
         self.kernel_cfg = kernel_cfg
         self.kernel_cache = None
 
-    # def visualize(self):
-    #     from train.plotting import plot_edges_number_line
-    #     plot_edges_number_line(self.bin_intervals)
+        self.is_frozen = True
 
+    def freeze_edges(self):
+        # self.relative_bin_width.requires_grad = False
+        self.is_frozen = True
+        self.kernel_cache = None
+
+    def unfreeze_edges(self):
+        # self.relative_bin_width.requires_grad = True
+        self.is_frozen = False
+        self.kernel_cache = None # failsafe to prevent reusing stale cache
+
+    # --- Core Kernels
+    def create_kernels(self):
+        # kernel_cls is a dict of kernel pointers
+        edges = self.calculate_bin_intervals
+        kernels = []
+        n_bins = len(edges)
+        # --- creation of kernels
+        for bin_num, edge in enumerate(edges):
+            if bin_num == 0:
+                role = "underflow"
+            elif bin_num == n_bins - 1:
+                role = "overflow"
+            else:
+                role = "normal"
+            cls = self.kernel_map[role]
+            kernels.append(cls(edge, **self.kernel_cfg))
+
+        # --- configuration of kernels belong here
+        # TODO smoothing width is also a neightbor hood quantity
+        # necessary when training the edges
+        kernels = self._connect_kernels(kernels)
+        return kernels
+
+    def _connect_smoothness(self, kernels):
+        # TODO for each overlapp calculate a smoothess
+        # necessary for variable edges?
+        raise NotImplementedError("NotImplemented")
+
+    def _connect_kernels(self, kernels):
+        n_bins = len(kernels)
+
+        # share information about neighbors
+        for bin_idx, kernel in enumerate(kernels):
+            # set left cut
+            if bin_idx > 0:
+                kernel.left_cut = kernels[bin_idx - 1].right_transition_coordinate
+
+            # set right cut
+            if bin_idx < n_bins - 1:
+                kernel.right_cut = kernels[bin_idx + 1].left_transition_coordinate
+        return kernels
+
+    def kernels(self):
+        """
+        Construct the gaussian-kernel consisting out of a left gaussian, horizontal middle and right gaussian.
+        If kernels already exist, reuse kernel cache.
+        TODO: When using a model with learnable edges reconstruct this!!!
+
+        """
+        # only reuse cache when TRAINING is set to false, and cache exist
+        # TODO maybe not correct freezing behavior
+        if (self.kernel_cache is not None) and self.is_frozen:
+            return self.kernel_cache
+        print("Create Kernels")
+        # create and config kernels
+        kernels = self.create_kernels()
+
+        # only safe when being frozen, during training cache is always stale
+        if self.is_frozen:
+            self.kernel_cache = kernels
+        return kernels
+
+    # --- Geometry handling
     @property
     def lower_edge(self):
         return self.bounds[0]
@@ -110,7 +181,9 @@ class BinningLayer(torch.nn.Module):
         if not torch.is_tensor(eps):
             eps = torch.tensor(eps)
 
+        # TODO maybe overlook this part again
         if self.binning_fn is None or self.is_transformed is True:
+            self.bounds = self.original_bounds
             return torch.linspace(self.lower_edge, self.upper_edge, self.num_bins + 1)
 
         # create intervalls using linspace in transformed space
@@ -148,34 +221,22 @@ class BinningLayer(torch.nn.Module):
         self.relative_bin_width = torch.nn.Buffer(relative_width)
         parametrize.register_parametrization(self, "relative_bin_width", torch.nn.Softmax(dim=0))
 
-    def kernels(self ,load_cache=False):
-        """
-        Construct the gaussian-kernel consisting out of a left gaussian, horizontal middle and right gaussian.
-        If kernels already exist, reuse kernel cache.
-        TODO: When using a model with learnable edges reconstruct this!!!
-
-        """
-        # kernels should only be rebuild, when there is no cache or load_cache is false
-        if load_cache and self.kernel_cache:
-            return self.kernel_cache
-
-        kernels = []
-        for bin_num, edge in enumerate(self.calculate_bin_intervals):
-            if bin_num == 0:
-                bin_type = "underflow"
-            elif bin_num == (self.num_bins - 1):
-                bin_type = "overflow"
-            else:
-                bin_type = "normal"
-            kernel = self.kernel_cls(
-                edges=edge,
-                bin_type=bin_type,
-                **self.kernel_cfg,
-                )
-            kernels.append(kernel)
-        # save in cache
-        self.kernel_cache = kernels
-        return kernels
+    def plot_3_kernels(self, kernels):
+            k0 = kernels[0]
+            k1 = kernels[1]
+            k2 = kernels[2]
+            xx = torch.linspace(-15,-7,1000)
+            yy = k0(xx)
+            yy1 = k1(xx)
+            yy2 = k2(xx)
+            import matplotlib.pyplot as plt
+            plt.plot(xx,yy)
+            plt.plot(xx,yy1)
+            plt.plot(xx,yy2)
+            name = "kernel_control_plot.png"
+            plt.savefig()
+            print(f"Saved Control Plot as {name}")
+            plt.show()
 
 
     def forward(self, x):
@@ -183,7 +244,7 @@ class BinningLayer(torch.nn.Module):
 
         # this is used to determine the BIN position for the scale
         determine_scale_x = (self.binning_fn.forward(x, **self.binning_cfg)).detach()
-        kernels = self.kernels(load_cache=False)
+        kernels = self.kernels()
         for kernel in kernels:
             scale = kernel(determine_scale_x)
             scaled_x.append(scale * x)

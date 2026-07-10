@@ -4,8 +4,8 @@ from dataclasses import asdict
 
 import torch
 
-from ..binning import BinningLayer
-from ..binning import gaussian_kernel as kernel
+from ..binning import BinningLayer, KERNEL_MAP
+from models import binning
 from ..register import register_model
 from .LBNDenseNet import LBNDenseNet
 
@@ -41,8 +41,8 @@ class BinnedLBNDenseNet(LBNDenseNet):
                 bounds=self.binning_config.bounds,
                 binning_fn=self.binning_config.binning_fn,
                 binning_cfg=self.binning_config.binning_cfg,
-                kernel_cls=getattr(kernel, self.binning_config.kernel_cls),
-                kernel_cfg=self.binning_config.kernel_config[self.binning_config.kernel_cls],
+                kernel_map=KERNEL_MAP[self.binning_config.kernel_cls],
+                kernel_cfg=self.binning_config.kernel_config,
                 )
 
     def learning_mode_bin_only(self):
