@@ -135,7 +135,7 @@ def main(**kwargs):
                 # evaluation of training data
                 logger_inst.info(f"Iteration {current_iteration}. Start evaluation of training data.")
 
-                eval_t_loss, (eval_t_pred, eval_t_tar, eval_t_weights) = validation_loop(
+                eval_t_loss, (eval_t_pred, eval_t_tar, eval_t_weights, eval_t_dataset_id) = validation_loop(
                     model_inst,
                     validation_loss_inst,
                     training_sampler,
@@ -146,7 +146,7 @@ def main(**kwargs):
                 # evaluation of validation
                 logger_inst.info(f"Iteration {current_iteration}. Start evaluation of validation data.")
 
-                eval_v_loss, (eval_v_pred, eval_v_tar, eval_v_weights) = validation_loop(
+                eval_v_loss, (eval_v_pred, eval_v_tar, eval_v_weights, eval_v_dataset_id) = validation_loop(
                     model_inst,
                     validation_loss_inst,
                     validation_sampler,
@@ -167,6 +167,7 @@ def main(**kwargs):
                         # binning_edges = ,
                         current_iteration = current_iteration,
                         # kernels = model_inst.binning_layer.kernels,
+                        dataset_id = eval_t_dataset_id,
                     )
 
 
@@ -183,6 +184,7 @@ def main(**kwargs):
                         binning_edges = full_config.binning_config.num_bins,
                         current_iteration = current_iteration,
                         # kernels=model_inst.binning_layer.kernels,
+                        dataset_id = eval_v_dataset_id,
                     )
                 logger_inst.training(f"Iteration: {current_iteration} - TLoss: {eval_t_loss:.2E} VLoss: {eval_v_loss:.2E}")
 

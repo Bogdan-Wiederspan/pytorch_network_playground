@@ -123,6 +123,44 @@ def log_metrics(
     )
     tensorboard_inst.log_figure(f"{mode} roc curve one vs rest", roc_fig, step=iteration_step)
 
+    if _optional("dataset_id", log_name="ProcessID Loss"):
+        uids = data["dataset_id"]
+
+        _ids = {
+        "hh": (21101,),
+        "tt":(1100,1200,1300), # groups are possible, and mixes are allowed
+        "dy":(51667, 51683, 51664, 51680, 51720, 51723, 51726,
+        51729, 51732, 51735, 51674, 51690, 51665, 51681,
+        51661, 51677, 51670, 51671, 51672, 51673, 51675,
+        51686, 51687, 51688, 51689, 51691, 51666, 51682,
+        51699, 51702, 51705, 51708, 51711, 51714, 51693,
+        51668, 51684, 51663, 51679,),
+        }
+
+        to_filter = []
+        for _id in _ids.values():
+            to_filter.extend(_id)
+
+        for _id in to_filter:
+            mask = (uids == _id).flatten()
+            masked_pred = pred[mask]
+            masked_tar = tar[mask]
+            masked_weight = weights[mask]
+
+            cce_pid_metric = torch.nn.functional.cross_entropy(
+                masked_pred,
+                masked_tar,
+                weight=None,
+                reduction="none"
+                )
+
+            cce_pid_weights = masked_weight.reshape(cce_pid_metric.shape)
+            cce_pid_weighted_metric = torch.mean(cce_pid_metric * cce_pid_weights)
+            tensorboard_inst.log_scalar(
+                values={str(_id): cce_pid_weighted_metric},
+                step=iteration_step,
+                name=f"{mode} - PID CrossEntropy")
+
 
     if _optional("loss", log_name="Loss"):
         tensorboard_inst.log_loss({mode: data["loss"]}, step=iteration_step)

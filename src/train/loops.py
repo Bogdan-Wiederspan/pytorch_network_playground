@@ -226,7 +226,7 @@ class ValidationLoop(BaseLoop):
             "loss_predictions" : [],
             "relative_weights" : [],
 
-            # "dataset_id" : [], # TODO add ID to enable filtering by dataset
+            "dataset_id" : [],
             }
 
         dynamic_data = {dynamic_d : [] for dynamic_d in tuple(sample_columns - self.necessary_columns)}
@@ -256,6 +256,8 @@ class ValidationLoop(BaseLoop):
                     collected_data["relative_weights"].append(
                         torch.full(size=(class_pred.shape[0], 1), fill_value=sampler_inst[uid].relative_weight)
                         )
+                    _uid_array = torch.full(size=(class_pred.shape[0], 1), fill_value=float(uid))
+                    collected_data["dataset_id"].append(_uid_array)
 
                     if not model_inst.use_last_activation:
                         # TODO if sigmoid is necessary add switch case
@@ -314,7 +316,7 @@ class ValidationLoop(BaseLoop):
             tensors["targets"],
             tensors["sample_weights"],
         )
-        return loss, (tensors["class_predictions"], tensors["targets"], tensors["sample_weights"])
+        return loss, (tensors["class_predictions"], tensors["targets"], tensors["sample_weights"], tensors["dataset_id"])
 
     @register_loop(name="signal_efficiency")
     def signal_efficiency_loop(
