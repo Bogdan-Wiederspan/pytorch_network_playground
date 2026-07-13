@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import torch
 
-from models.binning import BaseKernel
+from models.binning import BaseKernel, UnderflowKernel, OverflowKernel
 
 
-class GaussianKernelFinal(BaseKernel):
+class GaussianKernel(BaseKernel):
     def __init__(
         self,
         edges,
@@ -34,89 +34,19 @@ class GaussianKernelFinal(BaseKernel):
             bin_type (str, optional): Determined if bin is "normal", "underflow" or "overflow" bin.
             bin_height (float, optional): Set Maximum Value of bin approximation. Defaults to 1.
         """
+        super().__init__(self, edges, left_notch, right_notch)
         self.initial_lower_edge, self.initial_upper_edge = edges
-        self.abs_mode = abs_mode
+        self.absolute_width = abs_mode
 
         self._left_notch, self._right_notch, self._smoothing_width  = self.wrap_tensors(left_notch, right_notch, smoothing_width)
 
         # calculate std for gaussian function based on gi
         self.std = self.sigma_for_given_width_at_percentage(self.smoothing_width, 0.1)
 
-        self.bin_type = bin_type
         self.bin_height = bin_height # TODO USE THIS
         self.checks()
 
-    @property
-    def left_notch(self):
-        return self._left_notch * self.bin_width
-
-    @property
-    def right_notch(self):
-        return self._right_notch * self.bin_width
-
-    @property
-    def smoothing_width(self, device="cpu"):
-        if self.abs_mode:
-            return self._smoothing_width
-        return (self._smoothing_width * self.bin_width)
-
-    def checks(self):
-
-        # helper function to gather all assert checks
-        init_variables = {
-            name: getattr(self,name)
-            for name in ("initial_lower_edge", "initial_upper_edge", "smoothing_width", "left_notch", "right_notch")
-            }
-
-        if self.bin_type not in ("normal", "underflow", "overflow"):
-            raise ValueError(f"Unsupported bin type: {self.bin_type}")
-
-        # everything should be tensors
-        is_tensor = {name: torch.is_tensor(attribute) for name, attribute in (init_variables).items()}
-
-        if not all(is_tensor.values()):
-            raise TypeError(f"All arguments should be tensors but got:\n{is_tensor}")
-
-        # TODO: These checks break torchscript
-        # # low and upper should be in the correct order
-        # torch._assert(
-        #     self.initial_lower_edge < self.initial_upper_edge,
-        #     "Lower edge above upper edge"
-        #     )
-
-        # # gaussian should not over whole bin
-        # torch._assert(
-        #     self._left_notch + self._right_notch <= 1,
-        #     "Notches exceed whole bin"
-        # )
-
-    @property
-    def coordinates(self):
-        if self.bin_type == "overflow":
-            transition_point_left = self.initial_lower_edge + self.left_notch
-            transition_point_right = self.initial_upper_edge
-        elif self.bin_type == "underflow":
-            transition_point_left = self.initial_lower_edge
-            transition_point_right = self.initial_upper_edge - self.right_notch
-        else:
-            transition_point_left = self.initial_lower_edge + self.left_notch
-            transition_point_right = self.initial_upper_edge - self.right_notch
-        return transition_point_left, transition_point_right
-
-    def shifted_gaussian(self, x: torch.tensor, shift: torch.tensor) -> torch.tensor:
-        """
-        Gaussian Kernel implementation, where *x* is the input, and *shift* is there to simulate the left or right side of the gaussian.
-
-        Args:
-            x (torch.tensor): Input tensor of the gaussian.
-            shift (torch.tensor): Shift along x-axis.
-
-        Returns:
-            torch.tensor: y-value of the gaussian.
-        """
-        x, shift, smooth_std = self.wrap_tensors(x, shift, self.std)
-        return torch.exp(-(1/2) * ((x - shift) / (smooth_std))**2)
-
+    # --- Geometry ---
     @property
     def FW50M(self):
         # calculate the full width at half maximum for the gaussian from 50% to 50%
@@ -126,6 +56,12 @@ class GaussianKernelFinal(BaseKernel):
     def FW10M(self):
         # calculate the full width at tenth of maximum for the gaussian from 10% to 10%
         return torch.tensor(4.29193) * self.std
+
+    @property
+    def smoothing_width(self):
+        if self.absolute_mode:
+            return self._smoothing_width
+        return self._smoothing_width * self.bin_width
 
     def sigma_for_given_width_at_percentage(self, half_width, percentage):
         """
@@ -144,30 +80,7 @@ class GaussianKernelFinal(BaseKernel):
         }
         return (2 * half_width) / constants[percentage]
 
-    def kernel(self, x: torch.tensor) -> torch.tensor:
-        """
-        Actual kernel implementation, containing 3 parts: left gaussian, horizontal 1 and right gaussian.
-        A value *x* is mapped to an y value using these function.
-
-        Args:
-            x (torch.tensor): Input tensor of x values that are mapped to y.
-
-        Returns:
-            torch.tensor: y value tensor resulting form the function. Is by default between 0 and 1
-        """
-        # TODO add scaling factor as bin_height
-        # prepare edges and function
-        start, end = self.coordinates
-        sm_fn = self.shifted_gaussian
-        # set values depending on the bin type
-        if self.bin_type == "overflow":
-            f = torch.where(x < start, sm_fn(x, shift=start), 1)
-        elif self.bin_type == "underflow":
-            f = torch.where(x > end, sm_fn(x, shift=end), 1)
-        else:
-            f = torch.where(x < start, sm_fn(x, shift=start), 1)
-            f = torch.where(x > end, sm_fn(x, shift=end), f)
-        return f
+    # --- core ---
 
     @property
     def normalization(self):
@@ -186,14 +99,36 @@ class GaussianKernelFinal(BaseKernel):
         full_integral = linear_integral + gaussian_integral
         return full_integral
 
+    def gaussian(self, x: torch.tensor, center: torch.tensor) -> torch.tensor:
+        """
+        Gaussian Kernel implementation, where *x* is the input.
+        *center* is used as shift.
+
+        Args:
+            x (torch.tensor): Input tensor of the gaussian.
+            center (torch.tensor): Shift along x-axis.
+
+        Returns:
+            torch.tensor: y-value of the gaussian.
+        """
+        x, center, smooth_std = self.wrap_tensors(x, center, self.std)
+        return torch.exp(-(1/2) * ((x - center) / (smooth_std))**2)
+
+
+    def left_transition_fn(self, x):
+        left = self.left_transition_coordinate
+        return self.gaussian(x, left)
+
+    def right_transition_fn(self, x):
+        right = self.right_transition_coordinate
+        return self.gaussian(x, right)
+
+
     def control_plot(self, x, x_ticks=(0,1,21), with_h_lines=False):
         # helper plot to visualize the kernel
         import matplotlib.pyplot as plt
+        fig, ax = super(self.control_plot(x, x_ticks))
 
-        y = self(x).cpu()
-        plt.plot(x.cpu(), y)
-
-        plt.xticks(torch.linspace(*x_ticks).numpy(), rotation=45)
         if with_h_lines:
             # gaussian v line reaching 10%
             low, up = self.coordinates
@@ -201,12 +136,20 @@ class GaussianKernelFinal(BaseKernel):
             up = up.cpu()
             smoothing_width = self.smoothing_width.cpu()
             init_low, init_up = self.initial_lower_edge.cpu(), self.initial_upper_edge.cpu()
-            plt.vlines([low - smoothing_width, up + smoothing_width], ymin=0, ymax=1, color="green")
+            ax.vlines([low - smoothing_width, up + smoothing_width], ymin=0, ymax=1, color="green")
 
             # ORIGINAL BIN
-            plt.vlines([init_low, init_up], ymin=0, ymax=1, color="black", linestyles="-")
+            ax.vlines([init_low, init_up], ymin=0, ymax=1, color="black", linestyles="-")
 
             # horizontal marking 10%
-            plt.hlines(0.1, 0, 1, color = "black", linestyles=":")
+            ax.hlines(0.1, 0, 1, color = "black", linestyles=":")
 
-        return plt.gcf(), plt.gca()
+        return fig, ax
+
+
+class GaussianUnderflowKernel(UnderflowKernel, GaussianKernel):
+    pass
+
+
+class GaussianOverflowKernel(OverflowKernel, GaussianKernel):
+    pass
