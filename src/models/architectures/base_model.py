@@ -7,7 +7,9 @@ from ..preprocessing import CatEmbeddingLayer, EmptyLayer, PaddingLayer, RotateP
 
 
 class BaseModel(torch.nn.Module):
+    is_binned = False
     LEARNING_MODES = {}
+
     def __init__(self, full_config, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.model_building_config = full_config.model_building_config
@@ -19,7 +21,7 @@ class BaseModel(torch.nn.Module):
 
         # use the last activation function when it exist. Can be deactivated
         self.use_last_activation = self.model_building_config.use_last_activation
-        self.is_binned = False # this flag indicates if the network is two-headed
+
 
     def __init_subclass__(cls):
         super().__init_subclass__()

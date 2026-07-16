@@ -36,36 +36,42 @@ class BinningLayer(torch.nn.Module):
             kernel_cfg (_type_): _description_
         """
         super().__init__(*args, **kwargs)
-        # TODO currently no fusion allowed
+        # TODO currently no fusion allowed, when for example bins are very small
+        # --- Status Flags ---
+        self.is_frozen = True
+
+        # --- Geometry ---
         self.num_bins = num_bins
         self.original_bounds = bounds
         self.bounds = bounds # after apply trans_fn
         self.is_transformed = False
 
+        # --- Transformations ---
         self.binning_fn = binning_fn
         self.binning_cfg = binning_cfg
-        self.init_learnable_edges()
+        self.init_learnable_edges() # saves parameter as: relative_bin_width
 
+        # --- Kernels ---
         self.kernel_map = kernel_map
         self.kernel_cfg = kernel_cfg
         self.kernel_cache = None
 
-        self.is_frozen = True
-
+    # --- Status Flags ---
     def freeze_edges(self):
-        # self.relative_bin_width.requires_grad = False
+        self.parametrizations.relative_bin_width.original.requires_grad = False
         self.is_frozen = True
         self.kernel_cache = None
 
     def unfreeze_edges(self):
         # self.relative_bin_width.requires_grad = True
+        self.parametrizations.relative_bin_width.original.requires_grad = True
         self.is_frozen = False
         self.kernel_cache = None # failsafe to prevent reusing stale cache
 
     # --- Core Kernels
     def create_kernels(self):
         # kernel_cls is a dict of kernel pointers
-        edges = self.calculate_bin_intervals
+        edges = self.bin_intervals.detach() # kernels should NOT have any gradient behavior since they only act as ENCHANCER
         kernels = []
         n_bins = len(edges)
         # --- creation of kernels
@@ -104,7 +110,7 @@ class BinningLayer(torch.nn.Module):
                 kernel.right_cut = kernels[bin_idx + 1].left_transition_coordinate
         return kernels
 
-    def kernels(self):
+    def get_kernels(self):
         """
         Construct the gaussian-kernel consisting out of a left gaussian, horizontal middle and right gaussian.
         If kernels already exist, reuse kernel cache.
@@ -112,10 +118,9 @@ class BinningLayer(torch.nn.Module):
 
         """
         # only reuse cache when TRAINING is set to false, and cache exist
-        # TODO maybe not correct freezing behavior
         if (self.kernel_cache is not None) and self.is_frozen:
             return self.kernel_cache
-        print("Create Kernels")
+
         # create and config kernels
         kernels = self.create_kernels()
 
@@ -124,7 +129,7 @@ class BinningLayer(torch.nn.Module):
             self.kernel_cache = kernels
         return kernels
 
-    # --- Geometry handling
+    # --- Geometry handling ---
     @property
     def lower_edge(self):
         return self.bounds[0]
@@ -133,25 +138,27 @@ class BinningLayer(torch.nn.Module):
     def upper_edge(self):
         return self.bounds[1]
 
-    @property
-    def calculate_bin_intervals(self):
+    def _edges_to_relative_width(self, edges):
+        widths = edges[1:] - edges[:-1]
+        return widths / (self.upper_edge - self.lower_edge)
+
+    def _relative_width_to_edges(self, relative_width):
         # TODO bin edges ignore transformation currently
         # calculate absolute widht of bins
         # from IPython import embed; embed(header="MESSAGE Line 1414 | File: layers.py")
-
-        weights = list(self.buffers())[0]
-        relative_part = weights.detach()
         interval = self.upper_edge - self.lower_edge
-        abs_width = interval * relative_part
+        width = interval * relative_width
 
-        # right edge is sum of abs_bins + lowest edge
-        # left edge is
-        shift = self.lower_edge
-        right_edge = shift + torch.cumsum(abs_width, dim=0)
-        left_edge = right_edge - abs_width
-        return torch.stack((left_edge, right_edge), dim = 1)
+        right = self.lower_edge + torch.cumsum(width, dim=0)
+        left = right - width
+        return torch.stack((left, right), dim = 1)
 
-    def get_bin_intervals(self, transformed=None):
+    @property
+    def bin_intervals(self):
+        return self._relative_width_to_edges(self.relative_bin_width)
+
+    # # TODO usage unclear
+    def bin_intervals_in_space(self, transformed=None):
         intervals = self.bin_edges
         # return currently used interval when no transformed status is given
         if transformed is None:

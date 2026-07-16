@@ -1,5 +1,5 @@
 
-from .binning import BinningLayer
+from .binning import BinningLayer, plot_kernel
 from .kernels.base_kernel import BaseKernel, OverflowKernel, UnderflowKernel
 
 # backwards compatibility
@@ -47,4 +47,5 @@ __all__ = [
     "LinearUnderflowKernel",
     "LinearOverflowKernel",
 
+    "plot_kernel",
 ]
