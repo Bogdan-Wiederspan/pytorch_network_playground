@@ -180,78 +180,67 @@ class BinningLayer(torch.nn.Module):
 
     @property
     def bin_edges(self):
-        intervals = self.calculate_bin_intervals
+        intervals = self.bin_intervals
         edges = [intervals[:, 0].reshape(-1, 1), intervals[-1, 1].reshape(-1, 1)]
         return torch.flatten(torch.concatenate(edges, dim = 0))
 
-    def apply_bin_fn(self, eps=1e-6):
-        if not torch.is_tensor(eps):
-            eps = torch.tensor(eps)
+    @property
+    def bin_edges_original(self):
+        left, right = self.original_bounds
+        return torch.linspace(left, right, self.num_bins + 1)
 
-        # TODO maybe overlook this part again
-        if self.binning_fn is None or self.is_transformed is True:
-            self.bounds = self.original_bounds
-            return torch.linspace(self.lower_edge, self.upper_edge, self.num_bins + 1)
+    def _transform_bounds(self) -> tuple[torch.Tensor,torch.Tensor]:
+        """
+        What are the current active bounds.
 
-        # create intervalls using linspace in transformed space
-        transformed_lower_edge = self.binning_fn.forward(self.lower_edge, **self.binning_cfg)
-        transformed_upper_edge = self.binning_fn.forward(self.upper_edge, **self.binning_cfg)
+        Returns:
+            torch.Tensor: Current active bounds with applied transformation.
+        """
+        if self.binning_fn is None:
+            self.is_transformed = False
+            return self.original_bounds
 
-        self.bounds = (transformed_lower_edge, transformed_upper_edge)
         self.is_transformed = True
-        interval = torch.linspace(
-            transformed_lower_edge,
-            transformed_upper_edge,
+        return (
+            self.binning_fn.forward(self.original_bounds[0], **self.binning_cfg),
+            self.binning_fn.forward(self.original_bounds[1], **self.binning_cfg)
+        )
+
+    def _create_initial_edges(self) -> torch.Tensor:
+        """
+        Creates and returns linspace edges in current transformed edge space.
+        """
+        return torch.linspace(
+            self.lower_edge,
+            self.upper_edge,
             self.num_bins + 1
             )
 
-        # THIS REVERSE BIN EDGES back into original space!
-        # TODO maybe leave inverse out and perform in forward also transformated binning?
-        # return to normal space
-        # interval = self.binning_fn.inverse(interval, eps=eps)
-        # interval[0] = self.lower_edge
-        # interval[-1] = self.upper_edge
-        # but lower and upper bound are replaced with init bounds
-        return interval
-
     def init_learnable_edges(self):
         """
-        Takes *space_fn* that defines an interval space, like linspace and register this interval.
-        Afterwards parametrize the interval to their relative contribution.
-
-        Returns:
-            _type_: _description_
+        Register the learnable bin edges as parameters.
+        The bin edges are saves as relative width. To ensure non-negative values AND summation to 1 a softmax constraint it put on top.
         """
-        interval = self.apply_bin_fn()
-        relative_width = (interval[1:] - interval[:-1]) / (self.upper_edge - self.lower_edge)
+        self.bounds = self._transform_bounds()
 
-        self.relative_bin_width = torch.nn.Buffer(relative_width)
-        parametrize.register_parametrization(self, "relative_bin_width", torch.nn.Softmax(dim=0))
+        edges = self._create_initial_edges()
+        relative_width = self._edges_to_relative_width(edges)
 
-    def plot_3_kernels(self, kernels):
-            k0 = kernels[0]
-            k1 = kernels[1]
-            k2 = kernels[2]
-            xx = torch.linspace(-15,-7,1000)
-            yy = k0(xx)
-            yy1 = k1(xx)
-            yy2 = k2(xx)
-            import matplotlib.pyplot as plt
-            plt.plot(xx,yy)
-            plt.plot(xx,yy1)
-            plt.plot(xx,yy2)
-            name = "kernel_control_plot.png"
-            plt.savefig()
-            print(f"Saved Control Plot as {name}")
-            plt.show()
+        self.relative_bin_width = torch.nn.Parameter(relative_width)
 
+        parametrize.register_parametrization(
+            self,
+            "relative_bin_width",
+            torch.nn.Softmax(dim=0)
+            )
 
     def forward(self, x):
         scaled_x = []
-
         # this is used to determine the BIN position for the scale
+        # detach here is necessary (in my opinion), since only sampling location is determined here.
         determine_scale_x = (self.binning_fn.forward(x, **self.binning_cfg)).detach()
-        kernels = self.kernels()
+
+        kernels = self.get_kernels()
         for kernel in kernels:
             scale = kernel(determine_scale_x)
             scaled_x.append(scale * x)
