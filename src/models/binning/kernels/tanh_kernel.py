@@ -38,7 +38,7 @@ class TanhKernel(BaseKernel):
 
     def _smoothing_width_for_constant(self):
         # when all notches are constant, one can extract the information from current one.
-        return torch.tensor(self.left_notch_size + self.right_notch_size)
+        return self.left_notch_size + self.right_notch_size
 
     # def compute_width_from_smoothness(self, smoothness, eps):
     #     half_width = (smoothness * torch.arctanh(2 * ( 1 / 2 - eps)))
