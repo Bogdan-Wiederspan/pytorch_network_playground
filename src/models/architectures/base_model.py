@@ -5,6 +5,8 @@ import torch
 from ..input import CategoricalInputLayer, ContinuousInputLayer, InputLayer, OptionalInputLayer
 from ..preprocessing import CatEmbeddingLayer, EmptyLayer, PaddingLayer, RotatePhiLayer, StandardizeLayer
 
+from typing import Any
+
 
 class BaseModel(torch.nn.Module):
     is_binned = False
@@ -245,3 +247,12 @@ class BaseModel(torch.nn.Module):
     def learning_mode_unfreeze_all(self):
         for _, layer in self.named_children():
             layer.requires_grad = True
+
+    def evaluation_state(self) -> dict[str: Any]:
+        """
+        Function handle that is supposed to return snapshots from layer the user defines.
+
+        Returns:
+            dict: _description_
+        """
+        return {}

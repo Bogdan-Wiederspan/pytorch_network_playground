@@ -1,5 +1,16 @@
 from .register import BUILDER_REGISTRY, PLOT_REGISTRY
 
+def require_map(registry):
+    _map = {}
+    for name, spec in registry.items():
+        requirements = spec.requires
+        if isinstance(requirements, str):
+            requirements = [requirements]
+        for requirement in requirements:
+            if requirement not in _map:
+                _map[requirement] = []
+            _map[requirement].append(name)
+    return _map
 
 def build_provider_map():
     # get mapping from provides -> provider
@@ -15,18 +26,22 @@ def build_provider_map():
 def ensure(ctx, artifact, providers):
     # check if artifact is already provided otherwise build it via builder
     # for builder ensure that their dependencies also exist
-    if artifact in ctx.features:
-        return
-
-    if artifact in ctx.cache:
+    if ctx.has(artifact):
         return
 
     builder_name = providers.get(artifact)
 
     if builder_name is None:
-        raise ValueError(
-            f"No builder provides '{artifact}'"
+        required_plots = require_map(PLOT_REGISTRY)[artifact]
+        required_builder = require_map(BUILDER_REGISTRY)[artifact]
+        msg = (
+            f"No builder provides '{artifact}'\n"
+            "Following plots / builder require this artifact\n"
+            f"Plots: {required_plots}\n"
+            f"Builders:{required_builder}\n"
+            f"Active providers are: {providers}"
         )
+        raise ValueError(msg)
 
     builder = BUILDER_REGISTRY[builder_name]
 
@@ -72,20 +87,18 @@ class EvaluationRunner:
         self,
         ctx,
         plots: list[str],
-        step: int,
-        mode: str,
     ):
-
         for plot_name in plots:
             fig, ax = run_plot(plot_name, ctx)
             if self.tensorboard:
                 self.tensorboard.log_figure(
-                    tag=f"{mode}/{plot_name}",
+                    tag=f"{ctx.mode}/{plot_name}",
                     figure=fig,
-                    step=step,
+                    step=ctx.global_step,
                 )
 
-    def run_scalars(self, ctx, artifact_names, step):
+    def run_scalars(self, ctx, artifact_names):
+
         for full_name, artifact_name in artifact_names.items():
             # separate full name in to tag and name of the scalar
             tag, name = full_name.split("/")
@@ -93,5 +106,5 @@ class EvaluationRunner:
             self.tensorboard.log_scalar(
                 name=tag,
                 values={name: value},
-                step=step,
+                step=ctx.global_step,
             )

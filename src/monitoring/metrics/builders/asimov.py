@@ -3,7 +3,7 @@ import torch
 from ...register import register_builder
 
 
-@register_builder("asimov", provides={"s_hist", "b_hist"}, requires={"binning_edges"})
+@register_builder("asimov", provides={"s_hist", "b_hist"}, requires={"active_edges"})
 def build_asimov_inputs(ctx, **kwargs):
     # TODO multi signal not implemented yet!
     # prediction is used to determine in which bin a truth value would land
@@ -12,7 +12,7 @@ def build_asimov_inputs(ctx, **kwargs):
     y_pred = ctx.predictions
     target_map = ctx.target_map
     event_weights = ctx.event_weights
-    binning_edges = ctx.get("binning_edges")
+    binning_edges = ctx.get("active_edges")
 
     signal_idx = target_map["hh"]
     # mask that says: you belong to this process

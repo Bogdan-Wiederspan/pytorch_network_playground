@@ -6,6 +6,8 @@ from ..binning import KERNEL_MAP, BinningLayer
 from ..register import register_model
 from .LBNDenseNet import LBNDenseNet
 
+from typing import Any
+
 
 @register_model("binned_lbn_dense")
 class BinnedLBNDenseNet(LBNDenseNet):
@@ -23,6 +25,7 @@ class BinnedLBNDenseNet(LBNDenseNet):
         **kwargs,
         ):
         super().__init__(full_config, *args, **kwargs)
+        self.freeze_edges() # TODO for now, change when not working with fixed binning
 
     def init_layers(self):
         # create normal LBN DenseNet
@@ -40,7 +43,6 @@ class BinnedLBNDenseNet(LBNDenseNet):
                 kernel_map=KERNEL_MAP[self.binning_config.kernel_cls],
                 kernel_cfg=self.binning_config.kernel_config,
                 )
-            self.freeze_edges()
 
     def learning_mode_bin_only(self):
         all_layers = dict(self.named_children())
@@ -63,13 +65,34 @@ class BinnedLBNDenseNet(LBNDenseNet):
 
     @property
     def kernels(self):
-        return self.binning_layer.get_kernels()
+        return self.binning_layer.kernels
 
-    def freeze_binning(self):
+    def freeze_edges(self):
         self.binning_layer.freeze_edges()
 
-    def unfreeze_binning(self):
+    def unfreeze_edges(self):
         self.binning_layer.unfreeze_edges()
+
+    @property
+    def binning_fn(self):
+        return self.binning_layer.binning_fn
+
+    @property
+    def num_bins(self):
+        return self.binning_layer.num_bins
+
+    def evaluation_state(self) -> dict[str, Any]:
+        """
+        Returns a collection of safe detached cpu snapshots, ready to evaluate.
+        Each layer manages how they create this snapshot and no blind search happens.
+        So user must define what is returned in the evaluation snapshot.
+
+        Returns:
+            dict[Any]: Dictionary with all snapshots exposed from the internal components.
+        """
+        return {
+            "binning": self.binning_layer.create_evaluation_state(),
+        }
 
     def forward(self, categorical_inputs, continuous_inputs):
         normal_network_output = super().forward(categorical_inputs, continuous_inputs)

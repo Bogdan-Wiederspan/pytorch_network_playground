@@ -20,7 +20,7 @@ _map = {
 
 @register_plot(
     "asimov",
-    requires=("binning_edges" , "s_hist", "b_hist")
+    requires=("active_edges" , "s_hist", "b_hist")
     )
 def plot_asimov_per_bin(
     ctx,
@@ -29,7 +29,7 @@ def plot_asimov_per_bin(
 ) -> tuple[Figure, Axes]:
     s = ctx.get("s_hist")
     b = ctx.get("b_hist")
-    binning_edges = ctx.get("binning_edges")
+    binning_edges = ctx.get("active_edges")
     # Attention, values need to be tensors, since fn is using torch functions mostly
 
     _label_map = {
