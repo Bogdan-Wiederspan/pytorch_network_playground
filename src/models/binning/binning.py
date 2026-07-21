@@ -57,21 +57,33 @@ class BinningLayer(torch.nn.Module):
         # --- Kernels ---
         self.kernel_map = kernel_map
         self.kernel_cfg = kernel_cfg
-        self.kernel_cache = None
+
+        self.init_kernels()
 
     # --- Status Flags ---
     def freeze_edges(self):
         self.parametrizations.relative_bin_width.original.requires_grad = False
         self.is_frozen = True
-        self.kernel_cache = None
 
     def unfreeze_edges(self):
         # self.relative_bin_width.requires_grad = True
         self.parametrizations.relative_bin_width.original.requires_grad = True
         self.is_frozen = False
-        self.kernel_cache = None # failsafe to prevent reusing stale cache
 
     # --- Core Kernels
+    def init_kernels(self):
+        kernels = self.create_kernels()
+        self.kernels = torch.nn.ModuleList(kernels)
+
+    def synchronize_kernels(self):
+        intervals = self.bin_intervals.detach()
+        for kernel, interval in zip(self.kernels, intervals):
+            kernel.set_edges(
+                interval[0],
+                interval[1],
+            )
+        self.connect_kernels(self.kernels)
+
     def create_kernels(self):
         # kernel_cls is a dict of kernel pointers
         edges = self.bin_intervals.detach() # kernels should NOT have any gradient behavior since they only act as ENCHANCER
@@ -91,7 +103,7 @@ class BinningLayer(torch.nn.Module):
         # --- configuration of kernels belong here
         # TODO smoothing width is also a neightbor hood quantity
         # necessary when training the edges
-        kernels = self._connect_kernels(kernels)
+        kernels = self.connect_kernels(kernels)
         return kernels
 
     def _connect_smoothness(self, kernels):
@@ -99,38 +111,41 @@ class BinningLayer(torch.nn.Module):
         # necessary for variable edges?
         raise NotImplementedError("NotImplemented")
 
-    def _connect_kernels(self, kernels):
+    def connect_kernels(self, kernels):
         n_bins = len(kernels)
 
         # share information about neighbors
         for bin_idx, kernel in enumerate(kernels):
             # set left cut
             if bin_idx > 0:
-                kernel.left_cut = kernels[bin_idx - 1].right_transition_coordinate
-
+                kernel.set_cuts(
+                left = kernels[bin_idx - 1].right_transition_coordinate
+            )
             # set right cut
             if bin_idx < n_bins - 1:
-                kernel.right_cut = kernels[bin_idx + 1].left_transition_coordinate
+                kernel.set_cuts(
+                right = kernels[bin_idx + 1].left_transition_coordinate
+                )
         return kernels
 
-    def get_kernels(self):
-        """
-        Construct the gaussian-kernel consisting out of a left gaussian, horizontal middle and right gaussian.
-        If kernels already exist, reuse kernel cache.
-        TODO: When using a model with learnable edges reconstruct this!!!
+    # def get_kernels(self):
+    #     """
+    #     Construct the gaussian-kernel consisting out of a left gaussian, horizontal middle and right gaussian.
+    #     If kernels already exist, reuse kernel cache.
+    #     TODO: When using a model with learnable edges reconstruct this!!!
 
-        """
-        # only reuse cache when TRAINING is set to false, and cache exist
-        if (self.kernel_cache is not None) and self.is_frozen:
-            return self.kernel_cache
+    #     """
+    #     # only reuse cache when TRAINING is set to false, and cache exist
+    #     if (self.kernel_cache is not None) and self.is_frozen:
+    #         return self.kernel_cache
 
-        # create and config kernels
-        kernels = self.create_kernels()
+    #     # create and config kernels
+    #     kernels = self.create_kernels()
 
-        # only safe when being frozen, during training cache is always stale
-        if self.is_frozen:
-            self.kernel_cache = kernels
-        return kernels
+    #     # only safe when being frozen, during training cache is always stale
+    #     if self.is_frozen:
+    #         self.kernel_cache = kernels
+    #     return kernels
 
     # --- Geometry handling ---
     @property
@@ -237,14 +252,25 @@ class BinningLayer(torch.nn.Module):
             torch.nn.Softmax(dim=0)
             )
 
+    def create_evaluation_state(self) -> dict[str, Any]:
+            return {
+                "kernels": copy.deepcopy(self.kernels).cpu(),
+                "binning_fn": self.binning_fn,
+                "active_edges": self.bin_edges.detach().cpu(),
+                "original_edges": self.bin_edges_original.detach().cpu(),
+            }
+
     def forward(self, x):
+        if self.training and not self.is_frozen:
+            self.synchronize_kernels()
+
         scaled_x = []
+
         # this is used to determine the BIN position for the scale
         # detach here is necessary (in my opinion), since only sampling location is determined here.
         determine_scale_x = (self.binning_fn.forward(x, **self.binning_cfg)).detach()
 
-        kernels = self.get_kernels()
-        for kernel in kernels:
+        for kernel in self.kernels:
             scale = kernel(determine_scale_x)
             scaled_x.append(scale * x)
         return torch.stack(scaled_x, dim=0)

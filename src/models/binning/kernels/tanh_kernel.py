@@ -32,8 +32,6 @@ class TanhKernel(BaseKernel):
         self.eps = torch.tensor(eps)
         self.full_width_from_eps_to_eps = torch.tensor(full_width) if full_width is not None else self._smoothing_width_for_constant()
         self.tau = self.compute_smoothness(self.full_width_from_eps_to_eps, self.eps, 0)
-        self.left_cut = None
-        self.right_cut = None
         self.checks()
 
     def _smoothing_width_for_constant(self):
@@ -80,20 +78,12 @@ class TanhKernel(BaseKernel):
 
     def _compute_normalization(self):
         # function is by definition normalized to 1
-        return 1
-
-    def _apply_cut_kernel(self, x, y):
-        outside = torch.zeros_like(x, dtype=torch.bool)
-        if self.left_cut is not None:
-            outside |= (x < self.left_cut)
-        if self.right_cut is not None:
-            outside |= (x > self.right_cut)
-        return y.masked_fill(outside, 0.0)
+        return torch.tensor(1)
 
     def kernel(self, x):
         # extend this by first run base kernel and then set value to 0 when reaching the transition point of the neighbouring bin to ensure locality
         y = self._base_kernel(x)
-        y = self._apply_cut_kernel(x, y)
+        y = self._apply_cut_mask(x, y)
         return y
 
 
