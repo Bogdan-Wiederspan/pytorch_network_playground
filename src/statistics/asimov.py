@@ -29,7 +29,6 @@ def asimov_no_background(
     s: torch.tensor,
     b: torch.tensor,
     eps_log: torch.Tensor=torch.as_tensor(0),
-    eps_sqrt: torch.Tensor=torch.as_tensor(1e-9),
     *args,
     **kwargs
     ) -> torch.Tensor:
@@ -49,16 +48,9 @@ def asimov_no_background(
     Returns:
         torch.Tensor: Asimov Significance without background uncertainty
     """
-
-    # equivalent to:
-    # torch.sqrt(2 * ((s + b) * (torch.log(s+b + eps_log / 2) - torch.log(b + eps_log / 2) -s) + eps_sqrt)
-    b = b + eps_log
-    s = s + eps_sqrt
-    # return torch.sqrt(
-    #     2 * ((s + b) * torch.log(1 + s / (b + eps_log)) - s) + eps_sqrt
-    #     )
+    b_log = b + eps_log
     return torch.sqrt(
-        2 * ((s + b) * torch.log(1 + s / (b )) - s)
+        2 * ((s  + b) * torch.log(1 + s / b_log) - s)
         )
 
 
