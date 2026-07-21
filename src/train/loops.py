@@ -26,7 +26,7 @@ class BaseLoop():
     The registry is used to check if a given loop function exists and to call the correct function in the training script.
     """
     REGISTERED_LOOPS = {}
-    MODE = None # is overwitten by child class
+    MODE = None # is overwritten by child class
 
     def __init__(self, full_config, necessary_columns: set[str] | None = None, *args, **kwargs):
         self.which_fn = (
@@ -37,6 +37,7 @@ class BaseLoop():
         # these column are always necessary for the loops
         self.necessary_columns = {"continuous", "categorical","targets"} if necessary_columns is None else necessary_columns
         self.target_shape = (-1, len(full_config.dataset_config.target_map))
+        self.target_map = full_config.dataset_config.target_map
 
     def __init_subclass__(cls):
         for _name, fn in cls.__dict__.items():
@@ -96,23 +97,35 @@ class TrainingLoop(BaseLoop):
         ):
         optimizer.zero_grad()
 
-        cont, cat, targets = sampler.sample_batch(device=device)
-        pred = model(categorical_inputs=cat, continuous_inputs=cont)
-        logging_pred, optimization_pred = self.separate_prediction(pred)
+        events = sampler.sample_batch(device=device)
+        categorical, continuous = events.get("categorical"), events.get("continuous")
+        targets = events["targets"].reshape(self.target_shape)
 
-        loss = loss_fn(optimization_pred, targets)
+        pred = model(categorical_inputs=categorical, continuous_inputs=continuous)
+        predictions, optimization_predictions = self.separate_prediction(pred)
+
+        loss = loss_fn(optimization_predictions, )
         loss.backward()
+
+        # optimizer routine differs for sam optimizers
+        # first step included scouting, second step is the actual optimized step, batch norm needs to be disabled for that
         optimizer.first_step(zero_grad=True)
 
-        # second forward step with disabled bachnorm running stats in second forward step
+        # second forward step with disabled batchnorm running stats in second forward step
         optimizer.disable_running_stats(model)
-        pred_2 = model(categorical_inputs=cat, continuous_inputs=cont)
+        pred_2 = model(categorical_inputs=categorical, continuous_inputs=continuous)
         loss_fn(pred_2, targets).backward()
 
         optimizer.second_step(zero_grad=True)
-
         optimizer.enable_running_stats(model)  # <- this is the important line
-        return loss, (logging_pred, targets)
+
+        return {
+            "loss" : loss,
+            "predictions" : predictions,
+            "targets": targets,
+            "event_weights": events["product_of_weights"],
+        }
+
 
     @register_loop(name="cross_entropy")
     def cross_entropy_loss(
@@ -127,14 +140,14 @@ class TrainingLoop(BaseLoop):
         **kwargs,
         ):
         # this loss never uses a binning network thus, a single prediction is expected
-
         optimizer.zero_grad()
 
         events = sampler.sample_batch(sample_from=self.necessary_columns, device=device)
+        categorical, continuous = events.get("categorical"), events.get("continuous")
         targets = events["targets"].reshape(self.target_shape)
         predictions = model(
-            categorical_inputs=events.get("categorical"),
-            continuous_inputs=events.get("continuous")
+            categorical_inputs=categorical,
+            continuous_inputs=continuous
             )
 
         # training does not need event weights. The oversampling algorithm takes care of this
@@ -144,7 +157,12 @@ class TrainingLoop(BaseLoop):
         if scheduler_inst is not None:
             scheduler_inst.step()
 
-        return loss
+        return {
+            "loss" : loss,
+            "predictions" : predictions,
+            "targets": targets,
+            "event_weights": events["product_of_weights"]
+        }
 
     @register_loop(name="signal_efficiency")
     def signal_efficiency_loop(
@@ -163,25 +181,33 @@ class TrainingLoop(BaseLoop):
         optimizer.zero_grad()
 
         events = sampler.sample_batch(sample_from=sample_columns, device=device)
+        categorical, continuous = events.get("categorical"), events.get("continuous")
+        targets = events["targets"].reshape(self.target_shape)
         pred = model(
-            categorical_inputs=events.pop("categorical"),
-            continuous_inputs=events.pop("continuous"),
+            categorical_inputs=categorical,
+            continuous_inputs=continuous,
             )
 
-        _, optimization_pred = self.separate_prediction(pred)
+        predictions, optimization_predictions = self.separate_prediction(pred)
 
-        targets = events.pop("targets")
         loss = loss_fn(
-            prediction=optimization_pred,
-            truth=targets.reshape(self.target_shape),
+            prediction=optimization_predictions,
+            truth=targets,
             product_of_weights=events["product_of_weights"],
             evaluation_mask=events["evaluation_space_mask"],
             )
+
         loss.backward()
         optimizer.step()
         if scheduler_inst is not None:
             scheduler_inst.step()
-        return loss
+
+        return {
+            "loss" : loss,
+            "predictions" : predictions,
+            "targets": targets,
+            "event_weights": events["product_of_weights"]
+        }
 
 
 class ValidationLoop(BaseLoop):
@@ -225,7 +251,6 @@ class ValidationLoop(BaseLoop):
             "sample_weights" : [],
             "loss_predictions" : [],
             "relative_weights" : [],
-
             # "dataset_id" : [], # TODO add ID to enable filtering by dataset
             }
 
@@ -314,7 +339,13 @@ class ValidationLoop(BaseLoop):
             tensors["targets"],
             tensors["sample_weights"],
         )
-        return loss, (tensors["class_predictions"], tensors["targets"], tensors["sample_weights"])
+
+        return {
+            "loss" : loss,
+            "predictions" : tensors["class_predictions"],
+            "targets": tensors["targets"],
+            "event_weights": tensors["sample_weights"],
+        }
 
     @register_loop(name="signal_efficiency")
     def signal_efficiency_loop(
@@ -344,5 +375,9 @@ class ValidationLoop(BaseLoop):
             tensors["evaluation_space_mask"]
             # TODO  sampler weight is not used, but maybe should ?
             )
-
-        return loss, (tensors["class_predictions"], tensors["targets"], tensors["sample_weights"])
+        return {
+            "loss" : loss,
+            "predictions" : tensors["class_predictions"],
+            "targets": tensors["targets"],
+            "event_weights": tensors["sample_weights"],
+        }

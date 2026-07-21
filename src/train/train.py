@@ -119,7 +119,7 @@ def main(**kwargs):
         #----
         logger_inst.info("Start training loop")
         for current_iteration in range(1_000_000):
-            t_loss = training_loop(
+            batch_result = training_loop(
                 model = model_inst,
                 loss_fn = training_loss_inst,
                 optimizer = optimizer_inst,
@@ -134,10 +134,10 @@ def main(**kwargs):
 
             if current_iteration % full_config.training_config.verbose_interval == 0:
                 tensorboard_writer.log_lr(optimizer_inst, current_iteration)
-                tensorboard_writer.log_loss({"batch_loss": t_loss.item()}, step=current_iteration)
+                batch_loss = batch_result["loss"].item()
+                tensorboard_writer.log_loss({"batch_loss": batch_loss}, step=current_iteration)
                 current_lr = optimizer_inst.param_groups[0]["lr"]
-                logger_inst.training(f"T-It: {current_iteration} - LR: {current_lr} - batch loss: {t_loss.item():.2E}")
-
+                logger_inst.training(f"T-It: {current_iteration} - LR: {current_lr} - batch loss: {batch_loss:.2E}")
 
             #----
             #### Evaluation of training and validation data, logging and checkpointing
@@ -146,24 +146,34 @@ def main(**kwargs):
                 # evaluation of training data
                 logger_inst.info(f"Iteration {current_iteration}. Start evaluation of training data.")
 
-                eval_t_loss, (eval_t_pred, eval_t_tar, eval_t_weights) = validation_loop(
+                evaluation_training_result = validation_loop(
                     model_inst,
                     validation_loss_inst,
                     training_sampler,
                     sample_columns=full_config.training_config.sample_attributes,
                     device=DEVICE
                     )
-                # TODO when edges should be tracked add this in a way that is universal and does not break for models without binning layer, e.g. add property to model that returns None if no binning layer is present and add check in log_metrics
+                eval_t_loss = evaluation_training_result["loss"]
+                eval_t_pred = evaluation_training_result["predictions"]
+                eval_t_tar = evaluation_training_result["targets"]
+                eval_t_weights = evaluation_training_result["event_weights"]
+
                 # evaluation of validation
                 logger_inst.info(f"Iteration {current_iteration}. Start evaluation of validation data.")
 
-                eval_v_loss, (eval_v_pred, eval_v_tar, eval_v_weights) = validation_loop(
+                evaluation_validation_result = validation_loop(
                     model_inst,
                     validation_loss_inst,
                     validation_sampler,
                     sample_columns=full_config.training_config.sample_attributes,
                     device=DEVICE
                     )
+
+                eval_v_loss = evaluation_validation_result["loss"]
+                eval_v_pred = evaluation_validation_result["predictions"]
+                eval_v_tar = evaluation_validation_result["targets"]
+                eval_v_weights = evaluation_validation_result["event_weights"]
+
                 # TODO when edges should be tracked add this in a way that is universal and does not break for models without binning layer, e.g. add property to model that returns None if no binning layer is present and add check in log_metrics
                 if full_config.training_config.log_metrics:
                     # create contexr
