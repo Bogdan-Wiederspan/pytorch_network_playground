@@ -8,7 +8,7 @@ import numpy as np
 import torch
 
 # personal imports
-from data import cache, load_data, preprocessing, sampler
+from data_handling import cache, io, preprocessing, sampler
 from loss import init_loss
 from models.utils import init_model
 
@@ -50,7 +50,7 @@ def main(**kwargs):
         # HINT: order matters, due to memory constraints views are moved in and out of dictionaries
         # load data from cache is necessary or from root files
         # events is of form : {uid : {"continuous","categorical", "weight": torch tensor}}
-        events = load_data.get_data(full_config.dataset_config, ignore_cache=kwargs["ignore_cache"], _save_cache=kwargs["save_cache"])
+        events = io.get_data(full_config.dataset_config, ignore_cache=kwargs["ignore_cache"], _save_cache=kwargs["save_cache"])
 
         # split data into training and validation according to fold and get collect all weight statistics
         fold_split_coordinator = preprocessing.FoldAndSplitCoordinator(

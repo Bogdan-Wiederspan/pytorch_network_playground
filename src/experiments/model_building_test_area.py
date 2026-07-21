@@ -6,7 +6,7 @@ import torch
 import models.architectures as arc
 
 #from models import create_model
-from data import load_data, preprocessing
+from data_handling import io, preprocessing
 
 #from models.architectures import *
 from train.train_config import full_config
@@ -18,7 +18,7 @@ def main(**kwargs):
     logger_inst = logger.get_logger(__name__)
 
     # load test data
-    events = load_data.get_data(full_config.dataset_config, ignore_cache=False, _save_cache=False)
+    events = io.get_data(full_config.dataset_config, ignore_cache=False, _save_cache=False)
     hh = events[('hh', 21101)]
 
     full_config.model_building_config.mean, full_config.model_building_config.std = preprocessing.get_batch_statistics_from_sampler(

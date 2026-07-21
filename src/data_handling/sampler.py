@@ -92,6 +92,7 @@ class Process(t_data.Dataset):
         Resets the index of the sampler, and randomize the indices for the next sample
         """
         self.current_idx = 0
+        self.last_idx = None
         if self.randomize:
             self.indices = torch.randperm(len(self))
         else:
@@ -124,13 +125,40 @@ class Process(t_data.Dataset):
         # do not drop last, but instead create smaller batch
         next_idx = min(self.current_idx + number, len(self))
         idx = self.indices[start_idx:next_idx]
+
+        self.last_idx = idx # this is used to remember the last batch
         self.current_idx = next_idx
 
         # sample events from sample_from, and normalization weight per default
-        sampled_events = {attribute:getattr(self, attribute)[idx].to(device) for attribute in sample_from}
-        sampled_events["sample_weights"] = torch.full((len(idx), 1), self.weights_statistics["normalization_weights"]["whole_sum"] / self.sample_size).to(device)
+        sampled_events = {
+            attribute:getattr(self, attribute)[idx].to(device)
+            for attribute in sample_from
+            }
+        sampled_events["sample_weights"] = torch.full(
+            (len(idx), 1),
+            self.weights_statistics["normalization_weights"]["whole_sum"] / self.sample_size
+            ).to(device)
         return sampled_events
 
+    def peek(self, sample_from, device=CPU_DEVICE):
+        """
+        Return last sampled batch without changing sampler state.
+        Useful to plot last batch.
+        """
+        if self.last_idx is None:
+            raise RuntimeError("No batch has been sampled yet. Call sample() before peek()")
+
+        idx = self.last_idx
+
+        sampled_events = {
+            attribute:getattr(self, attribute)[idx].to(device)
+            for attribute in sample_from
+            }
+        sampled_events["sample_weights"] = torch.full(
+            (len(idx), 1),
+            self.weights_statistics["normalization_weights"]["whole_sum"] / self.sample_size
+            ).to(device)
+        return sampled_events
         # return self.continuous[idx].to(device), self.categorical[idx].to(device), self.targets[idx].to(device)
 
     def create_sample_generator(self, sample_from, batch_size=-1, device=CPU_DEVICE):

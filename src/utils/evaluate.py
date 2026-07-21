@@ -8,7 +8,7 @@ import numpy as np
 import torch
 
 # personal imports
-from data import load_data, preprocessing
+from data_handling import io, preprocessing
 from train.train_config import full_config
 
 from . import logger
@@ -70,7 +70,7 @@ def evaluate_model_on_fold(
 
         # --- load data and split by indices ---
         logger_inst.info("Loading Data")
-        events = load_data.get_data(full_config.dataset_config, ignore_cache=False, _save_cache=False)
+        events = io.get_data(full_config.dataset_config, ignore_cache=False, _save_cache=False)
 
         for fold in folds:
             dnn_scores[fold] = {}
