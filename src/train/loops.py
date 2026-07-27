@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING
 
 import torch
@@ -7,7 +8,7 @@ import torch
 from utils import logger
 
 if TYPE_CHECKING:
-    from data.sampler import ProcessSampler
+    from data_handling.sampler import ProcessSampler
 
 logger_inst = logger.get_logger(__name__)
 
@@ -130,22 +131,30 @@ class TrainingLoop(BaseLoop):
     @register_loop(name="cross_entropy")
     def cross_entropy_loss(
         self,
-        model,
+        model_inst,
         loss_fn,
         optimizer,
         sampler,
         device,
         scheduler_inst=None,
-        *args,
+        monitor=None,
         **kwargs,
         ):
         # this loss never uses a binning network thus, a single prediction is expected
         optimizer.zero_grad()
 
+        if monitor is not None:
+            monitor.start_step()
+            # TODO currently loop knows about model instance.
+            # MODEL instance should be in charge of actuale gradient hooking management
+            # model_inst.binning_layer.enable_gradient_hooks()
+            # model_inst.binning_layer.register_monitor(monitor)
+
+
         events = sampler.sample_batch(sample_from=self.necessary_columns, device=device)
         categorical, continuous = events.get("categorical"), events.get("continuous")
         targets = events["targets"].reshape(self.target_shape)
-        predictions = model(
+        predictions = model_inst(
             categorical_inputs=categorical,
             continuous_inputs=continuous
             )
@@ -157,6 +166,13 @@ class TrainingLoop(BaseLoop):
         if scheduler_inst is not None:
             scheduler_inst.step()
 
+        if monitor is not None:
+            missing = monitor.stale_gradients(model_inst.binning_layer_gradient_names())
+            if missing:
+                warnings.warn(f"Gradient hooks did not fire for {missing}")
+            # model_inst.binning_layer.disable_gradient_hooks()
+
+
         return {
             "loss" : loss,
             "predictions" : predictions,
@@ -167,23 +183,31 @@ class TrainingLoop(BaseLoop):
     @register_loop(name="signal_efficiency")
     def signal_efficiency_loop(
         self,
-        model,
+        model_inst,
         loss_fn,
         optimizer,
         sampler,
         sample_columns,
         device,
         scheduler_inst=None,
-        *args,
+        monitor=None,
         **kwargs,
-
         ):
+        # TODO loop agnostic monitoring?
+        # So create setup and cleanup for different models and so on.
         optimizer.zero_grad()
 
         events = sampler.sample_batch(sample_from=sample_columns, device=device)
         categorical, continuous = events.get("categorical"), events.get("continuous")
         targets = events["targets"].reshape(self.target_shape)
-        pred = model(
+
+        # register callbacks
+        if monitor is not None:
+            monitor.start_step()
+            model_inst.binning_layer.enable_gradient_hooks()
+            model_inst.binning_layer.register_monitor(monitor)
+
+        pred = model_inst(
             categorical_inputs=categorical,
             continuous_inputs=continuous,
             )
@@ -202,6 +226,13 @@ class TrainingLoop(BaseLoop):
         if scheduler_inst is not None:
             scheduler_inst.step()
 
+        if monitor is not None:
+            missing = monitor.stale_gradients(
+                expected_names=model_inst.binning_layer.monitored_gradient_names()
+                )
+            if missing:
+                warnings.warn(f"Gradient hooks did not fire for {missing}")
+            model_inst.binning_layer.disable_gradient_hooks()
         return {
             "loss" : loss,
             "predictions" : predictions,
@@ -318,6 +349,7 @@ class ValidationLoop(BaseLoop):
         sampler_inst,
         sample_columns,
         device,
+        monitor=None,
         *args,
         **kwargs,
         ):
@@ -354,11 +386,13 @@ class ValidationLoop(BaseLoop):
         loss_fn_inst,
         sampler_inst,
         sample_columns,
-        device
+        device,
+        monitor=None,
         ):
         loss_columns = {"product_of_weights", "evaluation_space_mask"}
         to_sample_columns = self.necessary_columns.union(loss_columns).union(sample_columns)
 
+        model_inst.binning_layer.disable_gradient_hooks()
 
         tensors = self.collect_from_generators(
             model_inst=model_inst,

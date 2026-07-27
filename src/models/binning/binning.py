@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-import torch
-from torch.nn.utils import parametrize
 import copy
-
 from typing import Any
 
+import torch
+from torch.nn.utils import parametrize
 
-class BinningLayer(torch.nn.Module):
+from monitoring.hookable_module import HookableMixin
+
+
+class BinningLayer(HookableMixin, torch.nn.Module):
     def __init__(
         self,
         num_bins: int,
@@ -128,25 +130,6 @@ class BinningLayer(torch.nn.Module):
                 )
         return kernels
 
-    # def get_kernels(self):
-    #     """
-    #     Construct the gaussian-kernel consisting out of a left gaussian, horizontal middle and right gaussian.
-    #     If kernels already exist, reuse kernel cache.
-    #     TODO: When using a model with learnable edges reconstruct this!!!
-
-    #     """
-    #     # only reuse cache when TRAINING is set to false, and cache exist
-    #     if (self.kernel_cache is not None) and self.is_frozen:
-    #         return self.kernel_cache
-
-    #     # create and config kernels
-    #     kernels = self.create_kernels()
-
-    #     # only safe when being frozen, during training cache is always stale
-    #     if self.is_frozen:
-    #         self.kernel_cache = kernels
-    #     return kernels
-
     # --- Geometry handling ---
     @property
     def lower_edge(self):
@@ -260,17 +243,63 @@ class BinningLayer(torch.nn.Module):
                 "original_edges": self.bin_edges_original.detach().cpu(),
             }
 
-    def forward(self, x):
+
+    def monitored_gradient_names(self):
+        names = ["dnn_score", "binned_tensor"]
+        names += [f"weighted_dnn_score_bin_{i}" for i in range(self.num_bins)]
+        return names
+
+    def monitored_tensor_names(self):
+        return ["kernel_weights"]
+
+    def old_binning(self, y):
+        weighted_bins_y = []
+        kernel_weights = []
+        # kernel weight is determined by transformed y
+        transformed_y = (self.binning_fn.forward(y, **self.binning_cfg)).detach()
+
+        for bin_num, kernel in enumerate(self.kernels):
+            bin_weight = kernel(transformed_y)
+            kernel_weights.append(bin_weight)
+            bin_y = bin_weight * y
+            weighted_bins_y.append(bin_y)
+        output = torch.stack(weighted_bins_y, dim=0)
+
+        self.monitor_gradient(tensor=y, name="dnn_score")
+        self.monitor_gradient(tensor=bin_y,name=f"weighted_dnn_score_bin_{bin_num}")
+        self.monitor_gradient(tensor=output, name="binned_tensor")
+        self.monitor_tensor(tensor=torch.stack(kernel_weights), name="kernel_weights")
+        return output
+
+    def normalized_binning(self, y):
+        weighted_bins_y = []
+        kernel_weights = []
+        # kernel weight is determined by transformed y
+        transformed_y = (self.binning_fn.forward(y, **self.binning_cfg)).detach()
+
+        # normalize
+        lower_edge_ind = torch.bucketize(transformed_y, self.bin_edges, right=True)[:,0]
+        _bins = self.binning_fn.inverse(self.bin_edges)
+        lower_bin_edge, upper_bin_edge = _bins[lower_edge_ind - 1].reshape(-1,1), _bins[lower_edge_ind].reshape(-1,1)
+        normalized_y = (y - lower_bin_edge) / (upper_bin_edge - lower_bin_edge)
+        # apply kernel weight
+        for bin_num, kernel in enumerate(self.kernels):
+            bin_weight = kernel(transformed_y)
+            kernel_weights.append(bin_weight)
+            bin_y = bin_weight * normalized_y
+            weighted_bins_y.append(bin_y)
+        output = torch.stack(weighted_bins_y, dim=0)
+
+        self.monitor_gradient(tensor=y, name="dnn_score")
+        self.monitor_gradient(tensor=bin_y,name=f"weighted_dnn_score_bin_{bin_num}")
+        self.monitor_tensor(tensor=kernel_weights, name="kernel_weights")
+        self.monitor_gradient(tensor=output, name="binned_tensor")
+        return output
+
+
+    def forward(self, y):
+        # y and not x due to y being an neural network output
         if self.training and not self.is_frozen:
             self.synchronize_kernels()
 
-        scaled_x = []
-
-        # this is used to determine the BIN position for the scale
-        # detach here is necessary (in my opinion), since only sampling location is determined here.
-        determine_scale_x = (self.binning_fn.forward(x, **self.binning_cfg)).detach()
-
-        for kernel in self.kernels:
-            scale = kernel(determine_scale_x)
-            scaled_x.append(scale * x)
-        return torch.stack(scaled_x, dim=0)
+        return self.old_binning(y)
