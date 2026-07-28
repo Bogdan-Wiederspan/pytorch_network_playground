@@ -71,7 +71,7 @@ class EvalContext:
         return True
 
     def require(self, *keys: str):
-        missing = [k for k in keys if k not in self.feature]
+        missing = [k for k in keys if k not in self.features]
         if missing:
             raise KeyError(f"Missing required optional features: {missing}")
 

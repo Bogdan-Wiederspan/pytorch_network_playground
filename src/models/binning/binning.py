@@ -262,11 +262,10 @@ class BinningLayer(HookableMixin, torch.nn.Module):
             bin_weight = kernel(transformed_y)
             kernel_weights.append(bin_weight)
             bin_y = bin_weight * y
+            self.monitor_gradient(tensor=bin_y,name=f"weighted_dnn_score_bin_{bin_num}")
             weighted_bins_y.append(bin_y)
         output = torch.stack(weighted_bins_y, dim=0)
-
         self.monitor_gradient(tensor=y, name="dnn_score")
-        self.monitor_gradient(tensor=bin_y,name=f"weighted_dnn_score_bin_{bin_num}")
         self.monitor_gradient(tensor=output, name="binned_tensor")
         self.monitor_tensor(tensor=torch.stack(kernel_weights), name="kernel_weights")
         return output

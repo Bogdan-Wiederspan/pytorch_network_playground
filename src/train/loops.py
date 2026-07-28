@@ -71,13 +71,20 @@ class BaseLoop():
 
         return logging_pred, optimization_pred
 
+    def setup(self):
+        pass
+
+    def cleanup(self):
+        pass
 
     def __call__(self, *args, **kwargs):
         # registered loop is just an unbound function
         # bound by passing self as first argument
+        self.setup()
         fn = self.REGISTERED_LOOPS[self.MODE][self.which_fn]
-        return fn(self, *args, **kwargs)
-
+        result = fn(self, *args, **kwargs)
+        self.cleanup()
+        return result
 
 class TrainingLoop(BaseLoop):
     MODE = "training"
@@ -167,10 +174,7 @@ class TrainingLoop(BaseLoop):
             scheduler_inst.step()
 
         if monitor is not None:
-            missing = monitor.stale_gradients(model_inst.binning_layer_gradient_names())
-            if missing:
-                warnings.warn(f"Gradient hooks did not fire for {missing}")
-            # model_inst.binning_layer.disable_gradient_hooks()
+            monitor.check_gradient_correctness(expected_names=model_inst.binning_layer.monitored_gradient_names())
 
 
         return {
@@ -189,7 +193,7 @@ class TrainingLoop(BaseLoop):
         sampler,
         sample_columns,
         device,
-        scheduler_inst=None,
+        scheduler_handler=None,
         monitor=None,
         **kwargs,
         ):
@@ -205,7 +209,6 @@ class TrainingLoop(BaseLoop):
         if monitor is not None:
             monitor.start_step()
             model_inst.binning_layer.enable_gradient_hooks()
-            model_inst.binning_layer.register_monitor(monitor)
 
         pred = model_inst(
             categorical_inputs=categorical,
@@ -223,16 +226,13 @@ class TrainingLoop(BaseLoop):
 
         loss.backward()
         optimizer.step()
-        if scheduler_inst is not None:
-            scheduler_inst.step()
+        if scheduler_handler is not None:
+            scheduler_handler.step(model_inst=model_inst, optimizer_inst=optimizer, metric=None)
 
         if monitor is not None:
-            missing = monitor.stale_gradients(
-                expected_names=model_inst.binning_layer.monitored_gradient_names()
-                )
-            if missing:
-                warnings.warn(f"Gradient hooks did not fire for {missing}")
+            monitor.check_gradient_correctness(expected_names=model_inst.binning_layer.monitored_gradient_names())
             model_inst.binning_layer.disable_gradient_hooks()
+
         return {
             "loss" : loss,
             "predictions" : predictions,

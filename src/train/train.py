@@ -13,8 +13,9 @@ from loss import init_loss
 from models.utils import init_model
 
 # from .train_utils import log_metrics
-from monitoring import EvalContext, EvaluationRunner, load_registers
+from monitoring import EvalContext, EvaluationRunner, load_registers, TrainingMonitor
 from optimizer.early_stopping import CheckPoint
+from optimizer.scheduler_handler import SchedulerHandler
 from optimizer.utils import init_optimizer, init_scheduler
 from utils import logger
 
@@ -114,19 +115,25 @@ def main(**kwargs):
         training_loss_inst, validation_loss_inst = init_loss(full_config=full_config, device=DEVICE, training_sampler=training_sampler)
         scheduler_inst = init_scheduler(full_config=full_config, optimizer_inst=optimizer_inst)
         checkpoint_inst = CheckPoint(checkpoint_name=full_config.training_config.save_model_name, checkpoint_fold=current_fold)
+        training_monitor_inst = TrainingMonitor(to_cpu=True, non_blocking=True)
+        scheduler_handler_inst = SchedulerHandler(scheduler_inst=scheduler_inst, checkpoint_inst=checkpoint_inst, logger_inst=logger)
+
+        model_inst.binning_layer.register_monitor(training_monitor_inst)
+
         #----
         ### training loop
         #----
         logger_inst.info("Start training loop")
         for current_iteration in range(1_000_000):
             batch_result = training_loop(
-                model = model_inst,
-                loss_fn = training_loss_inst,
-                optimizer = optimizer_inst,
-                sampler = training_sampler,
+                model_inst=model_inst,
+                loss_fn=training_loss_inst,
+                optimizer=optimizer_inst,
+                sampler=training_sampler,
                 device=DEVICE,
-                sample_columns = full_config.training_config.sample_attributes,
-                scheduler_inst = scheduler_inst,
+                sample_columns=full_config.training_config.sample_attributes,
+                scheduler_handler_inst=scheduler_handler_inst,
+                monitor = training_monitor_inst,
             )
             # ----
             # Verbose and Metrics that are triggered often
@@ -142,7 +149,8 @@ def main(**kwargs):
             #----
             #### Evaluation of training and validation data, logging and checkpointing
             #----
-            if (current_iteration % full_config.training_config.validation_interval == 0) & (current_iteration >= 0):
+            evaluation_condition = (current_iteration % full_config.training_config.validation_interval == 0) & (current_iteration >= 0)
+            if evaluation_condition:
                 # evaluation of training data
                 logger_inst.info(f"Iteration {current_iteration}. Start evaluation of training data.")
 
@@ -153,10 +161,6 @@ def main(**kwargs):
                     sample_columns=full_config.training_config.sample_attributes,
                     device=DEVICE
                     )
-                eval_t_loss = evaluation_training_result["loss"]
-                eval_t_pred = evaluation_training_result["predictions"]
-                eval_t_tar = evaluation_training_result["targets"]
-                eval_t_weights = evaluation_training_result["event_weights"]
 
                 # evaluation of validation
                 logger_inst.info(f"Iteration {current_iteration}. Start evaluation of validation data.")
@@ -169,41 +173,65 @@ def main(**kwargs):
                     device=DEVICE
                     )
 
-                eval_v_loss = evaluation_validation_result["loss"]
-                eval_v_pred = evaluation_validation_result["predictions"]
-                eval_v_tar = evaluation_validation_result["targets"]
-                eval_v_weights = evaluation_validation_result["event_weights"]
+                eval_t_loss = evaluation_training_result["loss"].item()
+                eval_v_loss = evaluation_validation_result["loss"].item()
+                logger_inst.training(f"Iteration: {current_iteration} - TLoss: {eval_t_loss:.2E} VLoss: {eval_v_loss:.2E}")
 
                 # TODO when edges should be tracked add this in a way that is universal and does not break for models without binning layer, e.g. add property to model that returns None if no binning layer is present and add check in log_metrics
                 if full_config.training_config.log_metrics:
-                    # create contexr
+                    # --- plots on evaluation, on training data ---
+                    model_evaluation_state = model_inst.evaluation_state()
+
+                    shared_eval_context_meta_data = {
+                        "model_evaluation_state": model_evaluation_state,
+                        "target_map": full_config.dataset_config.target_map,
+                        "global_step": current_iteration,
+                    }
+
+                    ctx_batch = EvalContext(
+                        mode="batch",
+                        predictions=batch_result["predictions"],
+                        targets=batch_result["targets"],
+                        event_weights=batch_result["event_weights"],
+                        **shared_eval_context_meta_data,
+                    )
+
                     ctx_train = EvalContext(
-                        predictions=eval_t_pred,
-                        targets=eval_t_tar,
-                        target_map=full_config.dataset_config.target_map,
-                        event_weights=eval_t_weights,
+                        mode="training",
+                        predictions=evaluation_training_result["predictions"],
+                        targets=evaluation_training_result["targets"],
+                        event_weights=evaluation_training_result["event_weights"],
+                        **shared_eval_context_meta_data,
                     )
 
                     ctx_validation = EvalContext(
-                        predictions=eval_v_pred,
-                        targets=eval_v_tar,
-                        target_map=full_config.dataset_config.target_map,
-                        event_weights=eval_v_weights,
+                        mode="validation",
+                        predictions=evaluation_validation_result["predictions"],
+                        targets=evaluation_validation_result["targets"],
+                        event_weights=evaluation_validation_result["event_weights"],
+                        **shared_eval_context_meta_data,
                     )
+                    # ctx_batch.add_feature("kernels", model_inst.kernels)
+                    # ctx_batch.add_feature("binning_fn", model_inst.binning_fn)
 
-                    ctx_train.add_feature("loss", eval_t_loss.item())
-                    ctx_validation.add_feature("loss", eval_v_loss.item())
+                    ctx_train.add_feature("loss", eval_t_loss)
+                    ctx_validation.add_feature("loss", eval_v_loss)
+                    ctx_batch.add_feature("monitored_gradients", training_monitor_inst.gradients)
+                    ctx_batch.add_feature("monitored_tensors", training_monitor_inst.tensors)
+
+                    # TODO make optional, for example for layers without binning
                     for _ctx in (ctx_train, ctx_validation):
                         _ctx.add_feature(
-                            "binning_edges",model_inst.binning_layer.get_bin_intervals(None)
-                            )
-                        _ctx.add_feature(
-                            "untransformed_binning_edges",model_inst.binning_layer.get_bin_intervals(False)
-                            )
-                        _ctx.add_feature(
-                            "transformed_binning_edges",model_inst.binning_layer.get_bin_intervals(True)
+                            "untransformed_binning_edges", model_inst.bin_edges_original
                             )
 
+                    evaluation_runner_inst.run_plots(
+                        ctx_batch,
+                        plots=[
+                            "active_kernels",
+                            # "active_kernels_advance"
+                        ]
+                    )
 
                     # run metrics and store them
                     evaluation_runner_inst.run_plots(
@@ -217,8 +245,6 @@ def main(**kwargs):
                             "output_score_hh_node_untransformed",
 
                         ],
-                        step=current_iteration,
-                        mode="train"
                     )
 
 
@@ -228,7 +254,6 @@ def main(**kwargs):
                             "CrossEntropy/Evaluation Training" : "cross_entropy",
                             "Loss/Evaluation Training Loss" :"loss",
                             },
-                        step=current_iteration,
                     )
 
                     evaluation_runner_inst.run_plots(
@@ -240,8 +265,6 @@ def main(**kwargs):
                             "output_score_hh_node",
                             "output_score_hh_node_untransformed",
                         ],
-                        step=current_iteration,
-                        mode="validation"
                     )
 
                     evaluation_runner_inst.run_scalars(
@@ -250,11 +273,8 @@ def main(**kwargs):
                             "CrossEntropy/Evaluation Validation": "cross_entropy",
                             "Loss/Validation VLoss": "loss"
                             },
-                        step=current_iteration,
 
                     )
-
-                logger_inst.training(f"Iteration: {current_iteration} - TLoss: {eval_t_loss:.2E} VLoss: {eval_v_loss:.2E}")
 
                 # from IPython import embed; embed(header="MESSAGE Line 237 | File: train.py")
                 ### checkpoint criteria checks and saving
@@ -267,25 +287,8 @@ def main(**kwargs):
                         full_config=full_config,
                     )
 
-                # if metric does not improve x-times reduce
-                # load previous checkpoint with reduces learning rate
+                scheduler_handler_inst.step(model_inst, optimizer_inst, metric=eval_v_loss)
 
-                # when using ReduceLROnPlateau, step scheduler and check if lr was reduced, if yes load last checkpoint and update optimizer with new lr
-                if isinstance(scheduler_inst, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                    previous_lr =  optimizer_inst.param_groups[0]["lr"]
-                    scheduler_inst.step(eval_v_loss)
-                    current_lr = optimizer_inst.param_groups[0]["lr"]
-                    if previous_lr != current_lr:
-                        logger_inst.info(
-                            f"{previous_lr} -> {current_lr}" +
-                            "\nReload model and optimizer from iteration"
-                            f" {checkpoint_inst.last_checkpoint['iteration']}")
-
-                        model_inst.load_state_dict(checkpoint_inst.last_checkpoint["model_state_dict"])
-                        optimizer_inst.load_state_dict(checkpoint_inst.last_checkpoint["optimizer_state_dict"])
-                        # since scheduler and optimizer are coupled
-                        # overwrite old lr in checkpoint with lr after scheduler step
-                        optimizer_inst.param_groups[0]["lr"] = current_lr
 
         from IPython import embed
         embed(header="Training ends: Check if everything is as you thought it would be")
@@ -299,5 +302,4 @@ if __name__ == "__main__":
         ignore_cache=parser.args.ignore_cache,
         save_cache=parser.args.save_cache,
         tensorboard_name=parser.args.tensorboard_name
-
         )

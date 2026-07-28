@@ -1,5 +1,7 @@
 from .register import BUILDER_REGISTRY, PLOT_REGISTRY
 
+_PROVIDER_MAP_CACHE = None
+
 def require_map(registry):
     _map = {}
     for name, spec in registry.items():
@@ -12,28 +14,36 @@ def require_map(registry):
             _map[requirement].append(name)
     return _map
 
-def build_provider_map():
-    # get mapping from provides -> provider
-    providers = {}
+def build_provider_map(force_refresh=False):
+    # static resolution of provider map
+    # NO DYNAMIC SUPPORT due to caching
+    global _PROVIDER_MAP_CACHE
+    if _PROVIDER_MAP_CACHE is None or force_refresh:
+        _PROVIDER_MAP_CACHE = {
+            artifact : name
+            for name, spec in BUILDER_REGISTRY.items()
+            for artifact in spec.provides
+        }
+    return _PROVIDER_MAP_CACHE
 
-    for name, spec in BUILDER_REGISTRY.items():
-        for artifact in spec.provides:
-            providers[artifact] = name
 
-    return providers
+def ensure(ctx, artifact, providers, _resolving=None):
+    if _resolving is None:
+        _resolving = set()
 
-
-def ensure(ctx, artifact, providers):
     # check if artifact is already provided otherwise build it via builder
     # for builder ensure that their dependencies also exist
     if ctx.has(artifact):
         return
 
+    if artifact in _resolving:
+        raise ValueError(f"Circular dependency detected while resolving in {artifact}")
+
     builder_name = providers.get(artifact)
 
     if builder_name is None:
-        required_plots = require_map(PLOT_REGISTRY)[artifact]
-        required_builder = require_map(BUILDER_REGISTRY)[artifact]
+        required_plots = require_map(PLOT_REGISTRY).get(artifact, [])
+        required_builder = require_map(BUILDER_REGISTRY).get(artifact, [])
         msg = (
             f"No builder provides '{artifact}'\n"
             "Following plots / builder require this artifact\n"
@@ -44,11 +54,19 @@ def ensure(ctx, artifact, providers):
         raise ValueError(msg)
 
     builder = BUILDER_REGISTRY[builder_name]
+    _resolving.add(artifact)
 
     for dep in builder.requires:
-        ensure(ctx, dep, providers)
+        ensure(ctx, dep, providers, _resolving)
 
     result = builder.fn(ctx)
+    # check if builder really provided something and did not silently died
+    missing_provides = builder.provides - result.keys()
+    if missing_provides:
+        raise ValueError(
+            f"Builder {builder_name} should provide {builder.provides}"
+            f"but did not return: {missing_provides}"
+        )
     # save result in cache of context
     ctx.cache.update(result)
 

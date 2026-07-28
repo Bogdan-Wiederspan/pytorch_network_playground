@@ -1,5 +1,8 @@
 import torch
 
+from utils import logger
+
+logger_inst = logger.get_logger(__name__)
 
 class TrainingMonitor:
     def __init__(self, to_cpu:bool=True, non_blocking:bool=True):
@@ -74,6 +77,12 @@ class TrainingMonitor:
             name for name in expected_names
             if name not in self.gradients or self.gradients[name][0] != self._step
         ]
+
+    def check_gradient_correctness(self, expected_names):
+        missing = self.stale_gradients(expected_names=expected_names)
+        if missing:
+            logger_inst.warning(f"Gradient hooks did not fire for {missing}")
+
 
     def clear_gradients(self):
         self.gradients.clear()

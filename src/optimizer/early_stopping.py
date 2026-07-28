@@ -10,6 +10,7 @@ from dataclasses import asdict
 
 logger_inst = get_logger(__name__)
 
+
 class EarlyStopSignal:
     """
     EarlyStopper signal giver counts how often

@@ -5,8 +5,8 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import torch
 
-from data import features
-from data.utils import find_datasets
+from data_handling import features
+from data_handling.utils import find_datasets
 from utils.transformations import cubic, linspace, logit, tangent
 from utils.utils import EMPTY_FLOAT, choice_check, multiply_sub_process_rates
 
@@ -51,6 +51,8 @@ class DataConfig:
 
 @dataclass
 class ModelBuildingConfig:
+    # Binning Layer
+    enable_binning: bool = True
     # Rotation Layer
     enable_rotation: bool = False # enable rotation layer based on two reference objects, TODO: this breaks export to torch script
     ref_phi_columns: Tuple[str, str] = ("res_dnn_pnet_vis_tau1", "res_dnn_pnet_vis_tau2") # reference column to calculate rotation angle
@@ -105,7 +107,7 @@ class ModelBuildingConfig:
 
 @dataclass
 class BinningConfig:
-    num_bins: int = 15
+    num_bins: int = 10
     bounds: tuple[int] = (0, 1)
     # binning_fn: Any = torch.linspace  # keep as a callable, if needed
     binning_choice: BINNING_CHOICE = "logit"
@@ -234,9 +236,9 @@ class LossConfig:
     @dataclass
     class SignalEfficiencyLossConfig():
         asimov_mode: SIGNAL_EFFICIENCY_LOSS_MODE = "approximation" # which asimov is used
-        epsilon_small_signal: float = 1e-6 # epsilon of "asimov_small_signal_and_no_background"
-        epsilon_sqrt: float = 1e-6 # epsilon to stablize sqrt part of "asimov_no_background"
-        epsilon_log: float = 1e-6 # epsilon of "asimov_no_background" to stablize the log part of the formula
+        epsilon_small_signal: float = 1e-9 # epsilon of "asimov_small_signal_and_no_background"
+        epsilon_sqrt: float = 0 # epsilon to stablize sqrt part of "asimov_no_background"
+        epsilon_log: float = 0 # epsilon of "asimov_no_background" to stablize the log part of the formula
         background_uncertainty: float = 0.0 # uncertainty of "asimov", when above 1 absolut, 0 < x < 1 relative to background
 
     @dataclass

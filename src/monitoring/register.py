@@ -1,13 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Callable, Set
 
+import warnings
 
-@dataclass
-class SignalSpec:
-    fn: Callable
-    requires: Set[str] = None
-    provides: Set[str] = None
-    kind: Set[str] = None
 
 @dataclass
 class PlotSpec:
@@ -31,7 +26,6 @@ class ScalarSpec:
 PLOT_REGISTRY: dict[str, PlotSpec] = {}
 BUILDER_REGISTRY: dict[str, BuilderSpec] = {}
 SCALAR_REGISTRY: dict[str, ScalarSpec] = {}
-SIGNAL_REGISTRY: dict[str, SignalSpec] = {}
 
 # builders need to return values as dictionary with provides keys as keys
 def register_builder(name, * ,requires=None, provides=None):
@@ -48,6 +42,9 @@ def register_builder(name, * ,requires=None, provides=None):
     # wrapper needs to have **kwargs
     # so it can access requires and provides from decorator
     def wrapper(fn):
+        if name in BUILDER_REGISTRY:
+            warnings.warn(f"Trying to register builder: {name}, but already exist")
+
         BUILDER_REGISTRY[name] = BuilderSpec(
             fn=fn,
             requires=requires,
@@ -59,8 +56,13 @@ def register_builder(name, * ,requires=None, provides=None):
 
 
 def register_plot(name, requires=None, **kwargs):
+
     # kwargs contain extra arguments passed to the decorated function
     def wrapper(fn):
+        if name in PLOT_REGISTRY:
+            warnings.warn(f"Trying to register plot: {name}, but already exist")
+
+
         PLOT_REGISTRY[name] = PlotSpec(
             fn=fn,
             requires=set(requires or []),

@@ -138,7 +138,8 @@ class BaseKernel(torch.nn.Module, abc.ABC):
         Overwrite this when you want to extend the behavior of kernel
         """
         y = self._base_kernel(x)
-        return self._apply_cut_mask(y)
+        y = self._apply_cut_mask(x, y)
+        return y
 
     def forward(self, x, *args, **kwds) -> torch.Tensor:
         return self.kernel(x) * self.normalization

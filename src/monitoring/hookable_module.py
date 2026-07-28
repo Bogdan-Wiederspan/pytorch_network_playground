@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-import warnings
+
 from contextlib import contextmanager
+from utils import logger
+
+logger_inst = logger.get_logger(__name__)
 
 from typing import TYPE_CHECKING
 
@@ -66,7 +69,7 @@ class HookableMixin:
 
     def register_gradient_callback(self, name, callback):
         if name in self.gradient_callbacks and self.gradient_callbacks[name] is not callback:
-            warnings.warn(
+            logger_inst.warning(
                 f"Overwriting gradient callback for '{name}' with a different callback."
                 )
 
