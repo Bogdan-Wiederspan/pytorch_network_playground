@@ -80,7 +80,14 @@ class SignalEfficiency(HookableMixin, torch.nn.Module):
     def loss(self, *args, **kwargs):
         return self._loss(*args, **kwargs)
 
-    def forward(self, prediction, truth, product_of_weights, evaluation_mask):
+    def monitor_gradient_names(self):
+        return []
+
+    def monitor_tensor_names(self):
+        return ["signal_yield", "background_yield", "binned_significance"]
+
+
+    def forward(self, prediction, truth, product_of_weights, evaluation_mask, monitor_prefix="batch"):
         # prediction can be of shape [bin, event, node] or [event, node]
         # only signal node is necessary
         signal_node_prediction = prediction[..., self.s_cls] # can be 2D or 1D
@@ -100,5 +107,8 @@ class SignalEfficiency(HookableMixin, torch.nn.Module):
             unc_b=self._uncertainty(b),
             **self.asimov_epsilon
             )
+        self.monitor_tensor(name="binned_significance", tensor=significance)
+        self.monitor_tensor(name="signal_yield", tensor=s)
+        self.monitor_tensor(name="background_yield", tensor=b)
         loss = self.loss(significance)
         return loss

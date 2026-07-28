@@ -6,6 +6,7 @@ from .BinningAwareSignalEfficiency import BinningAwareSignificance
 from .CrossEntropy import WeightedCrossEntropy
 from .FocalLoss import FocalLoss
 from .utils import init_loss
+from .YieldCalculator import YieldCalculator
 
 
 __all__ = [
@@ -15,6 +16,7 @@ __all__ = [
     "WeightedCrossEntropy",
     "FocalLoss",
     "init_loss",
+    "YieldCalculator",
 ]
 
 def __getattr__(name):
