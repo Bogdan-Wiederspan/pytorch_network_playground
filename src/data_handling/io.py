@@ -91,7 +91,7 @@ def root_to_numpy(
             weights_in_root_file = set(tree.keys()).intersection(weights)
             weights_arrays = tree.arrays(weights_in_root_file, library="ak", cut=final_cut)
 
-            combined_weight = 1
+            combined_weight = all_branches_array["normalization_weight"]
             for weight in weights_in_root_file:
                 combined_weight = combined_weight * weights_arrays[weight]
             all_branches_array["combined_weight"] = combined_weight
