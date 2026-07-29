@@ -17,7 +17,7 @@ class SignalEfficiency(HookableMixin, torch.nn.Module):
         self,
         sampler_inst,
         device,
-        train=True,
+        is_training=True,
         asimov_cfg=None,
         *args,
         **kwargs,
@@ -34,7 +34,7 @@ class SignalEfficiency(HookableMixin, torch.nn.Module):
         Args:
             sampler_inst: Sampler instance that provides necessary information about phase space and weights.
             device: Device on which the tensors are placed.
-            train: Bool to signal if the loss is used in training or validation mode, which changes the way the loss is calculated.
+            is_training: Bool to signal if the loss is used in training or validation mode, which changes the way the loss is calculated.
             mode: String to signal which implementation of the Asimov Significance is used, choose between "full", "no_unc", "approximation".
             uncertainty: Float to signal the level of uncertainty, if between 0 and 1 a relative uncertainty of
 
@@ -44,10 +44,10 @@ class SignalEfficiency(HookableMixin, torch.nn.Module):
         super().__init__()
         self.yield_calculator = YieldCalculator(
             sampler_inst=sampler_inst,
-            training=train,
+            training=is_training,
         )
 
-        self.train = train
+        self.is_training = is_training
         self.target_map = sampler_inst.target_map
 
         self.asimov_name = asimov_cfg.asimov_mode
@@ -80,14 +80,14 @@ class SignalEfficiency(HookableMixin, torch.nn.Module):
     def loss(self, *args, **kwargs):
         return self._loss(*args, **kwargs)
 
-    def monitor_gradient_names(self):
+    def monitored_gradient_names(self):
         return []
 
-    def monitor_tensor_names(self):
+    def monitored_tensor_names(self):
         return ["signal_yield", "background_yield", "binned_significance"]
 
 
-    def forward(self, prediction, truth, product_of_weights, evaluation_mask, monitor_prefix="batch"):
+    def forward(self, prediction, truth, product_of_weights, evaluation_mask):
         # prediction can be of shape [bin, event, node] or [event, node]
         # only signal node is necessary
         signal_node_prediction = prediction[..., self.s_cls] # can be 2D or 1D
