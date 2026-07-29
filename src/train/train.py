@@ -128,18 +128,18 @@ def main(**kwargs):
         for current_iteration in range(1_000_000):
             batch_result = training_loop(
                 model_inst=model_inst,
+                monitor = training_monitor_inst,
+                kind_of_data= "batch",
                 loss_fn=training_loss_inst,
                 optimizer=optimizer_inst,
                 sampler=training_sampler,
                 device=DEVICE,
                 sample_columns=full_config.training_config.sample_attributes,
                 scheduler_handler_inst=scheduler_handler_inst,
-                monitor = training_monitor_inst,
             )
             # ----
             # Verbose and Metrics that are triggered often
             # ----
-
             if current_iteration % full_config.training_config.verbose_interval == 0:
                 tensorboard_writer.log_lr(optimizer_inst, current_iteration)
                 batch_loss = batch_result["loss"].item()
@@ -156,22 +156,25 @@ def main(**kwargs):
                 logger_inst.info(f"Iteration {current_iteration}. Start evaluation of training data.")
 
                 evaluation_training_result = validation_loop(
-                    model_inst,
-                    validation_loss_inst,
-                    training_sampler,
+                    model_inst=model_inst,
+                    monitor = training_monitor_inst,
+                    kind_of_data= "evaluation_training",
+                    loss_fn_inst=validation_loss_inst,
+                    sampler_inst=training_sampler,
                     sample_columns=full_config.training_config.sample_attributes,
-                    device=DEVICE
+                    device=DEVICE,
                     )
-
                 # evaluation of validation
                 logger_inst.info(f"Iteration {current_iteration}. Start evaluation of validation data.")
 
                 evaluation_validation_result = validation_loop(
-                    model_inst,
-                    validation_loss_inst,
-                    validation_sampler,
+                    model_inst=model_inst,
+                    monitor = training_monitor_inst,
+                    kind_of_data= "evaluation_validation",
+                    loss_fn_inst=validation_loss_inst,
+                    sampler_inst=validation_sampler,
                     sample_columns=full_config.training_config.sample_attributes,
-                    device=DEVICE
+                    device=DEVICE,
                     )
 
                 eval_t_loss = evaluation_training_result["loss"].item()
