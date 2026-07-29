@@ -4,11 +4,12 @@ import torch
 
 from ..input import CategoricalInputLayer, ContinuousInputLayer, InputLayer, OptionalInputLayer
 from ..preprocessing import CatEmbeddingLayer, EmptyLayer, PaddingLayer, RotatePhiLayer, StandardizeLayer
+from monitoring.monitoring_hooks.hookable_model import HookableModelMixin
 
 from typing import Any
 
 
-class BaseModel(torch.nn.Module):
+class BaseModel(HookableModelMixin, torch.nn.Module):
     is_binned = False
     LEARNING_MODES = {}
 

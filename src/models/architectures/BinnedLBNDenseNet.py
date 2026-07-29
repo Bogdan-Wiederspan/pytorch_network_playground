@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+from typing import Any
+
 import torch
 
 from ..binning import KERNEL_MAP, BinningLayer
 from ..register import register_model
 from .LBNDenseNet import LBNDenseNet
-
-from typing import Any
 
 
 @register_model("binned_lbn_dense")
