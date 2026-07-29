@@ -6,7 +6,7 @@ from typing import Any
 import torch
 from torch.nn.utils import parametrize
 
-from monitoring.hookable_module import HookableMixin
+from monitoring.monitoring_hooks.hookable_module import HookableMixin
 
 
 class BinningLayer(HookableMixin, torch.nn.Module):
