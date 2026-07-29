@@ -4,7 +4,7 @@ from statistics.asimov import asimov, asimov_no_background, asimov_small_signal_
 import torch
 
 from .YieldCalculator import YieldCalculator
-from monitoring.hookable_module import HookableMixin
+from monitoring import HookableMixin
 
 asimov_functions = {
     "full" : asimov,

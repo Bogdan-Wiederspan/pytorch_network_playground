@@ -13,7 +13,7 @@ from loss import init_loss
 from models.utils import init_model
 
 # from .train_utils import log_metrics
-from monitoring import EvalContext, EvaluationRunner, load_registers, TrainingMonitor
+from monitoring import EvalContext, EvaluationRunner, load_registers, TrainingMonitor, setup_monitoring
 from optimizer.early_stopping import CheckPoint
 from optimizer.scheduler_handler import SchedulerHandler
 from optimizer.utils import init_optimizer, init_scheduler
@@ -28,6 +28,7 @@ DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cp
 
 torch.manual_seed(full_config.training_config.seed)
 np.random.seed(full_config.training_config.seed)
+
 
 def main(**kwargs):
     # prepare logger
@@ -118,7 +119,7 @@ def main(**kwargs):
         training_monitor_inst = TrainingMonitor(to_cpu=True, non_blocking=True)
         scheduler_handler_inst = SchedulerHandler(scheduler_inst=scheduler_inst, checkpoint_inst=checkpoint_inst, logger_inst=logger)
 
-        model_inst.binning_layer.register_monitor(training_monitor_inst)
+        setup_monitoring(training_monitor_inst, model_inst.binning_layer, training_loss_inst, validation_loss_inst)
 
         #----
         ### training loop
