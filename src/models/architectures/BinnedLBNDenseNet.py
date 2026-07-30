@@ -91,8 +91,9 @@ class BinnedLBNDenseNet(LBNDenseNet):
             dict[Any]: Dictionary with all snapshots exposed from the internal components.
         """
         return {
-            "binning": self.binning_layer.create_evaluation_state(),
-        }
+            f"evaluation_state.binning.{k}":v
+            for k,v in self.binning_layer.create_evaluation_state().items()
+            }
 
     def forward(self, categorical_inputs, continuous_inputs):
         normal_network_output = super().forward(categorical_inputs, continuous_inputs)

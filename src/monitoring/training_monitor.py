@@ -78,17 +78,24 @@ class TrainingMonitor:
             for mode in set(self.gradients) | set(self.tensors)
         }
 
-    def get_gradients(self, mode:str, unwrap=True):
+    def get_gradients(self, mode:str, unwrap=True, prefix=""):
         bucket = self.gradients.get(mode, {})
         if unwrap:
-            return {name: gradient for name, (step, gradient) in self.bucket.items()}
+            return {f"{prefix}{name}": gradient for name, (step, gradient) in bucket.items()}
         return bucket
 
-    def get_tensors(self, mode:str, unwrap=True):
+    def get_tensors(self, mode:str, unwrap=True, prefix=""):
         bucket = self.tensors.get(mode, {})
         if unwrap:
-            return {name: value for name, (step, value) in self.bucket.items()}
+            return {f"{prefix}{name}": value for name, (step, value) in bucket.items()}
         return bucket
+
+    def get_plot_gradients(self, mode):
+        return tuple(self.get_gradients(mode, unwrap=True, prefix="monitored_gradient.").items())
+
+    def get_plot_tensors(self, mode):
+        return tuple(self.get_tensors(mode, unwrap=True, prefix="monitored_tensor.").items())
+
 
     def sync(self):
         """
