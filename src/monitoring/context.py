@@ -35,7 +35,7 @@ class EvalContext:
         """
         # core state of the model. Model it self create this state
         # model_state is detached from live model!
-        # self.evaluation_state = model_evaluation_state
+        self.evaluation_state = model_evaluation_state
 
         # core artifacts
         self.predictions = predictions.detach().cpu()
@@ -49,8 +49,6 @@ class EvalContext:
 
         # dynamic features existence depending on model or plots
         self.features = {}
-        if model_evaluation_state is not None:
-            self.features.update(model_evaluation_state)
 
         # cache to save builder outputs to prevent recomputing
         self.cache = {}
@@ -62,11 +60,11 @@ class EvalContext:
         if key in self.cache:
             return True
 
-        # if key.startswith("evaluation_state."):
-        #     return self._has_nested(
-        #         self.evaluation_state,
-        #         key.split(".")[1:]
-        #     )
+        if key.startswith("evaluation_state."):
+            return self._has_nested(
+                self.evaluation_state,
+                key.split(".")[1:]
+            )
         return False
 
     def _has_nested(self, obj, parts):
@@ -121,7 +119,6 @@ class EvalContext:
             "predictions", "targets", "target_map", "event_weights",
             *list(self.features.keys()),
             *list(self.cache.keys()),
-            # *list(self.evaluation_state.keys()),
             }
 
     def expand(self, pattern: str) -> list[str]:

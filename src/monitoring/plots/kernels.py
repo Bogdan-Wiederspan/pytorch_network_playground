@@ -7,8 +7,8 @@ from monitoring.utils.plotting import add_number_legend
 @register_plot(
     "active_kernels",
     requires=(
-        "evaluation_state.binning.binning_fn",
-        "evaluation_state.binning.kernels",
+        "binning_fn",
+        "kernels",
         )
 )
 def plot_kernel_distribution(
@@ -17,9 +17,9 @@ def plot_kernel_distribution(
     _range=None,
     prediction=None,
     binning_fn=None):
-    kernels = ctx.get("evaluation_state.binning.kernels")
+    kernels = ctx.get("kernels")
     prediction = ctx.predictions
-    binning_fn = ctx.get("evaluation_state.binning.kernels")
+    binning_fn = ctx.get("binning_fn")
 
     # prepare kernels
     num_kernels = len(kernels)
@@ -93,12 +93,11 @@ def plot_kernel_distribution(
 @register_plot(
     "active_kernels_advance",
     requires=(
-        "evaluation_state.binning.binning_fn",
-        "evaluation_state.binning.kernels",
-        "evaluation_state.binning.active_edges",
+        "binning_fn",
+        "kernels",
+        "active_edges",
         "monitored_tensor.signal_yield",
         "monitored_tensor.background_yield",
-        "monitored_gradient.weighted_dnn_score_bin_*",
         "monitored_tensor.binned_significance"
         )
 )
@@ -110,20 +109,19 @@ def plot_kernel_distribution_advance(
     binning_fn=None):
 
     prediction = ctx.predictions
-    kernels = ctx.get("evaluation_state.binning.kernels")
-    binning_fn = ctx.get("evaluation_state.binning.binning_fn")
-    edges = ctx.get("evaluation_state.binning.active_edges")
-    bin_gradients = {ctx.get(_bin) for _bin in sorted(ctx.expand("monitored_gradient.weighted_dnn_score_bin_*"))}
+    kernels = ctx.get("kernels")
+    binning_fn = ctx.get("binning_fn")
+    edges = ctx.get("active_edges")
     num_kernels = len(kernels)
-    s_yield = ctx.get("monitored_tensor.signal_yield")
-    b_yield = ctx.get("monitored_tensor.background_yield")
+    # s_yield = ctx.get("monitored_tensor.signal_yield")
+    # b_yield = ctx.get("monitored_tensor.background_yield")
     binned_sig = ctx.get("monitored_tensor.binned_significance")
     total_sig = torch.sqrt(torch.sum(binned_sig**2))
     event_weights = ctx.event_weights
 
     target_map = ctx.target_map.copy()
     sig_idx = target_map.pop("hh")
-    background_idx = list(target_map.values())
+    # background_idx = list(target_map.values())
     signal_node_prediction = prediction[:, sig_idx]
 
     targets = ctx.targets
@@ -207,10 +205,7 @@ def plot_kernel_distribution_advance(
 
     # --- plot yield
     bin_width = edges[1:] - edges[:-1]
-    bottom = torch.zeros_like(s_yield)
-    # ax[2].bar(x=edges[:-1], height=b_yield, width=bin_width, bottom=None, label="Background Yield", color="orange")
-    # bottom += b_yield
-    # ax[2].bar(x=edges[:-1], height=s_yield, width=bin_width, bottom=bottom, label="Signal Yield", color="blue")
+    bottom = torch.zeros_like(binned_sig)
     bin_centers= (edges[:-1] + edges[1:]) / 2
     ax[2].bar(
         x=bin_centers,

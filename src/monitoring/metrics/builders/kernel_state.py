@@ -1,4 +1,3 @@
-import torch
 
 from ...register import register_builder
 

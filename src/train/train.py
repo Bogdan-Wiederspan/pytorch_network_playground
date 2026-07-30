@@ -118,7 +118,7 @@ def main(**kwargs):
         checkpoint_inst = CheckPoint(checkpoint_name=full_config.training_config.save_model_name, checkpoint_fold=current_fold)
         training_monitor_inst = TrainingMonitor(to_cpu=True, non_blocking=True)
         scheduler_handler_inst = SchedulerHandler(scheduler_inst=scheduler_inst, checkpoint_inst=checkpoint_inst, logger_inst=logger)
-
+        mode_batch, mode_eval_training, mode_eval_validation = "training_batch", "evaluation_training", "evaluation_validation"
         setup_monitoring(training_monitor_inst, model_inst.binning_layer, training_loss_inst, validation_loss_inst)
 
         #----
@@ -129,7 +129,7 @@ def main(**kwargs):
             batch_result = training_loop(
                 model_inst=model_inst,
                 monitor = training_monitor_inst,
-                kind_of_data= "batch",
+                kind_of_data= mode_batch,
                 loss_fn=training_loss_inst,
                 optimizer=optimizer_inst,
                 sampler=training_sampler,
@@ -158,7 +158,7 @@ def main(**kwargs):
                 evaluation_training_result = validation_loop(
                     model_inst=model_inst,
                     monitor = training_monitor_inst,
-                    kind_of_data= "evaluation_training",
+                    kind_of_data= mode_eval_training,
                     loss_fn_inst=validation_loss_inst,
                     sampler_inst=training_sampler,
                     sample_columns=full_config.training_config.sample_attributes,
@@ -170,7 +170,7 @@ def main(**kwargs):
                 evaluation_validation_result = validation_loop(
                     model_inst=model_inst,
                     monitor = training_monitor_inst,
-                    kind_of_data= "evaluation_validation",
+                    kind_of_data= mode_eval_validation,
                     loss_fn_inst=validation_loss_inst,
                     sampler_inst=validation_sampler,
                     sample_columns=full_config.training_config.sample_attributes,
@@ -218,22 +218,21 @@ def main(**kwargs):
                     # ctx_batch.add_feature("kernels", model_inst.kernels)
                     # ctx_batch.add_feature("binning_fn", model_inst.binning_fn)
 
-                    ctx_train.add_feature("loss", eval_t_loss)
-                    ctx_validation.add_feature("loss", eval_v_loss)
-                    ctx_batch.add_feature("monitored_gradients", training_monitor_inst.gradients)
-                    ctx_batch.add_feature("monitored_tensors", training_monitor_inst.tensors)
+                    ctx_batch.add_features(
+                        *training_monitor_inst.get_plot_gradients(mode_batch),
+                        *training_monitor_inst.get_plot_tensors(mode_batch),
+                    )
 
-                    # TODO make optional, for example for layers without binning
-                    for _ctx in (ctx_train, ctx_validation):
-                        _ctx.add_feature(
-                            "untransformed_binning_edges", model_inst.bin_edges_original
-                            )
+                    ctx_train.add_features(
+                        *training_monitor_inst.get_plot_tensors(mode_eval_training),
+                        ("loss", eval_t_loss),
+                    )
 
                     evaluation_runner_inst.run_plots(
                         ctx_batch,
                         plots=[
-                            "active_kernels",
-                            # "active_kernels_advance"
+                            # "active_kernels",
+                            "active_kernels_advance"
                         ]
                     )
 
@@ -243,21 +242,11 @@ def main(**kwargs):
                         plots=[
                             "confusion_matrix",
                             "roc",
-                            "asimov_small_signal",
+                            # "asimov_small_signal",
                             "output_score_hh_node",
-                            "bin_edges",
                             "output_score_hh_node_untransformed",
-
+                            "active_kernels_advance"
                         ],
-                    )
-
-
-                    evaluation_runner_inst.run_scalars(
-                        ctx=ctx_train,
-                        artifact_names={
-                            "CrossEntropy/Evaluation Training" : "cross_entropy",
-                            "Loss/Evaluation Training Loss" :"loss",
-                            },
                     )
 
                     evaluation_runner_inst.run_plots(
@@ -265,10 +254,19 @@ def main(**kwargs):
                         plots=[
                             "confusion_matrix",
                             "roc",
-                            "asimov_small_signal",
+                            # "asimov_small_signal",
                             "output_score_hh_node",
                             "output_score_hh_node_untransformed",
+                            "active_kernels_advance"
                         ],
+                    )
+
+                    evaluation_runner_inst.run_scalars(
+                        ctx=ctx_train,
+                        artifact_names={
+                            "CrossEntropy/Evaluation Training" : "cross_entropy",
+                            "Loss/Evaluation Training Loss" :"loss",
+                            },
                     )
 
                     evaluation_runner_inst.run_scalars(
@@ -280,7 +278,6 @@ def main(**kwargs):
 
                     )
 
-                # from IPython import embed; embed(header="MESSAGE Line 237 | File: train.py")
                 ### checkpoint criteria checks and saving
                 if checkpoint_inst.check_criteria(eval_v_loss):
                     checkpoint_inst.create_checkpoint(

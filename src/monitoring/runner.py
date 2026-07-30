@@ -27,7 +27,7 @@ def build_provider_map(force_refresh=False):
     return _PROVIDER_MAP_CACHE
 
 
-def ensure(ctx, artifact, providers, _resolving=None):
+def ensure(ctx, artifact, providers, _resolving=None, requester=None):
     # check if artifact is already provided otherwise build it via builder
     # for builder ensure that their dependencies also exist
 
@@ -40,7 +40,7 @@ def ensure(ctx, artifact, providers, _resolving=None):
     # if the pattern expanded to multiple keys, ensure each one
     if len(concrete_keys) > 1 or concrete_keys[0] != artifact:
         for key in concrete_keys:
-            ensure(ctx, key, providers, _resolving)
+            ensure(ctx, key, providers, _resolving, requester=requester)
         return
 
     # --- single concrete key from here ---
@@ -57,7 +57,8 @@ def ensure(ctx, artifact, providers, _resolving=None):
         required_plots = require_map(PLOT_REGISTRY).get(artifact, [])
         required_builder = require_map(BUILDER_REGISTRY).get(artifact, [])
         msg = (
-            f"No builder provides '{artifact}'\n"
+            f"Requester: {requester} require {artifact} \n"
+            f" but no builder provides'\n"
             "Following plots / builder require this artifact\n"
             f"Plots: {required_plots}\n"
             f"Builders:{required_builder}\n"
@@ -69,7 +70,7 @@ def ensure(ctx, artifact, providers, _resolving=None):
     _resolving.add(artifact)
 
     for dep in builder.requires:
-        ensure(ctx, dep, providers, _resolving)
+        ensure(ctx, dep, providers, _resolving, requester=requester)
 
     result = builder.fn(ctx)
     # check if builder really provided something and did not silently died
@@ -89,15 +90,14 @@ def run_plot(name, ctx):
     providers = build_provider_map()
 
     for req in spec.requires:
-        ensure(ctx, req, providers)
-
+            ensure(ctx, req, providers, requester=name)
     return spec.fn(ctx)
 
 
 def run_scalar(name, ctx):
     # scalars
     providers = build_provider_map()
-    ensure(ctx, name, providers)
+    ensure(ctx, name, providers, requester=name)
     return ctx.get(name)
 
 
