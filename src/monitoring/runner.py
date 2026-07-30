@@ -28,11 +28,23 @@ def build_provider_map(force_refresh=False):
 
 
 def ensure(ctx, artifact, providers, _resolving=None):
+    # check if artifact is already provided otherwise build it via builder
+    # for builder ensure that their dependencies also exist
+
     if _resolving is None:
         _resolving = set()
 
-    # check if artifact is already provided otherwise build it via builder
-    # for builder ensure that their dependencies also exist
+    # --- resolving patterns ---
+    concrete_keys = ctx.expand(artifact)
+
+    # if the pattern expanded to multiple keys, ensure each one
+    if len(concrete_keys) > 1 or concrete_keys[0] != artifact:
+        for key in concrete_keys:
+            ensure(ctx, key, providers, _resolving)
+        return
+
+    # --- single concrete key from here ---
+
     if ctx.has(artifact):
         return
 

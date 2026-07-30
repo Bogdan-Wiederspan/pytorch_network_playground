@@ -1,6 +1,9 @@
-import torch
+from __future__ import annotations
 
+import fnmatch
 from typing import Any
+
+import torch
 
 
 class EvalContext:
@@ -32,7 +35,7 @@ class EvalContext:
         """
         # core state of the model. Model it self create this state
         # model_state is detached from live model!
-        self.evaluation_state = model_evaluation_state
+        # self.evaluation_state = model_evaluation_state
 
         # core artifacts
         self.predictions = predictions.detach().cpu()
@@ -46,6 +49,9 @@ class EvalContext:
 
         # dynamic features existence depending on model or plots
         self.features = {}
+        if model_evaluation_state is not None:
+            self.features.update(model_evaluation_state)
+
         # cache to save builder outputs to prevent recomputing
         self.cache = {}
 
@@ -56,11 +62,11 @@ class EvalContext:
         if key in self.cache:
             return True
 
-        if key.startswith("evaluation_state."):
-            return self._has_nested(
-                self.evaluation_state,
-                key.split(".")[1:]
-            )
+        # if key.startswith("evaluation_state."):
+        #     return self._has_nested(
+        #         self.evaluation_state,
+        #         key.split(".")[1:]
+        #     )
         return False
 
     def _has_nested(self, obj, parts):
@@ -101,6 +107,10 @@ class EvalContext:
             feature = [f.cpu() for f in feature]
         self.features[name] = feature
 
+    def add_features(self, *named_features: tuple[str, torch.Tensor]):
+        for name, feature in named_features:
+            self.add_feature(name, feature)
+
     def add_cache(self, name, feature):
         if torch.is_tensor(feature):
             feature = feature.detach().cpu()
@@ -110,5 +120,22 @@ class EvalContext:
         return {
             "predictions", "targets", "target_map", "event_weights",
             *list(self.features.keys()),
-            *list(self.cache.keys())
+            *list(self.cache.keys()),
+            # *list(self.evaluation_state.keys()),
             }
+
+    def expand(self, pattern: str) -> list[str]:
+        """
+        Expand a glob pattern against all currently known keys.
+        Returns a list of matching concrete keys.
+        Example: 'monitor.gradients.*' -> ['monitor.gradients.dnn_score', 'monitor.gradients.binned_tensor', ...]
+        Returns [pattern] unchanged if no wildcards present.
+        """
+        # no glob chars — no expansion needed
+        if not any(c in pattern for c in ("*", "?", "[")):
+            return [pattern]
+
+        return [
+            key for key in self.list_registered()
+            if fnmatch.fnmatch(key, pattern)
+        ]
