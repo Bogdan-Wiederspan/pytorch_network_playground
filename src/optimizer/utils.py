@@ -8,8 +8,8 @@ def init_optimizer(full_config, model_inst):
     # only linear layers contribute to weight decay, prepare config that separates them for the optimizer
     weight_decay_parameters = weight_decay.normalized_weight_decay(
         model_inst,
-        full_config.optimizer_config.decay_factor,
-        full_config.optimizer_config.normalize,
+        full_config.optimizer_config.active_config.decay_factor,
+        full_config.optimizer_config.active_config.normalize,
         )
     # is a dictionary, expect list of tuples
     weight_decay_parameters = list(weight_decay_parameters.values())
@@ -21,14 +21,14 @@ def init_optimizer(full_config, model_inst):
     if name == "adamw":
         optimizer_inst = torch.optim.AdamW(
             weight_decay_parameters,
-            lr=full_config.optimizer_config.lr,
+            lr=full_config.optimizer_config.active_config.lr,
             weight_decay=global_weight_decay_default,
             )
     elif name == "sam":
         optimizer_inst = SAM(
             weight_decay_parameters,
             torch.optim.AdamW,
-            lr=full_config.optimizer_config.lr,
+            lr=full_config.optimizer_config.active_config.lr,
             rho = 2.0,
             adaptive=True,
             weight_decay=global_weight_decay_default,

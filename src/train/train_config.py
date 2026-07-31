@@ -37,7 +37,7 @@ class DataConfig:
         "hh_ggf_hbb_htt_kl1_kt1*",
         # "hh_ggf_hbb_htt_kl0_kt1*",
         )
-    eras: Tuple[ERAS_CHOICE] = ("22pre")
+    eras: Tuple[ERAS_CHOICE] = ("22pre",)
     datasets: Optional[List[str]] = None
     cuts: Optional[Any] = None
     dummy_values = -99999 # value used to fill in missing values
@@ -147,10 +147,10 @@ class BinningConfig:
 
     @dataclass
     class CubicConfig():
-        shift: float=torch.as_tensor(0.5),
-        min: float | None=None,
-        max: float | None=None,
-        stretching_factor: float| None=None,
+        shift: float=torch.as_tensor(0.5)
+        min: float | None=None
+        max: float | None=None
+        stretching_factor: float| None=None
 
     def __post_init__(self):
         choice_check(self.kernel_cls, KERNEL_CHOICE)
@@ -178,11 +178,11 @@ class BinningConfig:
 
 @dataclass
 class TrainingConfig:
-    save_model_name: str = "LogitRealSpace_15" # name of the model used to save
+    save_model_name: str = "delete2" # name of the model used to save
     log_metrics: bool = True # whether to log metrics to tensorboard during training, if false only validation loss is logged
-    model_choice: MODEL_CHOICE = "binned_lbn_dense"
-    training_fn: TRAINING_LOOP_CHOICE = "signal_efficiency" # name of the training loop
-    validation_fn: VALIDATION_LOOP_CHOICE = "signal_efficiency" # name of the validation loop
+    model_choice: MODEL_CHOICE = "lbn_dense"
+    training_fn: TRAINING_LOOP_CHOICE = "cross_entropy" # name of the training loop
+    validation_fn: VALIDATION_LOOP_CHOICE = "cross_entropy" # name of the validation loop
     max_train_iteration: int = 15000 # max number of batches
     verbose_interval: int = 5 # interval between two logger outputs of training loss
     validation_interval: int = 30 # interval between two validation passes / plots are done during validation
@@ -292,9 +292,9 @@ class SchedulerConfig:
         patience: int = 4 # wait x number of checks - Marcel: 10
         threshold_mode: str = "abs" # type of min_delta - Marcel: abs
         factor: float = 0.5 # LR reduce by factor
-        cooldown: int = 0, # number of iterations to wait after a learning rate reduction before resuming normal operation
-        min_lr: float = 0, # lower bound on the learning rate
-        eps: float = 1e-08,  # minimal decay applied to lr, if it is smaller than this value, it is set to this value
+        cooldown: int = 0 # number of iterations to wait after a learning rate reduction before resuming normal operation
+        min_lr: float = 0 # lower bound on the learning rate
+        eps: float = 1e-08  # minimal decay applied to lr, if it is smaller than this value, it is set to this value
 
     @dataclass
     class LinearLRConfig():
@@ -344,19 +344,15 @@ class OptimizerConfig:
         TODO = None
 
     def __post_init__(self):
-        # TODO change like in scheduler
-        optimizer_register = {
-            "adamw" : self.ADAMWConfig,
-            "sam" : self.SAMConfig,
-        }
-
-        # move optimizer attribute to top level
-        choice_config = optimizer_register[self.optimizer_choice]()
-
-        for _key, _attr in choice_config.__dict__.items():
-            setattr(self, _key, _attr)
-
         choice_check(self.optimizer_choice, OPTIMIZER_CHOICE)
+
+    @property
+    def active_config(self):
+        return {
+            "adamw": self.ADAMWConfig,
+            "sam": self.SAMConfig,
+        }[self.optimizer_choice]
+
 
 
 @dataclass
@@ -380,7 +376,7 @@ class FullConfig:
 
     def __post_init__(self):
         # when using optimizer sam specific training routine needs to be used
-        if (self.training_config.training_fn != "sam") & (self.optimizer_config.optimizer_choice=="sam"):
+        if (self.training_config.training_fn != "sam") and (self.optimizer_config.optimizer_choice=="sam"):
             raise ValueError(f"When using Optimizer SAM, training_fn needs to be set to 'sam', is currently:{self.training_config.training_fn}).")
 
 
