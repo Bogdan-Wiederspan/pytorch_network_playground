@@ -1,14 +1,16 @@
 from dataclasses import dataclass, field
 from typing import Callable, Set
 
-import warnings
+from utils.logger import get_logger
 
+logger_inst = get_logger(__name__)
 
 @dataclass
 class PlotSpec:
     fn: Callable
     requires: Set[str] = None
     kwargs: dict = field(default_factory=dict)
+    optional: bool = False
 
 @dataclass
 class BuilderSpec:
@@ -43,7 +45,7 @@ def register_builder(name, * ,requires=None, provides=None):
     # so it can access requires and provides from decorator
     def wrapper(fn):
         if name in BUILDER_REGISTRY:
-            warnings.warn(f"Trying to register builder: {name}, but already exist")
+            logger_inst.warning(f"Trying to register builder: {name}, but already exist")
 
         BUILDER_REGISTRY[name] = BuilderSpec(
             fn=fn,
@@ -55,32 +57,31 @@ def register_builder(name, * ,requires=None, provides=None):
     return wrapper
 
 
-def register_plot(name, requires=None, **kwargs):
+def register_plot(name, requires=None, optional=False, **kwargs):
 
     # kwargs contain extra arguments passed to the decorated function
     def wrapper(fn):
         if name in PLOT_REGISTRY:
-            warnings.warn(f"Trying to register plot: {name}, but already exist")
+            logger_inst.warning(f"Trying to register plot: {name}, but already exist")
 
 
         PLOT_REGISTRY[name] = PlotSpec(
             fn=fn,
             requires=set(requires or []),
+            optional=optional,
             kwargs=kwargs,
         )
         return fn
     return wrapper
 
-def register_plot_variant(
-    name,
-    base,
-    **kwargs,
-):
+def register_plot_variant(name, base, optional=None, **kwargs):
     spec = PLOT_REGISTRY[base]
     PLOT_REGISTRY[name] = PlotSpec(
         fn=spec.fn,
         requires=spec.requires,
         kwargs=kwargs,
+        # variant can override optionality, otherwise inherits from base
+        optional=optional if optional is not None else spec.optional,
     )
 
 def register_scalar(name, requires=None):

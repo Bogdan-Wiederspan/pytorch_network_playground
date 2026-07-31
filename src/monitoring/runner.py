@@ -1,6 +1,12 @@
+from utils.logger import get_logger
+
 from .register import BUILDER_REGISTRY, PLOT_REGISTRY
 
 _PROVIDER_MAP_CACHE = None
+
+
+
+logger_inst = get_logger(__name__)
 
 def require_map(registry):
     _map = {}
@@ -37,6 +43,10 @@ def ensure(ctx, artifact, providers, _resolving=None, requester=None):
     # --- resolving patterns ---
     concrete_keys = ctx.expand(artifact)
 
+    if not concrete_keys:
+            raise RequirementNotMet(artifact, requester)
+
+
     # if the pattern expanded to multiple keys, ensure each one
     if len(concrete_keys) > 1 or concrete_keys[0] != artifact:
         for key in concrete_keys:
@@ -54,17 +64,9 @@ def ensure(ctx, artifact, providers, _resolving=None, requester=None):
     builder_name = providers.get(artifact)
 
     if builder_name is None:
-        required_plots = require_map(PLOT_REGISTRY).get(artifact, [])
-        required_builder = require_map(BUILDER_REGISTRY).get(artifact, [])
-        msg = (
-            f"Requester: {requester} require {artifact} \n"
-            f" but no builder provides'\n"
-            "Following plots / builder require this artifact\n"
-            f"Plots: {required_plots}\n"
-            f"Builders:{required_builder}\n"
-            f"Active providers are: {providers}"
-        )
-        raise ValueError(msg)
+
+        # No builder exists AND not in context — this is the "skip" case
+        raise RequirementNotMet(artifact, requester)
 
     builder = BUILDER_REGISTRY[builder_name]
     _resolving.add(artifact)
@@ -84,13 +86,12 @@ def ensure(ctx, artifact, providers, _resolving=None, requester=None):
     ctx.cache.update(result)
 
 def run_plot(name, ctx):
-
     spec = PLOT_REGISTRY[name]
 
     providers = build_provider_map()
 
     for req in spec.requires:
-            ensure(ctx, req, providers, requester=name)
+        ensure(ctx, req, providers, requester=name)
     return spec.fn(ctx)
 
 
@@ -112,20 +113,39 @@ class EvaluationRunner:
             tensorboard (torch.Tensorboard): Tensorboard instance, where everything is logged.
         """
         self.tensorboard = tensorboard
+        self._skipped_plots: set[str, str] = set() # plots skipped due to being optional or not registered, second str is the mode
 
-    def run_plots(
-        self,
-        ctx,
-        plots: list[str],
-    ):
+
+    def run_plots(self, ctx, plots: list[str]):
         for plot_name in plots:
-            fig, ax = run_plot(plot_name, ctx)
-            if self.tensorboard:
-                self.tensorboard.log_figure(
-                    tag=f"{ctx.mode}/{plot_name}",
-                    figure=fig,
-                    step=ctx.global_step,
-                )
+            plot_is_not_skipped = (plot_name, ctx.mode) not in self._skipped_plots
+            if plot_name not in PLOT_REGISTRY:
+                if plot_is_not_skipped:
+                    logger_inst.warning(f"Plot '{plot_name}' is not registered — skipping.")
+                    self._skipped_plots.add((plot_name, ctx.mode))
+                continue
+
+            spec = PLOT_REGISTRY[plot_name]
+            try:
+                fig, ax = run_plot(plot_name, ctx)
+                if self.tensorboard:
+                    self.tensorboard.log_figure(
+                        tag=f"{ctx.mode}/{plot_name}",
+                        figure=fig,
+                        step=ctx.global_step,
+                    )
+            except RequirementNotMet as e:
+                if spec.optional:
+                    if plot_is_not_skipped:
+                        logger_inst.debug(f"Skipping optional plot '{plot_name} in mode{ctx.mode} ': {e}")
+                        self._skipped_plots.add((plot_name, ctx.mode))
+                else:
+                    # required plot whose requirements aren't met — this IS a bug
+                    raise ValueError(
+                        f"Required plot '{plot_name}' could not run because: {e}\n"
+                        f"Mark it optional=True in register_plot if this is expected."
+                    ) from e
+
 
     def run_scalars(self, ctx, artifact_names):
 
@@ -138,3 +158,17 @@ class EvaluationRunner:
                 values={name: value},
                 step=ctx.global_step,
             )
+
+class RequirementNotMet(Exception):
+    """
+    Raised by ensure() when a required artifact cannot be provided
+    because the underlying data doesn't exist in this context.
+    Caught by run_plots to skip optional plots gracefully.
+    """
+    def __init__(self, artifact, plot_name=None):
+        self.artifact = artifact
+        self.plot_name = plot_name
+        super().__init__(
+            f"Requirement '{artifact}' cannot be met for plot '{plot_name}' "
+            f"— no builder provides it and it is not in the context. Skipping."
+        )
