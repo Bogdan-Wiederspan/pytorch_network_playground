@@ -7,7 +7,11 @@ from ..register import register_plot
 from matplotlib.figure import Figure
 from matplotlib.pyplot import Axes
 
-@register_plot("roc")
+@register_plot(
+    "roc",
+    requires=None,
+    optional=False,
+    )
 def roc_curve(ctx, sample_weight=None, labels=None, **kwargs) -> tuple[Figure, Axes]:
 
     target = ctx.targets

@@ -20,7 +20,8 @@ _map = {
 
 @register_plot(
     "asimov",
-    requires=("active_edges" , "s_hist", "b_hist")
+    requires=("active_edges" , "s_hist", "b_hist"),
+    optional=True,
     )
 def plot_asimov_per_bin(
     ctx,

@@ -9,7 +9,11 @@ from matplotlib.figure import Figure
 from matplotlib.pyplot import Axes
 
 
-@register_plot("confusion_matrix", requires=None)
+@register_plot(
+    "confusion_matrix",
+    requires=None,
+    optional=False,
+    )
 def plot_confusion_matrix(
     ctx,
     sample_weight=None,

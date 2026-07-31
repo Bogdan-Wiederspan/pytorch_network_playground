@@ -7,7 +7,11 @@ from ..utils.plotting import append_text_to_legend
 from matplotlib.figure import Figure
 from matplotlib.pyplot import Axes
 
-@register_plot("output_score", requires=None)
+@register_plot(
+    "output_score",
+    requires=None,
+    optional=False
+    )
 def plot_network_predictions(
     ctx,
     normalize=True,
@@ -20,6 +24,12 @@ def plot_network_predictions(
     y_true = ctx.predictions
     y_pred = ctx.targets
     target_map = ctx.target_map
+
+    # TODO somehow get information which kind if transformation is applied to the binning edges, since this is not stored in the context
+    # TODO general transformation passing necessary
+    import utils.transformations as fn
+    y_pred = fn.logit.inverse(y_pred)
+
 
     fig, axes = plt.subplots(1,len(target_map), figsize=(8 * len(target_map), 8))
     fig.suptitle(kwargs.pop("title", None))
@@ -68,7 +78,11 @@ def plot_network_predictions(
     return fig, axes
 
 
-@register_plot("output_score_hh_node_untransformed", requires={"original_edges"})
+@register_plot(
+    "output_score_hh_node_untransformed",
+    requires={"original_edges"},
+    optional=False
+    )
 def plot_network_predictions_hh_untransformed(
     ctx,
     normalize=True,

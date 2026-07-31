@@ -9,7 +9,8 @@ from monitoring.utils.plotting import add_number_legend
     requires=(
         "binning_fn",
         "kernels",
-        )
+        ),
+    optional=True,
 )
 def plot_kernel_distribution(
     ctx,
@@ -64,6 +65,7 @@ def plot_kernel_distribution(
     fig, ax = plt.subplots(2,1)
 
     # transform the prediction into the space of the bins
+    from IPython import embed; embed(header="MESSAGE Line 67 | File: /afs/desy.de/user/w/wiedersb/xxl/pytorch_network_playground/src/monitoring/plots/kernels.py")
     prediction = binning_fn.forward(prediction)
 
     # run the kernels
@@ -99,7 +101,8 @@ def plot_kernel_distribution(
         "monitored_tensor.signal_yield",
         "monitored_tensor.background_yield",
         "monitored_tensor.binned_significance"
-        )
+        ),
+    optional=True,
 )
 def plot_kernel_distribution_advance(
     ctx,

@@ -20,7 +20,11 @@ from ..utils.tensor import to_numpy
 #     ax.grid()
 #     return fig, ax
 
-@register_plot("bin_edges", requires={"active_edges"})
+@register_plot(
+    "bin_edges",
+    requires={"active_edges"},
+    optional=True,
+    )
 def plot_bin_edges(ctx, **kwargs):
     binning_edges = ctx.get("active_edges")
     binning_edges = to_numpy(binning_edges)
