@@ -74,3 +74,32 @@ def choice_check(selected, choices):
     choices = typing.get_args(choices)
     if selected not in choices:
         raise ValueError(f"Selected ({selected}) is not part of valid choices {choices}")
+
+
+def expand_braces(input: tuple[str]) -> tuple[str]:
+    """
+    Expand all braces of given strings and return tuple of all extended strings.
+    For example, input ("a{b,c}d", "e{f,g}h") will return ("abd", "acd", "efh", "egh").
+
+    Args:
+        input (tuple[str]): Iterable of strings with braces to be expanded.
+
+    Returns:
+        tuple[str]: Tuple of expanded strings.
+    """
+    def brace_expand(s):
+        # "a{b,c}d" -> ["abd", "acd"]
+        if "{" not in s:
+            return [s]
+        pre, post = s.split("{", 1)
+        mid, post = post.split("}", 1)
+        parts = mid.split(",")
+        expanded = []
+        for part in parts:
+            for rest in brace_expand(post):
+                expanded.append(pre + part + rest)
+        return expanded
+    cols = []
+    for _str in input:
+        cols.extend(brace_expand(_str))
+    return tuple(cols)

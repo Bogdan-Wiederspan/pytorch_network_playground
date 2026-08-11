@@ -59,9 +59,6 @@ def root_to_numpy(
     # by default all analysis has a base cut applied
     # if further cuts are desired, cut is applied on top of baseline cut
     baseline_cuts = [
-        "(tau2_isolated == 1)",
-        "(leptons_os == 1)",
-        "((channel_id == 1) | (channel_id == 2) | (channel_id == 3))",
     ]
 
     if isinstance(cut, str):

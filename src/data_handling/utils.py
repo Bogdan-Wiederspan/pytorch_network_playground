@@ -45,6 +45,14 @@ def find_datasets(dataset_patterns: list[str], year_patterns: list[str], *, file
     if (data_dir := os.environ.get("INPUT_DATA_DIR", None)) is None:
         raise ValueError("Environment variable INPUT_DATA_DIR not set! Source setup.sh")
 
+    data_dir = pathlib.Path(data_dir)
+
+    if not data_dir.exists():
+        raise ValueError(
+            f"Given INPUT_DATA_DIR {data_dir} does not exist!\n"
+            "Check if directory is named correctly in 'config.sh' or does exist at all"
+            )
+
     if isinstance(dataset_patterns, str):
         dataset_patterns = [dataset_patterns]
     if isinstance(year_patterns, str):
@@ -55,7 +63,7 @@ def find_datasets(dataset_patterns: list[str], year_patterns: list[str], *, file
     # resolve year pattern and remove duplicates
     years = []
     for year_pattern in year_patterns:
-        years += [year.name for year in pathlib.Path(data_dir).glob(f"{year_pattern}")]
+        years += [year.name for year in data_dir.glob(f"{year_pattern}")]
     years = sorted(set(years))
 
     data = {}
@@ -63,7 +71,7 @@ def find_datasets(dataset_patterns: list[str], year_patterns: list[str], *, file
     for year in years:
         data[year] = {}
         for dataset_patter in dataset_patterns:
-            datasets = list(pathlib.Path(data_dir).glob(f"{year}/{dataset_patter}"))
+            datasets = list(data_dir.glob(f"{year}/{dataset_patter}"))
 
             if len(datasets) == 0:
                 raise ValueError(f"dataset pattern {dataset_patter} for {year} resulted in 0 datasets")
