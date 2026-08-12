@@ -28,6 +28,6 @@ class OptimizerConfig:
     @property
     def active_config(self):
         return {
-            "adamw": self.ADAMWConfig,
-            "sam": self.SAMConfig,
+            "adamw": ADAMWConfig,
+            "sam": SAMConfig,
         }[self.optimizer_choice]

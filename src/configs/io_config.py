@@ -61,8 +61,10 @@ class DataConfig:
     })
 
     dataset_pattern: Tuple[str] = (
-        "dy_*",
-        "tt_*",
+        # "dy_*",
+        "dy_m50toinf_0j_amcatnlo",
+        "tt_fh_powheg",
+        # "tt_*",
         "hh_ggf_hbb_htt_kl1_kt1*",
         # "hh_ggf_hbb_htt_kl0_kt1*",
         )
@@ -196,11 +198,35 @@ class DataConfig:
                 template = template.replace(f"{{{field_name}}}", resolved_name)
         return template
 
+    @property
     def uproot_cuts(self):
         """
         Return the cuts with placeholders resolved to actual array column names.
         """
         return [self.resolve_template(cut) for cut in self.cuts]
+
+    def cache_entries(self):
+        """
+        Return a dictionary of the config that defines uniquely the dataset.
+        This is relevant for caching algorithms, as changes in this config will create a new hash of the data.
+        """
+        return {
+            "target_map": self.target_map,
+            "continuous_features": self.continuous_features,
+            "categorical_features": self.categorical_features,
+            "expected_embedding_inputs": self.expected_embedding_inputs,
+            "datasets": self.dataset_pattern,
+            "cuts": self.cuts,
+        }
+
+    def __hash__(self):
+        """
+        Return a hash for each era the config has.
+        This is relevant for caching algorithms, as changes in this config will create a new hash of the data.
+        """
+        eras = self.eras
+        unique_entries = self.cache_entries()
+        return hash(frozenset(self.cache_entries().items()))
 
     def __post_init__(self):
         # a dictionary of all files corresponding to a certain dataset

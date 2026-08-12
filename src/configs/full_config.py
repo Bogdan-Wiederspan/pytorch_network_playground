@@ -8,6 +8,7 @@ from src.configs import (
     OptimizerConfig,
     SchedulerConfig,
     TrainingConfig,
+    DebugConfig,
 )
 
 
@@ -20,6 +21,7 @@ class FullConfig:
     scheduler_config: SchedulerConfig = field(default_factory=SchedulerConfig)
     optimizer_config: OptimizerConfig = field(default_factory=OptimizerConfig)
     loss_config: LossConfig = field(default_factory=LossConfig)
+    debug_config: DebugConfig = field(default_factory=DebugConfig)
 
     def __post_init__(self):
         if (self.training_config.training_fn != "sam") and (self.optimizer_config.optimizer_choice == "sam"):

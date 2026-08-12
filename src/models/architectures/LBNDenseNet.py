@@ -24,19 +24,21 @@ class LBNDenseNet(DenseNet):
         super().init_layers()
 
         # dense net uses output of preprocessing layers and lbn, thus concat both features
+        lbn_config = self.model_config.lbn_network
         self.lbn = LBNPipeline(
-            self.dataset_config.continuous_features, # number of input parameters
-            M =self.model_building_config.LBN_M,
-            weight_init_scale=1.0,
-            clip_weights=False,
-            eps=1.0e-5,
+            self.continuous_features, # number of input parameters
+            M =lbn_config.number_of_particles,
+            weight_init_scale=lbn_config.weight_init_scale,
+            clip_weights=lbn_config.clip_weights,
+            eps=lbn_config.eps,
         )
+        dense_cfg = self.model_config.dense_network
         self.transition_dense_1 = DenseBlock(
             input_nodes=(self.input_layer.ndim + self.lbn.ndim),
-            output_nodes=self.model_building_config.nodes,
-            activation_functions=self.model_building_config.activation_functions,
-            eps=self.model_building_config.eps_batchnorm,
-            normalize=self.model_building_config.normalize_linear
+            output_nodes=dense_cfg.nodes,
+            activation_functions=dense_cfg.activation_functions,
+            eps=dense_cfg.batch_norm_eps,
+            normalize=dense_cfg.normalize_linear
             )
 
     def forward(self, categorical_inputs, continuous_inputs):

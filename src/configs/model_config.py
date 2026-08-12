@@ -9,7 +9,6 @@ LAST_ACTIVATION_CHOICE = Literal["Softmax", "Sigmoid", None]
 
 @dataclass
 class RotationLayerConfig:
-    enable_rotation: bool = False # turn off rotation, currently data is rotated in preprocessing by Marcel
     ref_phi_columns: Tuple[str, str] = ("vis_tau1", "vis_tau2") # reference column to calculate rotation angle
     rotate_columns: Tuple[str, ...] = (
         "bjet1",
@@ -21,11 +20,9 @@ class RotationLayerConfig:
 
 @dataclass
 class PaddingConfig:
-    enable_categorical_padding: bool = False
     categorical_target_value: Optional[float] = None # which categorical value is targeted by the padding
     categorical_masking_value: Optional[float] = -1 # value that is used to mask the categorical target value
 
-    enable_continuous_padding: bool = False
     continuous_target_value: Optional[float] = None # which continuous value is targeted by the padding, if None no value is masked
     continuous_masking_value: Optional[float] = EMPTY_FLOAT # value that is used to mask the continuous target value
 
@@ -41,8 +38,8 @@ class DenseNetworkConfig:
     skip_connection_init: float = 1 # init value of the skip connection, 1 = exact copy
     freeze_skip_connection: bool = True # True = non-learnable skip connection value
     batch_norm_eps: float = 0.001 # epsilon denominator of batch norm - increase stability Marcel: 0.001
-    last_activation_fn: LAST_ACTIVATION_CHOICE = "Softmax" # add activation function after last layer
-    use_last_activation: bool = True # whether to use the last activation function, can be deactivated if not wanted - for example when using a loss function that already includes an activation like cross entropy, Marcel: False
+
+    normalize_linear: bool = False # activate weight normalization of linear layer, TODO currently BUGGED, leave at False
 
 @dataclass
 class StandardizationConfig:
@@ -52,20 +49,30 @@ class StandardizationConfig:
 @dataclass
 class LorentzBoostNetworkConfig:
     number_of_particles: int = 10 # number of particles of the lbn network Marcel: 10
+    weight_init_scale=1.0
+    clip_weights=False
+    eps=1.0e-5
 
 @dataclass
 class ModelConfig:
+    enable_categorical_padding: bool = False
+    enable_continuous_padding: bool = False
+    enable_rotation: bool = False # turn off rotation, currently data is rotated in preprocessing by Marcel
     enable_binning: bool = True # turn off binning layer, for example when using a model that does not support binning
-    eps_batchnorm: float = 0.001 # epsilon of batch norm layers
-    normalize_linear: bool = False # activate weight normalization of linear layer, TODO currently BUGGED, leave at False
 
-    rotation_layer: RotationLayerConfig = field(default_factory=RotationLayerConfig)
 
-    padding_layer: PaddingConfig = field(default_factory=PaddingConfig)
+    last_activation_fn: LAST_ACTIVATION_CHOICE = "Softmax" # add activation function after last layer
+    use_last_activation: bool = True # whether to use the last activation function, can be deactivated if not wanted - for example when using a loss function that already includes an activation like cross entropy, Marcel: False
 
-    embedding_layer: EmbeddingConfig = field(default_factory=EmbeddingConfig)
 
-    std_layer: StandardizationConfig = field(default_factory=StandardizationConfig)
+
+    rotation: RotationLayerConfig = field(default_factory=RotationLayerConfig)
+
+    padding: PaddingConfig = field(default_factory=PaddingConfig)
+
+    embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
+
+    standardization: StandardizationConfig = field(default_factory=StandardizationConfig)
 
     dense_network: DenseNetworkConfig = field(default_factory=DenseNetworkConfig)
     lbn_network: LorentzBoostNetworkConfig = field(default_factory=LorentzBoostNetworkConfig)
@@ -73,8 +80,8 @@ class ModelConfig:
 
     def __post_init__(self):
 
-        choice_check(self.dense_network.last_activation_fn, LAST_ACTIVATION_CHOICE)
+        choice_check(self.last_activation_fn, LAST_ACTIVATION_CHOICE)
 
         # currently parametrization and l2 maybe buggy
-        if self.normalize_linear is True:
+        if self.dense_network.normalize_linear is True:
             raise ValueError("Norm of Linear Layer is currently buggy and is therefore disabled for now")

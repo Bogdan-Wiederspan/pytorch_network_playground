@@ -21,24 +21,25 @@ class ResidualNet(BaseModel):
         # std layers are filled when statistics are known
         self.input_layer = self.init_optional_input_layer()
 
+        dense_cfg = self.model_config.dense_network
         cfg = {
-            "nodes" : self.model_building_config.nodes,
-            "activation_functions" : self.model_building_config.activation_functions,
-            "skip_connection_init" : self.model_building_config.skip_connection_init,
-            "freeze_skip_connection" :self.model_building_config.freeze_skip_connection,
-            "eps" : self.model_building_config.batch_norm_eps,
+            "nodes" : dense_cfg.nodes,
+            "activation_functions" : dense_cfg.activation_functions,
+            "skip_connection_init" : dense_cfg.skip_connection_init,
+            "freeze_skip_connection" :dense_cfg.freeze_skip_connection,
+            "eps" : dense_cfg.batch_norm_eps,
             "normalize" : False # activate weight normalization on linear layer weights
         }
 
         self.transition_dense_1 = DenseBlock(
             input_nodes = self.input_layer.ndim,
-            output_nodes = self.model_building_config.nodes,
+            output_nodes = dense_cfg.nodes,
             **cfg,
             )
         self.resnet_block_1 = ResNetPreactivationBlock(**cfg)
         self.resnet_block_2 = ResNetPreactivationBlock(**cfg)
         self.resnet_block_3 = ResNetPreactivationBlock(**cfg)
-        self.last_linear = torch.nn.Linear(self.model_building_config.nodes, 3)
+        self.last_linear = torch.nn.Linear(dense_cfg.nodes, self.num_targets)
 
         # can only be sigmoid or softmax, uses only dim as configuration
         self.last_activation_fn = self.init_last_activation_layer()

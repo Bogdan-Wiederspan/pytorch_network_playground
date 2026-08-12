@@ -31,7 +31,7 @@ class BinnedLBNDenseNet(LBNDenseNet):
         # create normal LBN DenseNet
         super().init_layers()
         # init binning layer, its possible to deactivate the binning layer.
-        if not self.model_building_config.enable_binning:
+        if not self.model_config.enable_binning:
             self.binning_layer = torch.nn.Identity()
             self.is_binned = False
         else:
