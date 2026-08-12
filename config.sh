@@ -33,6 +33,6 @@ export PYENV_ROOT="/afs/desy.de/user/w/${USER}/.pyenv" # root of pyenv installat
 export ML_ENV="ml_torch" # name of your virtualenv, so it can be activated by source setup.sh
 export VENV_PYTHON="python3.9" # used python in venv
 
-
+export PDB_HOOK_DIR=".setup"
 # flags to stop unnecessary dir checks, can be undone to recreate dirs
 export CREATE_DIR=1
