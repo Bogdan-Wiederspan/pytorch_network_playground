@@ -1,3 +1,4 @@
+from bbTT.monitoring.monitoring_hooks.hookable_model import HookableModelMixin
 from bbTT.monitoring.monitoring_hooks.hookable_module import HookableMixin
 
 
@@ -7,5 +8,5 @@ def setup_monitoring(monitor, *hookable_objects):
     Call once at setup — not per step.
     """
     for obj in hookable_objects:
-        if isinstance(obj, HookableMixin):
+        if isinstance(obj, (HookableMixin, HookableModelMixin)):
             obj.register_monitor(monitor)

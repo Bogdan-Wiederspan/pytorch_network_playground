@@ -155,7 +155,7 @@ def plot_network_predictions_hh_training_bin_edges(
 
     # TODO somehow get information which kind if transformation is applied to the binning edges, since this is not stored in the context
     # TODO general transformation passing necessary
-    import utils.transformations as fn
+    import bbTT.utils.transformations as fn
     y_pred = fn.logit.forward(y_pred)
 
     target_map = ctx.target_map

@@ -246,7 +246,6 @@ def main(**kwargs):
                             "active_kernels_advance"
                         ]
                     )
-                    from IPython import embed; embed(header="MESSAGE Line 249 | File: /afs/desy.de/user/w/wiedersb/xxl/pytorch_network_playground/src/train/train.py")
                     # run metrics and store them
                     evaluation_runner_inst.run_plots(
                         ctx_train,
@@ -309,7 +308,6 @@ if __name__ == "__main__":
     from bbTT.utils.parser import ParserBuilder
     parser = ParserBuilder("tensorboard", "cache")
 
-    # call main with parsed args
     main(
         ignore_cache=parser.args.ignore_cache,
         save_cache=parser.args.save_cache,
