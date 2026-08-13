@@ -1,7 +1,7 @@
 import torch
 
+from bbTT.optimizer import weight_decay
 from bbTT.optimizer.SAM import SAM
-from bbTT.optimizer.utils import weight_decay
 
 
 def init_optimizer(full_config, model_inst):

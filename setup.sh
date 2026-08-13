@@ -260,7 +260,7 @@ finish_setup(){
         export PS1="[${VIRTUAL_ENV##*/}] ${PS1}"
     fi
     # include source of project as root for python
-    export PYTHONPATH="${PYTHONPATH}:$(pwd)/src"
+    # export PYTHONPATH="${PYTHONPATH}:$(pwd)/src"
     return 0
     }
 

@@ -1,10 +1,9 @@
 
-from statistics.asimov import asimov, asimov_no_background, asimov_small_signal_and_no_background
-
 import torch
 
 from bbTT.loss.SignalEfficiency import SignalEfficiency
 from bbTT.models.binning import GaussianKernel  # mapping of asimov functions to a name
+from bbTT.statistics.asimov import asimov, asimov_no_background, asimov_small_signal_and_no_background
 
 asimov_functions = {
     "full" : asimov,

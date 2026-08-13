@@ -1,7 +1,8 @@
-import statistics.asimov as _asimov
 from functools import wraps
 
 import torch
+
+import bbTT.statistics.asimov as _asimov
 
 
 # provide a non gradient version of asimov for metrics

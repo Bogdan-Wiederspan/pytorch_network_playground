@@ -1,10 +1,9 @@
 
-from statistics.asimov import asimov, asimov_no_background, asimov_small_signal_and_no_background
-
 import torch
 
 from bbTT.loss.YieldCalculator import YieldCalculator
 from bbTT.monitoring import HookableMixin
+from bbTT.statistics.asimov import asimov, asimov_no_background, asimov_small_signal_and_no_background
 
 asimov_functions = {
     "full" : asimov,

@@ -1,5 +1,6 @@
 import torch
 
+
 def asimov_small_signal_and_no_background(
     s: torch.Tensor,
     b: torch.Tensor,

@@ -1,6 +1,5 @@
-from utils.logger import get_logger
-
 from bbTT.monitoring.register import BUILDER_REGISTRY, PLOT_REGISTRY
+from bbTT.utils.logger import get_logger
 
 _PROVIDER_MAP_CACHE = None
 

@@ -306,7 +306,7 @@ def main(**kwargs):
         embed(header="Training ends: Check if everything is as you thought it would be")
 
 if __name__ == "__main__":
-    from utils.parser import ParserBuilder
+    from bbTT.utils.parser import ParserBuilder
     parser = ParserBuilder("tensorboard", "cache")
 
     # call main with parsed args

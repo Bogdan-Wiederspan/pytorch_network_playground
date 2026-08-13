@@ -4,7 +4,7 @@ import copy
 
 import torch
 
-from utils import logger, utils
+from bbTT.utils import logger, utils
 
 logger_inst = logger.get_logger(__name__)
 

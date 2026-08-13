@@ -1,4 +1,4 @@
-from utils.lazy_loader import lazy_import
+from bbTT.utils.lazy_loader import lazy_import
 
 from . import binning
 from .BinningAwareSignalEfficiency import BinningAwareSignificance

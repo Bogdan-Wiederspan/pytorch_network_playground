@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import torch
 
-from utils import logger
-
-from .tokenizer import CategoricalTokenizer
+from bbTT.models.preprocessing.tokenizer import CategoricalTokenizer
+from bbTT.utils import logger
 
 logger_inst = logger.get_logger(__name__)
 
