@@ -1,4 +1,7 @@
 import awkward as ak
+import numpy as np
+import numpy.lib.recfunctions as rfn
+import torch
 
 from bbTT.utils import logger
 
@@ -101,3 +104,22 @@ def find_datasets(dataset_patterns: list[str], year_patterns: list[str], *, file
                 merged_over_era_data[dataset] = []
             merged_over_era_data[dataset].extend(files)
     return merged_over_era_data
+
+def struct_to_group_tensor(arr: np.typing.NDArray, fields: tuple[str], dtype: torch.dtype=torch.float32):
+    """
+    Small helper convert struct *arr* *fields* into torch tensor of given *dtype*.
+
+    Args:
+        arr (np.typing.NDArray): structured array
+        fields (tuple[str]): fields one wants to extract
+        dtype (torch.dtype, optional): final dtype. Defaults to torch.float32.
+
+    Returns:
+        torch.Tensor: Tensor of extracted fields in given dtype
+    """
+    # get numpy equivalent dtype
+    np_dtype = torch.empty(0, dtype=dtype).numpy().dtype
+    dense = rfn.structured_to_unstructured(arr[fields], dtype=np_dtype)
+    # some arrays have negative strides for some reason, which torch cannot handle -> cast to contiguous array first
+    dense = np.ascontiguousarray(dense)
+    return torch.from_numpy(dense)

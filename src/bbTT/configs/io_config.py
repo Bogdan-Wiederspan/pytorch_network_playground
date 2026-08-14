@@ -70,6 +70,8 @@ class DataConfig:
         # "hh_ggf_hbb_htt_kl0_kt1*",
         )
 
+    flush_threshold: int = 1_000_000
+
     eras: Tuple[ERAS_CHOICE] = ("22pre",)
     datasets: Optional[List[str]] = field(init=False)
     cuts: Optional[Tuple[str]] = (

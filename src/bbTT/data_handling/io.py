@@ -8,10 +8,12 @@ import torch
 import uproot
 
 from bbTT.data_handling.cache import DataCacher
-from bbTT.data_handling.utils import depthCount
+from bbTT.data_handling.evaluation_phase_space import res1b_and_res2b_phase_space_mask
+from bbTT.data_handling.utils import depthCount, struct_to_group_tensor
 from bbTT.utils import logger
 
 logger_inst = logger.get_logger(__name__)
+
 
 def root_to_numpy(
     files_path: Union[list[str],str],
@@ -42,6 +44,14 @@ def root_to_numpy(
         "normalization_weight" # oversampling weight that defines the fraction within batch
     }
 
+    # columns necessary for evaluation masks
+    suffix = "res_dnn_pnet" if branches[0].startswith("res_dnn_pnet") else "reg_dnn_moe"
+    mask_fields = (
+        [f"{suffix}_vis_tau{num}_{kin}" for num in ("1", "2") for kin in ("px", "py", "pz", "e")] +
+        ["HHBJet_mass", "HHBJet_btagPNetB"] +
+        [f"{suffix}_bjet{num}_{kin}" for num in ("1", "2") for kin in ("px", "py", "pz", "e")]
+    )
+
     # training and evaluation phase space are not the same
     # a transfer weight can be calculated using the product of these weights
     weights = {
@@ -60,177 +70,132 @@ def root_to_numpy(
         "dy_weight",
         "top_pt_weight"
     }
-    all_branches = set(branches).union(meta_fields)
+    # combine all branches to have only 1 uproot -> ak -> numpy chain
+    all_branches = set(branches).union(meta_fields).union(mask_fields)
 
-    # handling cuts
+    # handle edge cases for cuts and file paths
     if isinstance(cut, str):
         cut = [cut]
-    if cut is None:
-        cut = []
-    cut = "&".join(cut)
+    cut = "&".join(cut) if cut else None
 
-    # load root files and combine the array to continuous arrays
     if isinstance(files_path, str):
         files_path = [files_path]
 
+    # conversion
     arrays = []
-    for file_path in files_path:
-        logger_inst.debug(f"loading: {file_path}")
+    max_files = len(files_path)
+    for current_file, file_path in enumerate(files_path, start=1):
+        logger_inst.debug_progress(f"loading file: {current_file}/{max_files}")
+
         with uproot.open(file_path, object_cache=None, array_cache=None) as file:
-            # loading of data is split into 3 steps: all_common, weights, evaluation phasespace
-            # reason for 2 is that weights are not present in all datasets
-            # e.x. muon_id_weight does not exist in dy datasets, thus require filtering
-            # reason for 3: masks that are necessary later are calculated here
+
             tree = file["events"]
+            # some weights are dataset specific and needs to be extracted on uid base
+            # e.x. muon_id_weight does not exist in dy datasets
+            weights_in_current_file = set(tree.keys()).intersection(weights)
+            read_fields = all_branches.union(weights_in_current_file)
 
-            # step 1
-            all_branches_array = tree.arrays(all_branches, library="ak", cut=cut)
+            events = tree.arrays(read_fields, library="ak", cut=cut)
 
-            # step 2
-            weights_in_root_file = set(tree.keys()).intersection(weights)
-            weights_arrays = tree.arrays(weights_in_root_file, library="ak", cut=cut)
+            # calculate_monte_carlo_weight
+            # this weight combines all corrections, but also over-sampling of mc generator
+            combined_weight = events["normalization_weight"]
+            for w in weights_in_current_file:
+                combined_weight = combined_weight * events[w]
+            events["combined_weight"] = combined_weight
 
-            combined_weight = all_branches_array["normalization_weight"]
-            for weight in weights_in_root_file:
-                combined_weight = combined_weight * weights_arrays[weight]
-            all_branches_array["combined_weight"] = combined_weight
-
-            # step 3
+            # calculate evaluation phase space mask
+            year=pathlib.Path(file_path).parents[1].stem
             di_tau_mask, di_bjet_mask, bjet_mask = res1b_and_res2b_phase_space_mask(
-                uproot_file=tree,
-                year=pathlib.Path(file_path).parents[1].stem,
-                cut=cut,
-                suffix=("res_dnn_pnet" if branches[0].startswith("res_dnn_pnet") else "reg_dnn_moe"))
-            all_branches_array["bjet_mask"] = bjet_mask
-            all_branches_array["di_tau_mask"] = di_tau_mask
-            all_branches_array["di_bjet_mask"] = di_bjet_mask
+                events=events,
+                year=year,
+                suffix=suffix
+            )
 
-            arrays.append(all_branches_array.to_numpy())
-    arrays = np.concatenate(arrays, axis=0)
+            events["bjet_mask"] = bjet_mask
+            events["di_tau_mask"] = di_tau_mask
+            events["di_bjet_mask"] = di_bjet_mask
+
+            # drop inputs, and keep only artifacts and results
+            keep = set(branches).union(meta_fields).union(
+                {"combined_weight", "bjet_mask", "di_tau_mask", "di_bjet_mask"}
+            )
+
+            events_np = events[list(keep)].to_numpy()
+            del events
+
+            arrays.append(events_np)
     return arrays
 
-
-def res1b_and_res2b_phase_space_mask(uproot_file: str, year: list[str], cut: list[str], suffix: str="res_dnn_pnet"):
+def load_data_per_process_id(
+    dataset_paths: list[str],
+    columns: Union[list[str], str],
+    cut: Union[list[str], None]=None,
+    flush_threshold_rows: int =1_000_000
+    ) -> dict[tuple[str, int], np.typing.ArrayLike]:
     """
-    Calculates Masks to get into our evaluation phase space.
-    Open *uproot_file* by specific *year*, apply  base *cut* and depending on the producer add a *suffix* to fields in root file.
-    Definition of mask is defined in https://github.com/uhh-cms/hh2bbtautau/blob/master/hbt/categorization/default.py#L206-L240
+    Load root files in *dataset_paths*, extract *columns* with applied *cut* on it.
+    The data is then rearranged by their process_id, removing year and era information.
+    To reduce peak memory *flush_threshold_rows* can be adjusted. The higher, the bigger is peak memory impact vs. CPU time.
+    Returns dictionary with np.arrays where key is (dataset, uid), ex. ('tt', 1100).
 
     Args:
-        uproot_file (str): Uproot opened root file
-        year (list[str]): Year string e.g. "22pre"
-        cut (list[str]): Base cut to be applied, should match the one used in root_to_numpy
-        suffix (str, optional): Suffix for fields in uproot file. Defaults to "res_dnn_pnet".
+        dataset_paths (list[str]): pattern describing dataset e.g. "dy_*" -> all drell-yan datasets
+        branches (Union[list[str], str]): columns that should be loaded e.g. ["events", "run"]. If None loads all columns . Defaults to None.
+        cut (Union[list[str], None], optional): list of cuts to be applied on top of baseline cut, which are defined in root_to_numpy. Defaults to None.
+        flush_threshold_rows (int, optional): Number of rows inside array before flush is started. Trade of between CPU and peak memory. Defaults to 1_000_000.
 
     Returns:
-        ak.array: Masks for di_tau_mass_window, di_bjet_mass_window, bjet
+        dict[tuple[str, int], np.typing.ArrayLike]: Dict of arrays where key is tuple of dataset name and id.
     """
-    # as taken from https://github.com/uhh-cms/hh2bbtautau/blob/master/hbt/config/configs_hbt.py#L1252
-    def particle_net_wp(year, wp_level="medium"):
-        particle_net_wp = {
-            "loose": {"22pre": 0.047, "22post": 0.0499, "23pre": 0.0358, "23post": 0.0359, "2024": None}[year],
-            "medium": {"22pre": 0.245, "22post": 0.2605, "23pre": 0.1917, "23post": 0.1919, "2024": None}[year],
-            "tight": {"22pre": 0.6734, "22post": 0.6915, "23pre": 0.6172, "23post": 0.6133, "2024": None}[year],
-            "xtight": {"22pre": 0.7862, "22post": 0.8033, "23pre": 0.7515, "23post": 0.7544, "2024": None}[year],
-            "xxtight": {"22pre": 0.961, "22post": 0.9664, "23pre": 0.9659, "23post": 0.9688, "2024": None}[year],
-        }
-        return particle_net_wp[wp_level]
-    # load the necessary events with applied cut from baseselection
-    # all particles are pre rotate relative to visible tau system
-    b_tag_wp = particle_net_wp(year, "medium")
-    leptons_fields = [f"{suffix}_vis_tau{num}_{kin}" for num in ("1", "2") for kin in ("px", "py", "pz", "e")]
-    hhbjet_fields = ["HHBJet_mass", "HHBJet_btagPNetB"]
-    di_bjet_fields = [f"{suffix}_bjet{num}_{kin}" for num in ("1", "2") for kin in ("px", "py", "pz", "e")]
+    def sort_by_process_id(array):
+        # helper to extract data by process id and group them by this
+        pids = array["process_id"]
+        for uid in np.unique(pids):
+            yield int(uid), array[pids == uid]
 
-    events = uproot_file.arrays(leptons_fields + hhbjet_fields + di_bjet_fields, library="ak", cut=cut)
-    ### masks
-    # tau mass window
-    l_px = events[f"{suffix}_vis_tau1_px"] + events[f"{suffix}_vis_tau2_px"]
-    l_py = events[f"{suffix}_vis_tau1_py"] + events[f"{suffix}_vis_tau2_py"]
-    l_pz = events[f"{suffix}_vis_tau1_pz"] + events[f"{suffix}_vis_tau2_pz"]
-    l_e = events[f"{suffix}_vis_tau1_e"] + events[f"{suffix}_vis_tau2_e"]
+    buffers = {}       # uid -> list of not-yet-merged fragments
+    buffered_rows = {}  # uid -> sum of rows currently buffered (unmerged)
+    data = {}           # uid -> merged running array
 
-    # since no coffee behavior, calculate mass by manually from 4 vector
-    di_tau_mass = (l_e**2 - (l_px**2 + l_py**2 + l_pz**2))**0.5
-    di_tau_mass_window_mask = (
-        (di_tau_mass >= 15) &
-        (di_tau_mass <= 130)
-    )
+    def flush(uid):
+        # helper to flush buffer and integrate into data
+        fragments = buffers.get(uid)
+        if not fragments:
+            return
 
-    # have atleast 1 bjet
-    bjet_mask = ak.sum(events.HHBJet_btagPNetB > b_tag_wp, axis=1) >= 1
+        # concatenate data or just unpack
+        fragment = fragments[0]
+        if len(fragments) > 1:
+            fragment = np.concatenate(fragments, axis=0)
 
-    # wrong
-    # di_bjet_mass = ak.sum(events.HHBJet_mass, axis=1)
+        # reset buffer
+        buffers[uid] = []
+        buffered_rows[uid] = 0
 
-    b_px = events[f"{suffix}_bjet1_px"] + events[f"{suffix}_bjet2_px"]
-    b_py = events[f"{suffix}_bjet1_py"] + events[f"{suffix}_bjet2_py"]
-    b_pz = events[f"{suffix}_bjet1_pz"] + events[f"{suffix}_bjet2_pz"]
-    b_e = events[f"{suffix}_bjet1_e"] + events[f"{suffix}_bjet2_e"]
-    di_bjet_mass = (b_e**2 - (b_px**2 + b_py**2 + b_pz**2))**0.5
-
-    di_bjet_mass_window_mask = (
-        (di_bjet_mass >= 40) &
-        (di_bjet_mass <= 270)
-    )
-
-    return di_tau_mass_window_mask, di_bjet_mass_window_mask, bjet_mask
+        # when uid fresh just add as base, else append fragment to array
+        if uid not in data:
+            data[uid] = fragment
+        else:
+            data[uid] = np.concatenate([data[uid], fragment], axis=0)
 
 
-def load_data(datasets, columns: Union[list[str],str, None]=None, cuts: Union[list[str], None]=None):
-    """
-    Loads data with given *file_type* in given a *dataset_pattern* and *year_pattern*. If only certain columns are needed, they can be specified in *columns*.
-    The data sorted by year and dataset name is returned as a nested dictionary in awkward format.
-
-    Args:
-        dataset_patter (str): pattern describing dataset e.g. "dy_*" -> all drell-yan datasets
-        columns (list[str], str, optional): columns that should be lodead e.g. ["events", "run"]. If None loads all columns . Defaults to None.
-        cuts (list[str]): list of cuts to be applied on top of baseline cut, which are defined in root_to_numpy. Defaults to None.
-
-    Returns:
-        dict: {year:{pid: List(Ids)}}
-    """
-    def load_data_per_process_id(dataset_paths, branches, cut=None):
-        # helper to load root data into a dictionary of form:
-        # {year:{dataset : array}}, where array is a structured array
-        def sort_by_process_id(array):
-            # helper to extract data by process id and group them by this
-            pids = array["process_id"]
-            unique_ids = np.unique(pids)
-            p_array = {}
-            for uid in unique_ids:
-                mask = pids == uid
-                p_array[int(uid)] = array[mask]
-            return tuple(p_array.items())
-        data = {}
-        for dataset, files in dataset_paths.items():
-            events = root_to_numpy(files, branches=branches, cut=cut)
-            p_arrays = sort_by_process_id(events)
-            for pid, p_array in p_arrays:
+    for dataset, files in dataset_paths.items():
+        for events in root_to_numpy(files, branches=columns, cut=cut):
+            for pid, p_array in sort_by_process_id(events):
                 uid = (dataset[:2],pid)
-                if uid not in data:
-                    data[uid] = []
-                data[uid].append(p_array)
-                logger_inst.debug(f"{dataset} | PID: {pid} | {len(p_array)}")
-        return data
-
-    def merge_per_pid(data):
-        # helper to merge all process_ids together to continuous array
-        logger_inst.info("Start merging arrays per process id")
-        keys = list(data.keys())
-
-        for i, uid in enumerate(keys):
-            logger_inst.debug(f"{i}/{len(keys)}: {uid}")
-            arrays = data.pop(uid)
-            concat = np.concatenate(arrays, axis=0)
-            data[uid] = concat
-        return data
-    data = load_data_per_process_id(datasets, branches=list(columns), cut=cuts)
-    data = merge_per_pid(data)
+                buffers.setdefault(uid, []).append(p_array)
+                buffered_rows[uid] = buffered_rows.get(uid, 0) + len(p_array)
+                if buffered_rows[uid] >= flush_threshold_rows:
+                    flush(uid)
+            del events
+    # final flush for any remaining buffered fragments:
+    for uid in list(buffers.keys()):
+        flush(uid)
+        logger_inst.debug(f"UID: {uid} | NUM: {len(data[uid])}")
     return data
 
-
-def handle_weights_and_convert_to_torch(events: np.array, continuous_features: list[str], categorical_features: list[str], dtype: torch.dtype=None):
+def handle_weights_and_convert_to_torch(events: np.array, continuous_features: list[str], categorical_features: list[str]):
     """
     Calculates final weights, extract masks aswell as extract all *continuous_features* and *categorical_features* from structured numpy array *events*.
     Converts all arrays to torch tensors and returns a dictionary containing these.
@@ -243,11 +208,9 @@ def handle_weights_and_convert_to_torch(events: np.array, continuous_features: l
     """
 
     def filter_nan_mask(array, features, uid):
-        masks = []
+        event_mask = np.zeros(array.size, dtype=np.bool)
         for f in features:
-            mask = np.isnan(array[f])
-            masks.append(mask)
-        event_mask = np.logical_or.reduce(masks)
+            event_mask |= np.isnan(array[f])
         num_filter = np.sum(event_mask)
         if num_filter:
             logger_inst.warning(f"Filtered {num_filter} Nan events from pid {uid}")
@@ -256,37 +219,33 @@ def handle_weights_and_convert_to_torch(events: np.array, continuous_features: l
     for uid in list(events.keys()):
         arr = events.pop(uid)
 
-        # filter all nans out
-        event_mask = filter_nan_mask(arr, continuous_features + categorical_features, uid),
+        # filter all nans out, when result is empty array, skip whole uid
+        event_mask = filter_nan_mask(arr, continuous_features + categorical_features, uid)
         arr = arr[event_mask]
 
-        # if resulting tensor is empty just skip
         if arr.size == 0:
             logger_inst.warning(f"Skipping {uid} due to zero elements - which can happen after filtering nans")
             continue
 
-        # combine columns from struct numpy and convert to torch tensor
-        continuous_tensor, categorical_tensor = [
-            torch.from_numpy(np.stack([arr[feature] for feature in features], axis=1))
-            for features in (continuous_features,categorical_features)
-            ]
-        # handling weights and convert to torch tensors
-        # single numbers cant be converted by using from_numpy thus have to be wrapped in array
-        final_mask = arr["bjet_mask"] & arr["di_tau_mask"] & arr["di_bjet_mask"]
-        # total_bjet_weight = torch.tensor(np.sum(arr["combined_weight"][arr["bjet_mask"]]))
-        # total_di_tau_weight = torch.tensor(np.sum(arr["combined_weight"][arr["di_tau_mask"]]))
-        # total_di_bjet_weight = torch.tensor(np.sum(arr["combined_weight"][arr["di_bjet_mask"]]))
-        total_evaluation_weight = torch.tensor(np.sum(arr["combined_weight"][final_mask]))
+        # extract features
+        continuous_tensor = struct_to_group_tensor(arr, continuous_features, dtype=torch.float32)
+        categorical_tensor = struct_to_group_tensor(arr, categorical_features, dtype=torch.float32)
 
-        # some arrays have negative strides for some reason, which torch cannot handle -> cast to contiguous array first
-        normalization_weights = torch.tensor(np.ascontiguousarray(arr["normalization_weight"]), dtype=torch.float32)
+        # extract evaluation masks
+        masks_tensor = struct_to_group_tensor(arr, ["bjet_mask", "di_tau_mask", "di_bjet_mask"], torch.bool)
+        final_mask = masks_tensor[:, 0] & masks_tensor[:, 1] & masks_tensor[:, 2]
+
+        # extract weights
+        weights_tensor = struct_to_group_tensor(arr, ["normalization_weight", "combined_weight"], dtype=torch.float32)
+        normalization_weights = weights_tensor[:, 0]
         sum_of_normalization_weights = torch.sum(normalization_weights)
 
-        product_of_all_weights = torch.tensor(np.ascontiguousarray(arr["combined_weight"]), dtype=torch.float32)
+        product_of_all_weights = weights_tensor[:, 1]
         sum_of_combined_weights = torch.sum(product_of_all_weights)
+        total_evaluation_weight = torch.sum(product_of_all_weights[final_mask])
 
-        # event id is a uint and is stored as uncontiguousarray for some reason after the casting
-        event_id = torch.tensor(np.ascontiguousarray(arr["event"]), dtype=torch.int64)
+        # extract meta fields
+        event_id = struct_to_group_tensor(arr, ["event"], dtype=torch.int64).flatten()
 
         events[uid] = {
             "continuous": continuous_tensor,
@@ -299,17 +258,18 @@ def handle_weights_and_convert_to_torch(events: np.array, continuous_features: l
             "total_normalization_weights" : sum_of_normalization_weights,
 
             "total_evaluation_weight" : total_evaluation_weight,
-            "evaluation_mask": torch.tensor(final_mask),
+            "evaluation_mask": final_mask,
             "mask" : {
-                "bjet": arr["bjet_mask"],
-                "di_tau": arr["di_tau_mask"],
-                "di_bjet": arr["di_bjet_mask"],
+                "bjet": masks_tensor[:, 0],
+                "di_tau": masks_tensor[:, 1],
+                "di_bjet": masks_tensor[:, 2],
                 },
         }
+        del arr
     return events
 
 
-def get_data(config , _save_cache = False, ignore_cache=False) -> dict[torch.Tensor]:
+def get_data(config , _save_cache = False, ignore_cache=False) -> dict[str, torch.Tensor]:
     """
     Main function to combine all steps from loading root files to filter by process ids and finally convert to torch
 
@@ -328,10 +288,11 @@ def get_data(config , _save_cache = False, ignore_cache=False) -> dict[torch.Ten
         events = cacher.load_cache()
     else:
         logger_inst.info("Start loading and filtering of data")
-        events = load_data(
-            datasets=config.datasets,
+        events = load_data_per_process_id(
+            config.datasets,
             columns=config.uproot_continuous_columns + config.uproot_categorical_columns,
-            cuts=config.uproot_cuts,
+            cut=config.uproot_cuts,
+            flush_threshold_rows=config.flush_threshold,
         )
         logger_inst.info("Start handling weights and conversion to torch tensors")
         events = handle_weights_and_convert_to_torch(
@@ -339,11 +300,12 @@ def get_data(config , _save_cache = False, ignore_cache=False) -> dict[torch.Ten
             continuous_features=config.uproot_continuous_columns,
             categorical_features=config.uproot_categorical_columns,
         )
-        logger_inst.info("Done prepareing data")
+        logger_inst.info("Finished preparing data")
         if _save_cache:
             try:
                 cacher.save_cache(events)
             except Exception as e:
+                logger_inst.exception(f"{e}\n Saving Cache did not work out - going debugging to manually save \'events\' with \'cacher.save_cache\'")
                 from IPython import embed
-                embed(header=f"{e}\n Saving Cache did not work out - going debugging to manually save \'events\' with \'cacher.save_cache\'")
+                embed()
     return events

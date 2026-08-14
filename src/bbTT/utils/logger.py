@@ -18,6 +18,22 @@ def _make_log_method(level_num):
             self._log(level_num, msg, args, **kwargs)
     return log_method
 
+# TODO same line streamhandler
+def _make_same_line_log_method(level_num):
+    def log_method(self, msg, *args, stacklevel=2, **kwargs):
+        if self.isEnabledFor(level_num):
+            if "stacklevel" not in kwargs:
+                kwargs["stacklevel"] = stacklevel
+            for handler in self.handlers:
+                if isinstance(handler, logging.StreamHandler):
+                    handler.terminator = ""
+                    msg_with_cr = f"\r{msg}" if isinstance(msg, str) else msg
+                    self._log(level_num, msg_with_cr, args, **kwargs)
+                    handler.terminator = "\n"
+                else:
+                    self._log(level_num, msg, args, **kwargs)
+    return log_method
+
 def _register_custom_log_levels():
     global _custom_levels_registered
     if _custom_levels_registered:
@@ -33,6 +49,11 @@ def _register_custom_log_levels():
         logging.addLevelName(level_num, level_name)
         # create logging method with the same name as level name
         setattr(logging.Logger, level_name.lower(), _make_log_method(level_num))
+        setattr(logging.Logger, f"{level_name}_progress", _make_same_line_log_method(level_num))
+
+    setattr(logging.Logger, "debug_progress", _make_same_line_log_method(logging.DEBUG))
+    setattr(logging.Logger, "info_progress", _make_same_line_log_method(logging.INFO))
+
 
     _custom_levels_registered = True
 
