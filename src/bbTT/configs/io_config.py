@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from bbTT.data_handling.utils import find_datasets
 
-ERAS_CHOICE = Literal["22pre", "22post", "23pre", "23post"]
+ERAS_CHOICE = Literal["22pre", "22post", "23pre", "23post", "24"]
 
 
 @dataclass
@@ -244,7 +244,6 @@ class DataConfig:
             "24": 110,
         }
         return size[era]
-
 
 
     def __post_init__(self):
