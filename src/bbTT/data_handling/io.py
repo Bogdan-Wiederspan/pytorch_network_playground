@@ -292,7 +292,7 @@ def get_data(config , save_cache = False, ignore_cache=False, debug_on_cache_fai
         if not ignore_cache and cache.era_exists(era):
             logger_inst.info(f"Loading cached data for era {era}")
             era_events = cache.load_era(era)
-            all_events[era] = merge_era_events(all_events, era_events)
+            all_events = merge_era_events(all_events, era_events)
             continue
 
         # start creation of cache
@@ -320,7 +320,7 @@ def get_data(config , save_cache = False, ignore_cache=False, debug_on_cache_fai
                     from IPython import embed
                     embed(header=f"{e}\n Saving Cache did not work out - going debugging to manually save \'events\' with \'cacher.save_cache\'")
 
-        all_events[era] = merge_era_events(all_events, era_events)
+        all_events = merge_era_events(all_events, era_events)
         del era_events
     return all_events
 

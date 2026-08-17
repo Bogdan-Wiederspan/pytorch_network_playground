@@ -119,7 +119,7 @@ def main(**kwargs):
         scheduler_inst = init_scheduler(full_config=full_config, optimizer_inst=optimizer_inst)
         checkpoint_inst = CheckPoint(checkpoint_name=full_config.training_config.save_model_name, checkpoint_fold=current_fold)
         training_monitor_inst = TrainingMonitor(to_cpu=True, non_blocking=True)
-        scheduler_handler_inst = SchedulerHandler(scheduler_inst=scheduler_inst, checkpoint_inst=checkpoint_inst, logger_inst=logger)
+        scheduler_handler_inst = SchedulerHandler(scheduler_inst=scheduler_inst, checkpoint_inst=checkpoint_inst, logger_inst=logger_inst)
         mode_batch, mode_eval_training, mode_eval_validation = "training_batch", "evaluation_training", "evaluation_validation"
         setup_monitoring(
             training_monitor_inst,
