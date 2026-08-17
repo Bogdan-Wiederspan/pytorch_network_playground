@@ -3,7 +3,7 @@ import pathlib
 import pickle
 from typing import TYPE_CHECKING
 
-from bbTT.utils.logger import get_logger
+from bbTT.monitoring.logger.logger import get_logger
 
 logger_inst = get_logger(__name__)
 

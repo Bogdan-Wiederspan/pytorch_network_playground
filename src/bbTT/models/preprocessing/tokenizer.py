@@ -4,9 +4,10 @@ import copy
 
 import torch
 
-from bbTT.utils import logger, utils
+from bbTT.monitoring.logger.logger import get_logger
+from bbTT.utils import utils
 
-logger_inst = logger.get_logger(__name__)
+logger_inst = get_logger(__name__)
 
 class CategoricalTokenizer(torch.nn.Module):  # noqa: F811
     def __init__(

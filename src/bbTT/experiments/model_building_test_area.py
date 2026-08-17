@@ -7,15 +7,15 @@ import bbTT.models.architectures as arc
 
 #from models import create_model
 from bbTT.data_handling import io, preprocessing
+from bbTT.monitoring.logger.logger import get_logger
 
 #from models.architectures import *
 from bbTT.train.train_config import full_config
-from bbTT.utils import logger
 
 
 def main(**kwargs):
     model_inst = arc.BinnedLBNDenseNet(full_config)
-    logger_inst = logger.get_logger(__name__)
+    logger_inst = get_logger(__name__)
 
     # load test data
     events = io.get_data(full_config.dataset_config, ignore_cache=False, _save_cache=False)

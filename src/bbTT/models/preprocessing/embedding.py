@@ -3,9 +3,9 @@ from __future__ import annotations
 import torch
 
 from bbTT.models.preprocessing.tokenizer import CategoricalTokenizer
-from bbTT.utils import logger
+from bbTT.monitoring.logger.logger import get_logger
 
-logger_inst = logger.get_logger(__name__)
+logger_inst = get_logger(__name__)
 
 
 class CatEmbeddingLayer(torch.nn.Module):  # noqa: F811

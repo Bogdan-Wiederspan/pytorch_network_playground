@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Callable, Set
 
-from bbTT.utils.logger import get_logger
+from bbTT.monitoring.logger.logger import get_logger
 
 logger_inst = get_logger(__name__)
 

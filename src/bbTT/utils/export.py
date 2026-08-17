@@ -6,11 +6,11 @@ import pathlib
 import torch
 
 # from models import create_model
-from bbTT.utils import logger
+from bbTT.monitoring.logger.logger import get_logger
 from bbTT.utils.load_models import rebuild_checkpoint_information
 from bbTT.utils.parser import ParserBuilder
 
-logger_inst = logger.get_logger(__name__)
+logger_inst = get_logger(__name__)
 
 def torch_export_pt2(
     model_inst: torch.nn.Module,

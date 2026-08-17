@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import torch
 
-from bbTT.utils import logger
+from bbTT.monitoring.logger.logger import get_logger
 
-logger_inst = logger.get_logger(__name__)
+logger_inst = get_logger(__name__)
 
 class TrainingMonitor:
     def __init__(self, to_cpu:bool=True, non_blocking:bool=True):

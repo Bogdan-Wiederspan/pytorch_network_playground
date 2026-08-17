@@ -7,7 +7,7 @@ import cloudpickle
 import numpy as np
 import torch
 
-from bbTT.utils.logger import get_logger
+from bbTT.monitoring.logger.logger import get_logger
 
 logger_inst = get_logger(__name__)
 

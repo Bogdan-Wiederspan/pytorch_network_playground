@@ -11,11 +11,11 @@ from bbTT.configs.full_config import full_config
 
 # personal imports
 from bbTT.data_handling import io, preprocessing
-from bbTT.utils import logger
+from bbTT.monitoring.logger.logger import get_logger
 from bbTT.utils.load_models import rebuild_checkpoint_information
 from bbTT.utils.parser import ParserBuilder
 
-logger_inst = logger.get_logger(__name__)
+logger_inst = get_logger(__name__)
 
 CPU = torch.device("cpu")
 CUDA = torch.device("cuda")
@@ -24,7 +24,6 @@ DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cp
 torch.manual_seed(full_config.training_config.seed)
 np.random.seed(full_config.training_config.seed)
 
-logger_inst = logger.get_logger(__name__)
 logger_inst.info(f"DEVICE: {DEVICE}")
 
 def last_fn_picker(last_fn):

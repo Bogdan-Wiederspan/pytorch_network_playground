@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 
-from bbTT.utils import logger
+from bbTT.monitoring.logger.logger import get_logger
 
-logger_inst = logger.get_logger(__name__)
+logger_inst = get_logger(__name__)
 
 from typing import TYPE_CHECKING
 

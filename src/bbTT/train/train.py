@@ -17,11 +17,12 @@ from bbTT.models.utils import init_model
 
 # from .train_utils import log_metrics
 from bbTT.monitoring import EvalContext, EvaluationRunner, TrainingMonitor, load_registers, setup_monitoring
+from bbTT.monitoring.logger.logger import get_logger
+from bbTT.monitoring.logger.tensorboard_logger import TensorboardLogger
 from bbTT.optimizer.early_stopping import CheckPoint
 from bbTT.optimizer.scheduler_handler import SchedulerHandler
 from bbTT.optimizer.utils import init_optimizer, init_scheduler
 from bbTT.train.loops import TrainingLoop, ValidationLoop
-from bbTT.utils import logger
 
 CPU = torch.device("cpu")
 CUDA = torch.device("cuda")
@@ -33,9 +34,9 @@ np.random.seed(full_config.training_config.seed)
 
 def main(**kwargs):
     # prepare logger
-    logger_inst = logger.get_logger(__name__)
+    logger_inst = get_logger(__name__)
     logger_inst.info(f"DEVICE: {DEVICE}")
-    tensorboard_writer = logger.TensorboardLogger(
+    tensorboard_writer = TensorboardLogger(
         name=hash_dictionary(dataclasses.asdict(full_config.training_config)),
         path=kwargs["tensorboard_name"],
         )

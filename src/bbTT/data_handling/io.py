@@ -10,9 +10,9 @@ import uproot
 from bbTT.data_handling.cache import DataCacher
 from bbTT.data_handling.evaluation_phase_space import res1b_and_res2b_phase_space_mask
 from bbTT.data_handling.utils import depthCount, struct_to_group_tensor
-from bbTT.utils import logger
+from bbTT.monitoring.logger.logger import get_logger
 
-logger_inst = logger.get_logger(__name__)
+logger_inst = get_logger(__name__)
 
 
 def load_root_and_convert_to_numpy(

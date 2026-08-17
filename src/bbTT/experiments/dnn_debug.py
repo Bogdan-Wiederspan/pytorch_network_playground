@@ -5,7 +5,8 @@ import torch
 
 # project imports
 from models import create_model
-from bbTT.utils.logger import get_logger, TensorboardLogger
+from bbTT.monitoring.logger.logger import get_logger
+from bbTT.monitoring.logger.tensorboard_logger import TensorboardLogger
 from bbTT.data_handling.cache import hash_config
 
 from bbTT.configs import (

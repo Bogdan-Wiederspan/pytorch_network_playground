@@ -3,9 +3,9 @@ import numpy as np
 import numpy.lib.recfunctions as rfn
 import torch
 
-from bbTT.utils import logger
+from bbTT.monitoring.logger.logger import get_logger
 
-logger_inst = logger.get_logger(__name__)
+logger_inst = get_logger(__name__)
 
 def flatten_lists(nested_list):
     for item in nested_list:

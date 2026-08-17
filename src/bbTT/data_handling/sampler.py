@@ -3,10 +3,10 @@ from collections import defaultdict
 import torch
 import torch.utils.data as t_data
 
-from bbTT.utils import logger
+from bbTT.monitoring.logger.logger import get_logger
 from bbTT.utils.utils import CPU_DEVICE
 
-logger_inst = logger.get_logger(__name__)
+logger_inst = get_logger(__name__)
 
 class Process(t_data.Dataset):
 

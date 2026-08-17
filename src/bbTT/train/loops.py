@@ -4,12 +4,12 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from bbTT.utils import logger
+from bbTT.monitoring.logger.logger import get_logger
 
 if TYPE_CHECKING:
     from data_handling.sampler import ProcessSampler
 
-logger_inst = logger.get_logger(__name__)
+logger_inst = get_logger(__name__)
 
 def register_loop(name):
     # add markers to function for later registration in loop registry
