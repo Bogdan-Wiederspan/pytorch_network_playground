@@ -24,6 +24,6 @@ class ColoredFormatter(logging.Formatter):
             return message
 
         color = COLORS.get(record.levelname, "")
-        if color:
+        if not color:
             return message
         return f"{color}{message}{RESET}"

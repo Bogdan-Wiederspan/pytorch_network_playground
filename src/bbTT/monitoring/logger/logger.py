@@ -9,6 +9,45 @@ from bbTT.monitoring.logger.log_level import CUSTOM_LEVELS
 
 _custom_levels_registered = False
 
+class SameLineStreamHandler(logging.StreamHandler):
+    """
+    A StreamHandler that understands "same-line" records (tagged via
+    extra={"same_line": True}, see _make_same_line_log_method).
+
+    - same_line record, first one in a row: written normally, no trailing
+    newline, cursor stays at end of line.
+    - same_line record, follows another same_line record: prefixed with
+    "\r" so it overwrites the previous same-line text in place.
+    - any other record: if a same-line record was pending, a newline is
+    written first to close out that line cleanly, then this record is
+    written normally (respecting its own terminator).
+
+    This state lives on the handler, not in the log methods, so it works
+    correctly no matter which logger method (custom or stdlib) writes next.
+    """
+
+    def __init__(self, stream=None):
+        super().__init__(stream)
+        self._progress_active = False
+
+    def emit(self, record):
+        same_line = getattr(record, "same_line", False)
+        try:
+            message = self.format(record)
+            stream = self.stream
+            if same_line:
+                prefix = "\r" if self._progress_active else ""
+                stream.write(prefix + message)
+                self._progress_active = True
+            else:
+                if self._progress_active:
+                    stream.write("\n")
+                    self._progress_active = False
+                stream.write(message + self.terminator)
+            self.flush()
+        except Exception:
+            self.handleError(record)
+
 # helper function to add log methods for custom levels
 def _make_log_method(level_num):
     def log_method(self, msg, *args, stacklevel=2, **kwargs):
@@ -24,8 +63,9 @@ def _make_same_line_log_method(level_num: int):
     """
     Logs on the current line (without newline) - e.g. for progress updates.
 
-    Flips "terminator" to "" on this logger's StreamHandlers.
-    Restores old behavior afterwards.
+    Just tags the record as same_line=True via `extra`; SameLineStreamHandler
+    decides how to render it (overwrite vs. start fresh vs. break to a new
+    line for whatever comes after). No handler state is touched here.
 
     Args:
         level_num (int): Log Level of the method.
@@ -34,18 +74,9 @@ def _make_same_line_log_method(level_num: int):
         if self.isEnabledFor(level_num):
             if "stacklevel" not in kwargs:
                 kwargs["stacklevel"] = stacklevel
-
-            stream_handlers = [h for h in self.handlers if isinstance(h, logging.StreamHandler)]
-            for handler in stream_handlers:
-                if isinstance(handler, logging.StreamHandler):
-                    handler.terminator = ""
-
-            msg_with_cr = f"\r{msg}" if isinstance(msg, str) else msg
-            try:
-                self._log(level_num, msg_with_cr, args, **kwargs)
-            finally:
-                for handler in stream_handlers:
-                    handler.terminator = "\n"
+            extra = kwargs.setdefault("extra", {})
+            extra["same_line"] = True
+            self._log(level_num, msg, args, **kwargs)
     return log_method
 
 def _register_custom_log_levels():
@@ -94,7 +125,7 @@ def get_logger(name:str ="root", file_path: str | None=None) -> logging.Logger:
 
     if not logger.hasHandlers():
         # stream handler to print logs to console per stderr
-        console_handler = logging.StreamHandler(stream=sys.stderr)
+        console_handler = SameLineStreamHandler(stream=sys.stderr)
         console_handler.setLevel(log_level)
         # full list of predefined attributes https://docs.python.org/3/library/logging.html#logrecord-attributes
         # levelname = name of log level
