@@ -1,48 +1,62 @@
-import dataclasses
-import hashlib
 import os
 import pathlib
 import pickle
+from typing import TYPE_CHECKING
 
 from bbTT.utils.logger import get_logger
 
 logger_inst = get_logger(__name__)
 
+if TYPE_CHECKING:
+    from bbTT.configs.io_config import DataConfig
 
-def hash_dictionary(config):
-    hashable_dict = sorted(config.items(), key=lambda item: item[0])
-    h = tuple(hashable_dict)
-    h = hashlib.sha256(str(h).encode("utf-8")).hexdigest()[:10]
-    return h
 
 class DataCacher():
-    def __init__(self, config):
-        if dataclasses.is_dataclass(config):
-            config = dataclasses.asdict(config)
-        self.path = self.cache_dir(config)
-        self.hash = self.path.name
+    def __init__(self, config: DataConfig):
+        """
+        Defines a cache saved in location defined by CACHE_DIR variable.
+        All data stored under a hash that is created by given *config* dataclass.
+        The hash defines a unique set of data, where same conditions are applied.
+        The data is stored per ERA as pickle file.
 
-    def cache_dir(self, config):
-        # create cache parent, and return path to cache
-        h = hash_dictionary(config)
-        p = pathlib.Path(os.environ["CACHE_DIR"])
+        Args:
+            config (DataConfig): DataConfig instance.
+        """
 
-        if not p.exists():
-            p.mkdir(parents=False)
-        return p / h
+        self.config = config
 
-    def save_cache(self, data):
-        logger_inst.i_info(f"Try saving cache at {self.path}:")
-        with open(f"{self.path}", "wb") as file:
-            pickle.dump(data, file, protocol=pickle.HIGHEST_PROTOCOL)
-        logger_inst.info("Done saving cache")
+        self.hash = self.config.content_hash()
+        self.cache_root = pathlib.Path(os.environ["CACHE_DIR"])
 
-    def load_cache(self):
-        if not self.path.exists():
-            raise FileExistsError(f"Cache path {self.path} does not exist")
+        self.path = self.cache_root / self.hash
+        if not self.cache_root.exists():
+            raise FileExistsError(f"Root directory does not exist at {self.cache_root} - create it" )
+        self.path.mkdir(parents=False, exist_ok=True) # no automatic dir creation, want to prevent wrong paths
 
-        logger_inst.i_info(f"Loading cache from {self.path}")
-        with open(self.path, "rb") as file:
-            events = pickle.load(file)
-        logger_inst.info("Done loading cache")
-        return events
+
+    def _era_path(self, era):
+        return self.path / f"{era}.pkl"
+
+
+    def era_exists(self, era: str):
+        return self._era_path(era).exists()
+
+
+    def save_era(self, era, events: dict):
+        path = self._era_path(era)
+        # save as tmp first, rename after successful save to prevent saving of corrupt files
+        tmp = path.with_suffix(".tmp")
+        logger_inst.debug(f"Saving: {era} --> {path}:")
+        with open(tmp, "wb") as f:
+            pickle.dump(events, f, protocol=pickle.HIGHEST_PROTOCOL)
+        tmp.rename(path)
+
+
+    def load_era(self, era):
+        path = self._era_path(era)
+        if not path.exists():
+            raise FileNotFoundError(f"Request Cache for era: {era} does not exit at {self.path}")
+
+        logger_inst.debug(f"Loading cache from: {path}")
+        with open(path, "rb") as file:
+            return pickle.load(file)

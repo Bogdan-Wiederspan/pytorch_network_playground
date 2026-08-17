@@ -15,7 +15,7 @@ from bbTT.utils import logger
 logger_inst = logger.get_logger(__name__)
 
 
-def root_to_numpy(
+def load_root_and_convert_to_numpy(
     files_path: Union[list[str],str],
     branches: Union[list[str], str, None]=None,
     cut: list[str]=None,
@@ -127,7 +127,7 @@ def root_to_numpy(
             arrays.append(events_np)
     return arrays
 
-def load_data_per_process_id(
+def stream_events_by_uid(
     dataset_paths: list[str],
     columns: Union[list[str], str],
     cut: Union[list[str], None]=None,
@@ -148,7 +148,7 @@ def load_data_per_process_id(
     Returns:
         dict[tuple[str, int], np.typing.ArrayLike]: Dict of arrays where key is tuple of dataset name and id.
     """
-    def sort_by_process_id(array):
+    def group_by_process_id(array):
         # helper to extract data by process id and group them by this
         pids = array["process_id"]
         for uid in np.unique(pids):
@@ -181,8 +181,8 @@ def load_data_per_process_id(
 
 
     for dataset, files in dataset_paths.items():
-        for events in root_to_numpy(files, branches=columns, cut=cut):
-            for pid, p_array in sort_by_process_id(events):
+        for events in load_root_and_convert_to_numpy(files, branches=columns, cut=cut):
+            for pid, p_array in group_by_process_id(events):
                 uid = (dataset[:2],pid)
                 buffers.setdefault(uid, []).append(p_array)
                 buffered_rows[uid] = buffered_rows.get(uid, 0) + len(p_array)
@@ -195,7 +195,7 @@ def load_data_per_process_id(
         logger_inst.debug(f"UID: {uid} | NUM: {len(data[uid])}")
     return data
 
-def handle_weights_and_convert_to_torch(events: np.array, continuous_features: list[str], categorical_features: list[str]):
+def filter_and_convert_to_torch(events: np.array, continuous_features: list[str], categorical_features: list[str]):
     """
     Calculates final weights, extract masks aswell as extract all *continuous_features* and *categorical_features* from structured numpy array *events*.
     Converts all arrays to torch tensors and returns a dictionary containing these.
@@ -269,43 +269,85 @@ def handle_weights_and_convert_to_torch(events: np.array, continuous_features: l
     return events
 
 
-def get_data(config , _save_cache = False, ignore_cache=False) -> dict[str, torch.Tensor]:
+def get_data(config , save_cache = False, ignore_cache=False, debug_on_cache_failure=True) -> dict[str, torch.Tensor]:
     """
     Main function to combine all steps from loading root files to filter by process ids and finally convert to torch
 
     Args:
         config (DataClass): Config as defined in train_config.py
-        _save_cache (bool, optional): Save the result of this function as cache, using config as hash. Defaults to False.
+        save_cache (bool, optional): Save the result of this function as cache, using config as hash. Defaults to False.
         ignore_cache (bool, optional): Rerun loading of data if true, ignoring existing cache. Defaults to False.
 
     Returns:
         dict[torch.Tensor]: Dictionary with torch tensors
     """
-    cacher = DataCacher(config=config)
+    cache = DataCacher(config=config)
 
     # when cache exist load -> it and return the data
-    if not ignore_cache and cacher.path.exists():
-        events = cacher.load_cache()
-    else:
-        logger_inst.info("Start loading and filtering of data")
-        events = load_data_per_process_id(
+    all_events = {}
+
+
+
+    for era in sorted(config.eras, key=config.era_size):
+        if not ignore_cache and cache.era_exists(era):
+            logger_inst.info(f"Loading cached data for era {era}")
+            era_events = cache.load_era(era)
+            all_events[era] = merge_era_events(all_events, era_events)
+            continue
+
+        # start creation of cache
+        logger_inst.info(f"Start loading and filtering of data for era {era}")
+        era_events = stream_events_by_uid(
             config.datasets,
             columns=config.uproot_continuous_columns + config.uproot_categorical_columns,
             cut=config.uproot_cuts,
             flush_threshold_rows=config.flush_threshold,
         )
         logger_inst.info("Start handling weights and conversion to torch tensors")
-        events = handle_weights_and_convert_to_torch(
-            events=events,
+        era_events = filter_and_convert_to_torch(
+            events=era_events,
             continuous_features=config.uproot_continuous_columns,
             categorical_features=config.uproot_categorical_columns,
         )
-        logger_inst.info("Finished preparing data")
-        if _save_cache:
+
+        if save_cache:
             try:
-                cacher.save_cache(events)
+                cache.save_era(era=era, events=era_events)
+                logger_inst.info(f"Finished cache for era {era}")
             except Exception as e:
-                logger_inst.exception(f"{e}\n Saving Cache did not work out - going debugging to manually save \'events\' with \'cacher.save_cache\'")
-                from IPython import embed
-                embed()
-    return events
+                logger_inst.exception(f"Sacing cache for era {era} failed")
+                if debug_on_cache_failure:
+                    from IPython import embed
+                    embed(header=f"{e}\n Saving Cache did not work out - going debugging to manually save \'events\' with \'cacher.save_cache\'")
+
+        all_events[era] = merge_era_events(all_events, era_events)
+        del era_events
+    return all_events
+
+def merge_era_events(all_events, era_events):
+    # incremental concat era tensors to all_events
+    scalar_keys = {"total_product_of_weights", "total_normalization_weights", "total_evaluation_weight"}
+
+    for uid, tensors in era_events.items():
+
+        # when uid not there set base
+        if uid not in all_events:
+            all_events[uid] = tensors
+            continue
+
+        # concatenate data from era to all
+        existing = all_events[uid]
+        merged = {}
+        for key, value in tensors.items():
+            if key == "mask":
+                merged["mask"] = {
+                    mask_key: torch.cat([existing["mask"][mask_key], value[mask_key]], dim=0)
+                    for mask_key in value
+                }
+            elif key in scalar_keys:
+                merged[key] = existing[key] + value
+            else:
+                merged[key] = torch.cat([existing[key], value], dim=0)
+        all_events[uid] = merged
+
+    return all_events

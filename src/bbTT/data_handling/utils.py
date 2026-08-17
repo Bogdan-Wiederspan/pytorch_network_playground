@@ -123,3 +123,19 @@ def struct_to_group_tensor(arr: np.typing.NDArray, fields: tuple[str], dtype: to
     # some arrays have negative strides for some reason, which torch cannot handle -> cast to contiguous array first
     dense = np.ascontiguousarray(dense)
     return torch.from_numpy(dense)
+
+def hash_dictionary(dictionary: dict):
+    """
+    Create hash from objects defined in a dictionary.
+
+    Args:
+        dictionary (dict): Any dictionary
+
+    Returns:
+        str: Hash of the given dict content.
+    """
+    import hashlib
+    hashable_dict = sorted(dictionary.items(), key=lambda item: item[0])
+    h = tuple(hashable_dict)
+    h = hashlib.sha256(str(h).encode("utf-8")).hexdigest()[:10]
+    return h

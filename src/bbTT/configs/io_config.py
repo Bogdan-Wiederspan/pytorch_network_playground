@@ -64,15 +64,17 @@ class DataConfig:
     dataset_pattern: Tuple[str] = (
         # "dy_*",
         "dy_m50toinf_0j_amcatnlo",
-        "tt_fh_powheg",
+        "tt_sl_powheg",
         # "tt_*",
         "hh_ggf_hbb_htt_kl1_kt1*",
         # "hh_ggf_hbb_htt_kl0_kt1*",
         )
 
+    eras: Tuple[ERAS_CHOICE] = ("22pre",)
+
     flush_threshold: int = 1_000_000
 
-    eras: Tuple[ERAS_CHOICE] = ("22pre",)
+
     datasets: Optional[List[str]] = field(init=False)
     cuts: Optional[Tuple[str]] = (
         "({tau2_isolated} == 1)",
@@ -222,15 +224,28 @@ class DataConfig:
             "cuts": self.cuts,
         }
 
-    def __hash__(self):
+    def content_hash(self):
         """
         Return a hash for each era the config has.
         This is relevant for caching algorithms, as changes in this config will create a new hash of the data.
         """
         hashable_dict = sorted(self.cache_entries().items(), key=lambda item: item[0])
         h = tuple(hashable_dict)
-        h = hashlib.sha256(str(h).encode("utf-8")).hexdigest()[:10]
-        return {era: f"{era}_{h}" for era in self.eras}
+        return hashlib.sha256(str(h).encode("utf-8")).hexdigest()[:10]
+
+    def era_size(self, era):
+        # rounded lumi
+        # roughly the lumi, used in merging incremental eras together, to start with lowest and go to highest
+        size = {
+            "22pre": 7.9,
+            "22post": 26.6,
+            "23pre": 18,
+            "23post": 9.6,
+            "24": 110,
+        }
+        return size[era]
+
+
 
     def __post_init__(self):
         # a dictionary of all files corresponding to a certain dataset

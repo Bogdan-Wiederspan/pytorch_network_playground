@@ -33,7 +33,7 @@ class ParserBuilder():
         "-s",
         dest="save_cache",
         action="store_true",
-        default=False,
+        default=True,
         help="Save cache (default: False)"
         )
 
