@@ -24,7 +24,7 @@ class WeightedCrossEntropyConfig:
 
 @dataclass
 class LossConfig:
-    loss_fn: LOSS_CHOICE = "signal_efficiency"
+    loss_fn: LOSS_CHOICE = "cross_entropy"
     signal_efficiency: SignalEfficiencyLossConfig = field(default_factory=SignalEfficiencyLossConfig)
     weighted_cross_entropy: WeightedCrossEntropyConfig = field(default_factory=WeightedCrossEntropyConfig)
 

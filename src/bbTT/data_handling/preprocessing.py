@@ -292,7 +292,7 @@ def get_batch_statistics_from_sampler(sampler=None, padding_values=None, feature
         array = features_dict[pid]
 
         # no logging mechanism for flushing on the same line
-        print(f"\rcalculating stats for {pid}:{current_pid_idx}/{len(features_dict)}\x1b[K",end="", flush=True)
+        logger_inst.info_progress(f"\rcalculating stats for pids: {current_pid_idx}/{len(features_dict)}")
 
         # mean and var calculation should exclude padding values
         # if padding value shape is 1 -> expand to num_feature or equals num_features
