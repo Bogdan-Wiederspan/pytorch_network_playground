@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import pathlib
 import pickle
@@ -53,7 +54,6 @@ class DataCacher():
             pickle.dump(events, f, protocol=pickle.HIGHEST_PROTOCOL)
         tmp.rename(path)
 
-
     def load_era(self, era):
         path = self._era_path(era)
         if not path.exists():
@@ -62,3 +62,22 @@ class DataCacher():
         logger_inst.debug(f"Loading cache from: {path}")
         with open(path, "rb") as file:
             return pickle.load(file)
+
+    def _sizes_path(self, era, is_pid=True) -> pathlib.Path:
+        if is_pid:
+            return self.path / f"{era}_pid_sizes.json"
+        return self.path / f"{era}_dataset_sizes.json"
+
+    def save_sizes(self, era, sizes: dict, is_pid=True):
+        path = self._sizes_path(era=era, is_pid=is_pid)
+        tmp = path.with_suffix(".tmp")
+        with open(tmp, "w") as f:
+            json.dump(sizes, f, indent=2)
+        tmp.rename(path)
+
+    def load_era_sizes(self, era, is_pid=True) -> dict:
+        path = self._sizes_path(era, is_pid=is_pid)
+        if not path.exists():
+            return {}
+        with open(path, "r") as f:
+            return json.load(f)

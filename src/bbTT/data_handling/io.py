@@ -1,4 +1,3 @@
-
 import pathlib
 from typing import Union
 
@@ -16,10 +15,10 @@ logger_inst = get_logger(__name__)
 
 
 def load_root_and_convert_to_numpy(
-    files_path: Union[list[str],str],
-    branches: Union[list[str], str, None]=None,
-    cut: list[str]=None,
-    ) -> ak.Array:
+    files_path: Union[list[str], str],
+    branches: Union[list[str], str, None] = None,
+    cut: list[str] = None,
+) -> ak.Array:
     """
     Load all root files in *files_path* and return them as a single awkward array.
     If only certain branches are needed, they can be specified in *branches*.
@@ -39,17 +38,17 @@ def load_root_and_convert_to_numpy(
 
     # set of branches that are always extracted from root files
     meta_fields = {
-        "process_id", # filtering of sub-phase spaces
-        "event", # event number used for k-fold splitting
-        "normalization_weight" # oversampling weight that defines the fraction within batch
+        "process_id",  # filtering of sub-phase spaces
+        "event",  # event number used for k-fold splitting
+        "normalization_weight",  # oversampling weight that defines the fraction within batch
     }
 
     # columns necessary for evaluation masks
     suffix = "res_dnn_pnet" if branches[0].startswith("res_dnn_pnet") else "reg_dnn_moe"
     mask_fields = (
-        [f"{suffix}_vis_tau{num}_{kin}" for num in ("1", "2") for kin in ("px", "py", "pz", "e")] +
-        ["HHBJet_mass", "HHBJet_btagPNetB"] +
-        [f"{suffix}_bjet{num}_{kin}" for num in ("1", "2") for kin in ("px", "py", "pz", "e")]
+        [f"{suffix}_vis_tau{num}_{kin}" for num in ("1", "2") for kin in ("px", "py", "pz", "e")]
+        + ["HHBJet_mass", "HHBJet_btagPNetB"]
+        + [f"{suffix}_bjet{num}_{kin}" for num in ("1", "2") for kin in ("px", "py", "pz", "e")]
     )
 
     # training and evaluation phase space are not the same
@@ -68,7 +67,7 @@ def load_root_and_convert_to_numpy(
         "tau_weight",
         "trigger_weight",
         "dy_weight",
-        "top_pt_weight"
+        "top_pt_weight",
     }
     # combine all branches to have only 1 uproot -> ak -> numpy chain
     all_branches = set(branches).union(meta_fields).union(mask_fields)
@@ -83,12 +82,12 @@ def load_root_and_convert_to_numpy(
 
     # conversion
     arrays = []
+    num_events = []
     max_files = len(files_path)
     for current_file, file_path in enumerate(files_path, start=1):
         logger_inst.debug_progress(f"loading file: {current_file}/{max_files}")
 
         with uproot.open(file_path, object_cache=None, array_cache=None) as file:
-
             tree = file["events"]
             # some weights are dataset specific and needs to be extracted on uid base
             # e.x. muon_id_weight does not exist in dy datasets
@@ -100,16 +99,15 @@ def load_root_and_convert_to_numpy(
             # calculate_monte_carlo_weight
             # this weight combines all corrections, but also over-sampling of mc generator
             combined_weight = events["normalization_weight"]
+
             for w in weights_in_current_file:
                 combined_weight = combined_weight * events[w]
             events["combined_weight"] = combined_weight
 
             # calculate evaluation phase space mask
-            year=pathlib.Path(file_path).parents[1].stem
+            year = pathlib.Path(file_path).parents[1].stem
             di_tau_mask, di_bjet_mask, bjet_mask = res1b_and_res2b_phase_space_mask(
-                events=events,
-                year=year,
-                suffix=suffix
+                events=events, year=year, suffix=suffix
             )
 
             events["bjet_mask"] = bjet_mask
@@ -117,22 +115,24 @@ def load_root_and_convert_to_numpy(
             events["di_bjet_mask"] = di_bjet_mask
 
             # drop inputs, and keep only artifacts and results
-            keep = set(branches).union(meta_fields).union(
-                {"combined_weight", "bjet_mask", "di_tau_mask", "di_bjet_mask"}
+            keep = (
+                set(branches).union(meta_fields).union({"combined_weight", "bjet_mask", "di_tau_mask", "di_bjet_mask"})
             )
 
             events_np = events[list(keep)].to_numpy()
             del events
 
+            num_events.append((file_path, tree.num_entries, len(events_np)))
             arrays.append(events_np)
-    return arrays
+    return arrays, num_events
+
 
 def stream_events_by_uid(
     dataset_paths: list[str],
     columns: Union[list[str], str],
-    cut: Union[list[str], None]=None,
-    flush_threshold_rows: int =1_000_000
-    ) -> dict[tuple[str, int], np.typing.ArrayLike]:
+    cut: Union[list[str], None] = None,
+    flush_threshold_rows: int = 1_000_000,
+) -> dict[tuple[str, int], np.typing.ArrayLike]:
     """
     Load root files in *dataset_paths*, extract *columns* with applied *cut* on it.
     The data is then rearranged by their process_id, removing year and era information.
@@ -148,15 +148,16 @@ def stream_events_by_uid(
     Returns:
         dict[tuple[str, int], np.typing.ArrayLike]: Dict of arrays where key is tuple of dataset name and id.
     """
+
     def group_by_process_id(array):
         # helper to extract data by process id and group them by this
         pids = array["process_id"]
         for uid in np.unique(pids):
             yield int(uid), array[pids == uid]
 
-    buffers = {}       # uid -> list of not-yet-merged fragments
+    buffers = {}  # uid -> list of not-yet-merged fragments
     buffered_rows = {}  # uid -> sum of rows currently buffered (unmerged)
-    data = {}           # uid -> merged running array
+    data = {}  # uid -> merged running array
 
     def flush(uid):
         # helper to flush buffer and integrate into data
@@ -179,21 +180,31 @@ def stream_events_by_uid(
         else:
             data[uid] = np.concatenate([data[uid], fragment], axis=0)
 
-
+    num_events_per_dataset = {}
+    num_events_per_pid = {}
     for dataset, files in dataset_paths.items():
-        for events in load_root_and_convert_to_numpy(files, branches=columns, cut=cut):
+        events_bucket, num_events_of_files = load_root_and_convert_to_numpy(files, branches=columns, cut=cut)
+        num_events_per_dataset[dataset] = num_events_of_files
+        for events in events_bucket:
             for pid, p_array in group_by_process_id(events):
-                uid = (dataset[:2],pid)
+                if pid not in num_events_per_pid:
+                    num_events_per_pid[pid] = 0
+                num_events_per_pid[pid] += len(p_array)
+
+                uid = (dataset[:2], pid)
                 buffers.setdefault(uid, []).append(p_array)
                 buffered_rows[uid] = buffered_rows.get(uid, 0) + len(p_array)
                 if buffered_rows[uid] >= flush_threshold_rows:
                     flush(uid)
             del events
+
     # final flush for any remaining buffered fragments:
     for uid in list(buffers.keys()):
         flush(uid)
         logger_inst.debug(f"UID: {uid} | NUM: {len(data[uid])}")
-    return data
+
+    return data, num_events_per_dataset, num_events_per_pid
+
 
 def filter_and_convert_to_torch(events: np.array, continuous_features: list[str], categorical_features: list[str]):
     """
@@ -250,86 +261,28 @@ def filter_and_convert_to_torch(events: np.array, continuous_features: list[str]
         events[uid] = {
             "continuous": continuous_tensor,
             "categorical": categorical_tensor,
-            "event_id" : event_id,
-            "normalization_weights" : normalization_weights,
-            "product_of_weights" : product_of_all_weights,
-
-            "total_product_of_weights" : sum_of_combined_weights,
-            "total_normalization_weights" : sum_of_normalization_weights,
-
-            "total_evaluation_weight" : total_evaluation_weight,
+            "event_id": event_id,
+            "normalization_weights": normalization_weights,
+            "product_of_weights": product_of_all_weights,
+            "total_product_of_weights": sum_of_combined_weights,
+            "total_normalization_weights": sum_of_normalization_weights,
+            "total_evaluation_weight": total_evaluation_weight,
             "evaluation_mask": final_mask,
-            "mask" : {
+            "mask": {
                 "bjet": masks_tensor[:, 0],
                 "di_tau": masks_tensor[:, 1],
                 "di_bjet": masks_tensor[:, 2],
-                },
+            },
         }
         del arr
     return events
 
-
-def get_data(config , save_cache = False, ignore_cache=False, debug_on_cache_failure=True) -> dict[str, torch.Tensor]:
-    """
-    Main function to combine all steps from loading root files to filter by process ids and finally convert to torch
-
-    Args:
-        config (DataClass): Config as defined in train_config.py
-        save_cache (bool, optional): Save the result of this function as cache, using config as hash. Defaults to False.
-        ignore_cache (bool, optional): Rerun loading of data if true, ignoring existing cache. Defaults to False.
-
-    Returns:
-        dict[torch.Tensor]: Dictionary with torch tensors
-    """
-    cache = DataCacher(config=config)
-
-    # when cache exist load -> it and return the data
-    all_events = {}
-
-
-
-    for era in sorted(config.eras, key=config.era_size):
-        if not ignore_cache and cache.era_exists(era):
-            logger_inst.info(f"Loading cached data for era {era}")
-            era_events = cache.load_era(era)
-            all_events = merge_era_events(all_events, era_events)
-            continue
-
-        # start creation of cache
-        logger_inst.info(f"Start loading and filtering of data for era {era}")
-        era_events = stream_events_by_uid(
-            config.datasets,
-            columns=config.uproot_continuous_columns + config.uproot_categorical_columns,
-            cut=config.uproot_cuts,
-            flush_threshold_rows=config.flush_threshold,
-        )
-        logger_inst.info("Start handling weights and conversion to torch tensors")
-        era_events = filter_and_convert_to_torch(
-            events=era_events,
-            continuous_features=config.uproot_continuous_columns,
-            categorical_features=config.uproot_categorical_columns,
-        )
-
-        if save_cache:
-            try:
-                cache.save_era(era=era, events=era_events)
-                logger_inst.info(f"Finished cache for era {era}")
-            except Exception as e:
-                logger_inst.exception(f"Sacing cache for era {era} failed")
-                if debug_on_cache_failure:
-                    from IPython import embed
-                    embed(header=f"{e}\n Saving Cache did not work out - going debugging to manually save \'events\' with \'cacher.save_cache\'")
-
-        all_events = merge_era_events(all_events, era_events)
-        del era_events
-    return all_events
 
 def merge_era_events(all_events, era_events):
     # incremental concat era tensors to all_events
     scalar_keys = {"total_product_of_weights", "total_normalization_weights", "total_evaluation_weight"}
 
     for uid, tensors in era_events.items():
-
         # when uid not there set base
         if uid not in all_events:
             all_events[uid] = tensors
@@ -341,8 +294,7 @@ def merge_era_events(all_events, era_events):
         for key, value in tensors.items():
             if key == "mask":
                 merged["mask"] = {
-                    mask_key: torch.cat([existing["mask"][mask_key], value[mask_key]], dim=0)
-                    for mask_key in value
+                    mask_key: torch.cat([existing["mask"][mask_key], value[mask_key]], dim=0) for mask_key in value
                 }
             elif key in scalar_keys:
                 merged[key] = existing[key] + value
@@ -351,3 +303,119 @@ def merge_era_events(all_events, era_events):
         all_events[uid] = merged
 
     return all_events
+
+
+def create_era_caches(config, cache: DataCacher, ignore_cache: bool, save_cache: bool) -> None:
+    """
+    Ensure every configured era exists in cache, loading + processing from raw files
+    where needed. Does not merge or return any data — purely a cache-population step.
+    """
+    era_datasets = structure_datasets_after_eras(config)
+
+    for era in config.eras:
+        if not ignore_cache and cache.era_exists(era):
+            logger_inst.info(f"Cache already present for era {era}")
+            continue
+
+        era_events, n_per_dataset, n_per_pid = _load_and_process_era(
+            config,
+            datasets_per_era=era_datasets,
+            era=era,
+        )
+
+        cache.save_sizes(sizes=n_per_dataset, era=era, is_pid=False)
+        cache.save_sizes(sizes=n_per_pid, era=era, is_pid=True)
+        _cache_era(cache, era, era_events, save_cache)
+        del era_events
+
+
+def _load_and_process_era(config, datasets_per_era, era):
+    """
+    Load one era from raw files, filter, and convert to torch tensors.
+    """
+    logger_inst.info(f"Start loading and filtering of data for era {era}")
+
+    era_datasets = datasets_per_era[era]
+
+    era_events, num_events_per_dataset, num_events_per_pid = stream_events_by_uid(
+        era_datasets,
+        columns=config.uproot_continuous_columns + config.uproot_categorical_columns,
+        cut=config.uproot_cuts,
+        flush_threshold_rows=config.flush_threshold,
+    )
+
+    logger_inst.info("Start handling weights and conversion to torch tensors")
+    era_events = filter_and_convert_to_torch(
+        events=era_events,
+        continuous_features=config.uproot_continuous_columns,
+        categorical_features=config.uproot_categorical_columns,
+    )
+    return era_events, num_events_per_dataset, num_events_per_pid
+
+
+def _cache_era(cache: DataCacher, era, era_events, save_cache: bool) -> None:
+    """
+    Persist one era's data to cache. Always writes internally so downstream
+    merging can stream from disk in sorted order rather than holding everything
+    in memory; if save_cache is False, mark it for cleanup after use.
+    """
+    try:
+        cache.save_era(era=era, events=era_events)
+        logger_inst.info(f"Finished cache for era {era}")
+    except Exception as e:
+        logger_inst.exception(f"Saving cache for era {era} failed")
+        from IPython import embed
+
+        embed(
+            header=f"{e}\nSaving Cache did not work out - going debugging to manually save 'events' with 'cacher.save_era'"
+        )
+
+
+def load_and_merge_eras(config, cache: DataCacher) -> dict[str, torch.Tensor]:
+    """
+    Load every configured era from cache, smallest first, merging incrementally
+    to minimize peak memory during concatenation. Assumes all eras are already cached.
+    """
+
+    def sort_key(era):
+        total_size = sum(cache.load_era_sizes(era).values())
+        return total_size
+
+    sorted_eras = sorted(config.eras, key=sort_key)
+
+    all_events = {}
+    for era in sorted_eras:
+        logger_inst.info(f"Loading cached data for era {era}")
+        era_events = cache.load_era(era)
+        all_events = merge_era_events(all_events, era_events)
+        del era_events
+
+    return all_events
+
+
+def get_data(config, save_cache=False, ignore_cache=False) -> dict[str, torch.Tensor]:
+    """
+    Main function to combine all steps from loading root files to filter by
+    process ids and finally convert to torch.
+    """
+    cache = DataCacher(config=config)
+    create_era_caches(config=config, cache=cache, save_cache=save_cache, ignore_cache=ignore_cache)
+    return load_and_merge_eras(config=config, cache=cache)
+
+
+def structure_datasets_after_eras(config):
+    # {dataset: [paths to all mixed eras]}
+    # final datasets: {era: {dataset: [paths]}}
+    datasets = config.datasets
+
+    era_datasets = {era: {} for era in config.eras}
+    for dataset, paths in datasets.items():
+        for path in paths:
+            # path is ${INPUT_DATA_DIR}/ERA/DATASET/ROOT_FILE
+            parts = path.split("/")
+            era = parts[-3]
+            if dataset not in era_datasets:
+                era_datasets[era][dataset] = []
+
+            era_datasets[era][dataset].append(path)
+    return era_datasets
