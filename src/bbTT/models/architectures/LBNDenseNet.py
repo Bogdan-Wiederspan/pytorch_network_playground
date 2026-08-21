@@ -22,7 +22,6 @@ class LBNDenseNet(DenseNet):
     def init_layers(self):
         # create normal DenseNet as defined in DenseNet.py, including on top an LBN
         super().init_layers()
-
         # dense net uses output of preprocessing layers and lbn, thus concat both features
         lbn_config = self.model_config.lbn_network
         self.lbn = LBNPipeline(

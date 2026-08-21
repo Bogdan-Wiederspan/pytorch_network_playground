@@ -10,7 +10,7 @@ import torch
 from bbTT.configs.full_config import FullConfig
 
 # personal imports
-from bbTT.data_handling import io, preprocessing, sampler
+from bbTT.data_handling import io, k_fold, preprocessing, sampler
 from bbTT.data_handling.utils import hash_dictionary
 from bbTT.loss import init_loss
 from bbTT.models.utils import init_model
@@ -57,7 +57,7 @@ def main(**kwargs):
         # events is of form : {uid : {"continuous","categorical", "weight": torch tensor}}
         events = io.get_data(full_config.dataset_config, ignore_cache=kwargs["ignore_cache"], save_cache=kwargs["save_cache"])
         # split data into training and validation according to fold and get collect all weight statistics
-        fold_split_coordinator = preprocessing.FoldAndSplitCoordinator(
+        fold_split_coordinator = k_fold.FoldAndSplitCoordinator(
             events=events,
             c_fold=current_fold,
             k_fold=full_config.training_config.k_fold,
