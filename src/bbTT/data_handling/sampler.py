@@ -85,7 +85,7 @@ class Process(t_data.Dataset):
         return self.targets.shape[0]
 
     def __getitem__(self, idx):
-        return self.continuous[idx], self.continuous[idx], self.targets[idx]
+        return self.continuous[idx], self.categorical[idx], self.targets[idx]
 
     def reset(self):
         """

@@ -7,10 +7,12 @@ import dataclasses
 import numpy as np
 import torch
 
+import bbTT.data_handling.sampling.sampler as sampler
 from bbTT.configs.full_config import FullConfig
 
 # personal imports
-from bbTT.data_handling import io, k_fold, preprocessing, sampler
+from bbTT.data_handling import io, k_fold
+from bbTT.data_handling.sampling.weight import WeightAggregator
 from bbTT.data_handling.utils import hash_dictionary
 from bbTT.loss import init_loss
 from bbTT.models.utils import init_model
@@ -68,7 +70,7 @@ def main(**kwargs):
 
         columns_to_split = ("continuous", "categorical", "event_id", "normalization_weights", "product_of_weights", "evaluation_mask")
         train_events, validation_events = fold_split_coordinator(events, which="training", columns=columns_to_split), fold_split_coordinator(events, which="validation", columns=columns_to_split) #noqa
-        weight_aggregator = preprocessing.WeightAggregator(events, fold_split_coordinator.indices)
+        weight_aggregator = WeightAggregator(events, fold_split_coordinator.indices)
 
         # release initial fields
         for key in list(events.keys()):
@@ -95,17 +97,7 @@ def main(**kwargs):
             train=False,
             **_sampler_config,
         )
-        # share relative weight from training batch statistic to validation sampler
-        training_sampler.share_weights_between_sampler(validation_sampler)
-        # get weighted mean and std of expected batch composition
-        logger_inst.info("Start model building and configuration")
 
-        full_config.model_building_config.mean, full_config.model_building_config.std = preprocessing.get_batch_statistics_from_sampler(
-            training_sampler,
-            padding_values=full_config.dataset_config.dummy_values,
-            features=full_config.dataset_config.continuous_features,
-            return_dummy=full_config.debug_config.get_batch_statistic_return_dummy,
-        )
         #----
         ### model build and configuration, including optimizer, scheduler, early stopping and loss function
         #----
@@ -306,12 +298,14 @@ def main(**kwargs):
         from IPython import embed
         embed(header="Training ends: Check if everything is as you thought it would be")
 
+
 if __name__ == "__main__":
     from bbTT.utils.parser import ParserBuilder
+
     parser = ParserBuilder("tensorboard", "cache")
 
     main(
         ignore_cache=parser.args.ignore_cache,
         save_cache=parser.args.save_cache,
-        tensorboard_name=parser.args.tensorboard_name
-        )
+        tensorboard_name=parser.args.tensorboard_name,
+    )

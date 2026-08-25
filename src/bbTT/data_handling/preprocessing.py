@@ -7,8 +7,8 @@ from bbTT.monitoring.logger.logger import get_logger
 
 logger_inst = get_logger(__name__)
 
-class WeightAggregator():
 
+class WeightAggregator:
     def __init__(self, events, indices):
         """
         Accumulates and handle process weights from events.
@@ -21,7 +21,7 @@ class WeightAggregator():
         self.summary_statistic_of_processes = self.calculate_summary_statistics_from_process_weights(self.weights)
 
     def identify_pid(self, pid):
-        if (pid < 2000):
+        if pid < 2000:
             return "tt"
         elif (pid > 2000) and (pid < 50000):
             return "hh"
@@ -42,22 +42,26 @@ class WeightAggregator():
     def calculate_process_weights(self, events, indices):
         weights = {}
         for uid, _events in events.items():
-
             normalization_weights = _events["normalization_weights"]
             product_of_weights = _events["product_of_weights"]
 
             weights[uid] = {
-                "normalization_weights" : {
+                "normalization_weights": {
                     # "per_event": normalization_weights,
                     "whole_sum": torch.sum(normalization_weights),
-                    **{f"{i}_sum": torch.sum(normalization_weights[indices[uid][i]]) for i in ("training", "validation", "test")},
+                    **{
+                        f"{i}_sum": torch.sum(normalization_weights[indices[uid][i]])
+                        for i in ("training", "validation", "test")
+                    },
                     "evaluation_sum": torch.sum(normalization_weights[_events["evaluation_mask"]]),
-
                 },
                 "product_of_weights": {
                     # "per_event": product_of_weights,
                     "whole_sum": torch.sum(product_of_weights),
-                    **{f"{i}_sum": torch.sum(product_of_weights[indices[uid][i]]) for i in ("training", "validation", "test")},
+                    **{
+                        f"{i}_sum": torch.sum(product_of_weights[indices[uid][i]])
+                        for i in ("training", "validation", "test")
+                    },
                     "evaluation_sum": torch.sum(product_of_weights[_events["evaluation_mask"]]),
                 },
             }
@@ -72,7 +76,9 @@ class WeightAggregator():
         if weights_per_process is None:
             self.weights_per_process = self.weights
         weights = {
-            weight_name: self.process_weights_sum_from_nested_weight(weights_per_process, first_key=weight_name, second_key="whole_sum")
+            weight_name: self.process_weights_sum_from_nested_weight(
+                weights_per_process, first_key=weight_name, second_key="whole_sum"
+            )
             for weight_name in ("product_of_weights", "normalization_weights")
         }
         return weights
@@ -86,12 +92,11 @@ def apply_tokenization(expected_inputs, events, categorical_features):
         data = events[uid]
         cateogrical_array = data["categorical"]
         map_categorical_features(
-            expected_inputs=expected_inputs,
-            feature_array=cateogrical_array,
-            categorical_features=categorical_features
+            expected_inputs=expected_inputs, feature_array=cateogrical_array, categorical_features=categorical_features
         )
         events["categorical"] = cateogrical_array
     return events
+
 
 def map_categorical_features(expected_inputs, feature_array, categorical_features):
     feat_window_start = 0
@@ -118,7 +123,85 @@ def map_categorical_features(expected_inputs, feature_array, categorical_feature
             feature_array[:, idx][mask] = new_value
     return feature_array
 
+
 def get_batch_statistics_from_sampler(sampler=None, padding_values=None, features=None, return_dummy=False):
+    """
+    Calculates the weighted mean and standard deviation over all subphase spaces of a process in *sampler*.
+    The data is expected to be of form : {"unique_identifier_tuple": {continuous: arr}, {weight}: arr}.
+    The return value is a dictionary of form {"process": (mean, std)}, where mean and std is a tensor of
+    form length [features].
+    The statistics are evaluated without *padding_values*.
+    If values are used only for init of Standardization Layer turn on *return_dummy*, which return a mean and std tensor, corresponding to 0 and 1.
+
+    Args:
+        sampler (ProcessSampler): Sampler managing the processes to compute statistics over.
+        padding_values (int, optional): List of padding_values per feature, or single value. Padding value are ignored in the calculation of the statitics. Defaults to None, which means no padding.
+        return_dummy (bool): Return dummy values that describe Identity transformation. This does not compute the statistics, and are a good option when one load pretrained weights anyway.
+    """
+    if return_dummy:
+        num_f = len(features)
+        mean = torch.zeros(num_f)
+        std = torch.ones(num_f)
+        logger_inst.info(
+            "\nNo normalization statistics are calculated, since return_dummy is True."
+            "Returning dummy values: mean = 0 and std = 1"
+        )
+        return mean, std
+
+    logger_inst.info("Calculate mean and std over all subphase spaces")
+
+    weighted_means = []
+    weighted_vars = []
+
+    # uid-keyed throughout — no more relying on two separately-generated dicts
+    # happening to share the same key space (that was pid-only, coincidental,
+    # and no longer holds now that set_attr's accessors are gone).
+    processes = sampler.registry.all()  # dict[uid, Process]
+
+    for current_pid_idx, (uid, proc) in enumerate(processes.items(), start=1):
+        array = proc.continuous  # [num_events, num_features]
+
+        logger_inst.info_progress(f"\rcalculating stats for pids: {current_pid_idx}/{len(processes)}")
+
+        num_f = array.shape[-1]
+
+        ignore_tensor = torch.tensor(padding_values)
+        if ignore_tensor.shape == torch.Size([]):
+            ignore_tensor = torch.full((1, num_f), fill_value=padding_values)
+        elif ignore_tensor.shape != torch.Size([num_f]):
+            raise ValueError(
+                f"Padding values need to be of shape [num_features] or single value, got {ignore_tensor.shape}"
+            )
+
+        # calculate masked statistics
+        # doing this calculation with float 64 due to overflow issues when using sqrt later
+        include_mask = ~(array == ignore_tensor)
+        masked_mean = torch.masked.mean(input=array, mask=include_mask, dim=0, dtype=torch.float64)
+        if torch.any(masked_mean.isnan()):
+            from IPython import embed
+
+            embed(header=f"{uid} is nan check feature_array and sampler")
+
+        # a feature with 1 event will return a NaN for its variance.
+        # in this case a variance of 1 should be used
+        masked_var = torch.masked.var(input=array, mask=include_mask, dim=0, dtype=torch.float64)
+        masked_var = torch.nan_to_num(masked_var, nan=1.0)
+
+        weighted_means.append(masked_mean * proc.relative_weight)
+        weighted_vars.append(masked_var * proc.relative_weight)
+
+    sum_of_weights = sum(proc.relative_weight for proc in processes.values())
+    w_avg_mean = torch.sum(torch.stack(weighted_means, axis=0), axis=0) / sum_of_weights
+    w_avg_var = torch.sum(torch.stack(weighted_vars, axis=0), axis=0) / sum_of_weights
+    if features:
+        msg = []
+        for f_name, f_mean, f_var in zip(features, w_avg_mean, w_avg_var):
+            msg.append(f"{f_name:<30}: mean:{f_mean:>10.4} var:{f_var:>10.4}")
+        logger_inst.debug("\n" + "\n".join(msg))
+    return w_avg_mean, w_avg_var.sqrt()
+
+
+def get_batch_statistics_from_sampler_old(sampler=None, padding_values=None, features=None, return_dummy=False):
     """
     Calculates the weighted mean and standard deviation over all subphase spaces of a process in *sampler*.
     The data is expected to be of form : {"unique_identifier_tuple": {continuous: arr}, {weight}: arr}.
@@ -140,7 +223,7 @@ def get_batch_statistics_from_sampler(sampler=None, padding_values=None, feature
         logger_inst.info(
             "\nNo normalization statistics are calculated, since return_dummy is True."
             "Returning dummy values: mean = 0 and std = 1"
-            )
+        )
         return mean, std
 
     logger_inst.info("Calculate mean and std over all subphase spaces")
@@ -151,7 +234,7 @@ def get_batch_statistics_from_sampler(sampler=None, padding_values=None, feature
     weights_dict = sampler.relative_weight()
     sum_of_weights = sum(list(weights_dict.values()))
     # for each process id calculate weighted mean, std for each feature representing batch statistics
-    for current_pid_idx, pid in enumerate(features_dict.keys(), start = 1):
+    for current_pid_idx, pid in enumerate(features_dict.keys(), start=1):
         # get array of specific process id - [num_events x num_features]
         array = features_dict[pid]
 
@@ -166,15 +249,19 @@ def get_batch_statistics_from_sampler(sampler=None, padding_values=None, feature
         if ignore_tensor.shape == torch.Size([]):
             ignore_tensor = torch.full((1, num_f), fill_value=padding_values)
         elif ignore_tensor.shape != torch.Size([num_f]):
-            raise ValueError(f"Padding values need to be of shape [num_features] or single value, got {ignore_tensor.shape}")
+            raise ValueError(
+                f"Padding values need to be of shape [num_features] or single value, got {ignore_tensor.shape}"
+            )
 
         # create and apply mask to include values
         include_mask = ~(array == ignore_tensor)
         masked_mean = torch.masked.mean(input=array, mask=include_mask, dim=0, dtype=torch.float64)
         masked_var = torch.masked.var(input=array, mask=include_mask, dim=0, dtype=torch.float64)
-        if torch.any(masked_mean.isnan()):
+        masked_var = torch.nan_to_num(masked_var, nan=1.0)
+        if torch.any(masked_mean.isnan()) or torch.any(masked_var.isnan()):
             from IPython import embed
-            embed(header=f"{pid} is nan check feature_array and sampler")
+
+            embed(header=f"Mean or Variance of {pid} is nan")
 
         # weight mean and add to collection
         # pid_weight = weights_dict[pid]
@@ -186,8 +273,8 @@ def get_batch_statistics_from_sampler(sampler=None, padding_values=None, feature
 
     # calculate weighted average over uid means and var
     print()
-    w_avg_mean  = torch.sum(torch.stack(weighted_means, axis=0), axis = 0) / sum_of_weights
-    w_avg_var = torch.sum(torch.stack(weighted_vars, axis=0), axis = 0) / sum_of_weights
+    w_avg_mean = torch.sum(torch.stack(weighted_means, axis=0), axis=0) / sum_of_weights
+    w_avg_var = torch.sum(torch.stack(weighted_vars, axis=0), axis=0) / sum_of_weights
     if features:
         msg = []
         for f_name, f_mean, f_var in zip(features, w_avg_mean, w_avg_var):
@@ -216,17 +303,18 @@ def get_batch_statistics(events=None, padding_value=0):
     for uid, arrays in events.items():
         # reshape to feature x events
 
-        arr_features = arrays["continuous"].transpose(0,1)
+        arr_features = arrays["continuous"].transpose(0, 1)
         weights.append(arrays["weight"])
         # go throught each feature axis and calculate statitic per feature
         f_means, f_stds = [], []
         for f in arr_features:
-            padding_mask = (f == padding_value)
+            padding_mask = f == padding_value
             masked_array = f[~padding_mask]
             masked_mean = masked_array.mean(axis=0)
             masked_std = masked_array.std(axis=0)
             if torch.isnan(masked_mean):
                 from IPython import embed
+
                 embed(header=f"{uid} is nan check f and events")
 
             f_means.append(masked_mean)
@@ -235,11 +323,11 @@ def get_batch_statistics(events=None, padding_value=0):
         stds.append(f_stds)
     means = torch.tensor(means)
     stds = torch.tensor(stds)
-    weights = torch.tensor(weights).reshape(-1,1)
+    weights = torch.tensor(weights).reshape(-1, 1)
 
     # resulting in a weight of form [features]
     denom = torch.sum(weights)
-    w_avg_mean  = torch.sum((means * weights), axis=0) / denom
+    w_avg_mean = torch.sum((means * weights), axis=0) / denom
     w_avg_std = torch.sum((stds * weights), axis=0) / denom
     return w_avg_mean, w_avg_std
 
@@ -271,7 +359,7 @@ def get_batch_statistics_per_dataset(events, padding_value=0):
         for uid in uids:
             f_means, f_stds = [], []
             # reshape to feature x events
-            arr_features = events[uid]["continuous"].transpose(0,1)
+            arr_features = events[uid]["continuous"].transpose(0, 1)
             weights.append(events[uid]["weight"])
 
             # go throught each feature axis and calculate statitic per feature
@@ -283,18 +371,20 @@ def get_batch_statistics_per_dataset(events, padding_value=0):
 
                 if torch.isnan(f[~padding_mask].mean(axis=0)):
                     from IPython import embed
+
                     embed(header="See which feature is nan")
             means.append(f_means)
             stds.append(f_stds)
         means = torch.tensor(means)
         stds = torch.tensor(stds)
-        weights = torch.tensor(weights).reshape(-1,1)
+        weights = torch.tensor(weights).reshape(-1, 1)
 
         # resulting in a weight of form [features]
         nom = torch.sum((means * weights), axis=0)
         denom = torch.sum(weights)
         stats[process_type] = nom / denom
     return stats
+
 
 def k_fold_indices(event_id, c_fold, k_fold, seed, test=False):
     """
@@ -322,6 +412,7 @@ def k_fold_indices(event_id, c_fold, k_fold, seed, test=False):
     randomized = torch.randperm(len(sub_event_id), generator=torch.Generator().manual_seed(seed))
     return sub_event_id[randomized]
 
+
 def split_array_to_train_and_validation(array, trainings_proportion=0.75):
     """
     Splits given *array* into *trainings_proportion* train and (1 - *trainings_proportion*) validation parts.
@@ -339,6 +430,7 @@ def split_array_to_train_and_validation(array, trainings_proportion=0.75):
     t_idx = array[:train_length]
     v_idx = array[train_length:]
     return t_idx, v_idx
+
 
 def split_k_fold_into_training_and_validation(events_dict, c_fold, k_fold, seed, train_ratio=0.75, return_test=False):
     """
@@ -364,27 +456,32 @@ def split_k_fold_into_training_and_validation(events_dict, c_fold, k_fold, seed,
         # create a copy of the dictionary with constant values
         # otherwise train and valid would point to the same memory
         constant_values = {
-            "total_normalization_weights" : array["total_normalization_weights"],
-            "total_product_of_weights" : array["total_product_of_weights"]
-            }
+            "total_normalization_weights": array["total_normalization_weights"],
+            "total_product_of_weights": array["total_product_of_weights"],
+        }
         train[uid], valid[uid] = constant_values.copy(), constant_values.copy()
 
         tv_indices = k_fold_indices(array["event_id"], c_fold, k_fold, seed, test=return_test)
         t_idx, v_idx = split_array_to_train_and_validation(tv_indices, train_ratio)
         # splitt arrays into train and validation
-        for key in ("continuous", "categorical", "event_id", "normalization_weights", "product_of_weights", "evaluation_mask"):
-
+        for key in (
+            "continuous",
+            "categorical",
+            "event_id",
+            "normalization_weights",
+            "product_of_weights",
+            "evaluation_mask",
+        ):
             arr = array.pop(key)
             # there are multiple masks
             train[uid][key], valid[uid][key] = arr[t_idx], arr[v_idx]
-
 
     # edge case split results in empty tensors (due to very low event count) remove these
     # if empty do not save
     for uid in list(train.keys()):
         for d in ("train", "valid"):
             dictionary = locals()[d]
-            if (dictionary[uid]["continuous"].numel() == 0):
+            if dictionary[uid]["continuous"].numel() == 0:
                 logger_inst.warning(f"removed {uid} from {d} since zero elements left after k-fold split")
                 dictionary.pop(uid)
     return train, valid

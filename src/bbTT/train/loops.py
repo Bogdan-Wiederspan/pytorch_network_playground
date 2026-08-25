@@ -284,7 +284,7 @@ class ValidationLoop(BaseLoop):
             "sample_weights" : [],
             "loss_predictions" : [],
             "relative_weights" : [],
-            # "dataset_id" : [], # TODO add ID to enable filtering by dataset
+            "process_id" : [],
             }
 
         dynamic_data = {dynamic_d : [] for dynamic_d in tuple(sample_columns - self.necessary_columns)}
@@ -292,43 +292,47 @@ class ValidationLoop(BaseLoop):
         with torch.no_grad():
             # sample over all dataset generator and run network
             # store output in lists which are then concatenated in the end
-            for uid, validation_batch_generator in sampler_inst.create_sample_generator(
+            for uid, events in sampler_inst.full_pass(
                 batch_size=sampler_inst.batch_size,
                 sample_from=sample_columns,
                 device=device
-                ).items():
+                ):
                 # hold data for current dataset, saved in loop to avoid memory issues
-                for events in validation_batch_generator:
-                    pred = model_inst(
-                        categorical_inputs=events.pop("categorical"),
-                        continuous_inputs=events.pop("continuous")
-                        )
-                    # network can output either binned or non binned predictions
-                    # depending on model architecture, separate_prediction gives us a uniform interface to handle both cases
-                    class_pred, loss_pred = self.separate_prediction(pred)
+                current_process = sampler_inst.registry[uid]
+                pred = model_inst(
+                    categorical_inputs=events.pop("categorical"),
+                    continuous_inputs=events.pop("continuous")
+                    )
+                # network can output either binned or non binned predictions
+                # depending on model architecture, separate_prediction gives us a uniform interface to handle both cases
+                class_pred, loss_pred = self.separate_prediction(pred)
 
-                    # -- collect data that is always done --
+                # -- collect data that is always done --
 
-                    collected_data["targets"].append(events.pop("targets"))
-                    collected_data["sample_weights"].append(events.pop("sample_weights"))
-                    collected_data["relative_weights"].append(
-                        torch.full(size=(class_pred.shape[0], 1), fill_value=sampler_inst[uid].relative_weight)
-                        )
+                collected_data["targets"].append(events.pop("targets"))
+                collected_data["sample_weights"].append(events.pop("sample_weights"))
 
-                    if not model_inst.use_last_activation:
-                        # TODO if sigmoid is necessary add switch case
-                        class_pred = torch.softmax(class_pred, dim=1)
-                    collected_data["class_predictions"].append(class_pred)
+                collected_data["relative_weights"].append(
+                    torch.full(size=(class_pred.shape[0], 1), fill_value=current_process.relative_weight)
+                    )
+                collected_data["process_id"].append(
+                    torch.full((class_pred.shape[0], 1), uid[1])
+                    )
 
-                    # for loss calculation, can be the same as class_prediction e.g. crossentropy
-                    collected_data["loss_predictions"].append(loss_pred)
+                if not model_inst.use_last_activation:
+                    # TODO if sigmoid is necessary add switch case
+                    class_pred = torch.softmax(class_pred, dim=1)
+                collected_data["class_predictions"].append(class_pred)
 
-                    # -- collect dynamic data --
-                    for k in dynamic_data.keys():
-                        dynamic_data[k].append(events.pop(k))
+                # for loss calculation, can be the same as class_prediction e.g. crossentropy
+                collected_data["loss_predictions"].append(loss_pred)
 
-                    # it is necessary to ensure the same shape
-                    # when mapping of activation function is on (only having softmax) do not apply them, else do apply
+                # -- collect dynamic data --
+                for k in dynamic_data.keys():
+                    dynamic_data[k].append(events.pop(k))
+
+                # it is necessary to ensure the same shape
+                # when mapping of activation function is on (only having softmax) do not apply them, else do apply
 
             # combine datas
             collected_data.update(dynamic_data)

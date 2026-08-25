@@ -62,10 +62,10 @@ class DataConfig:
     })
 
     dataset_pattern: Tuple[str] = (
-        # "dy_*",
-        "dy_m50toinf_0j_amcatnlo",
-        "tt_sl_powheg",
-        # "tt_*",
+        "dy_*",
+        # "dy_m50toinf_0j_amcatnlo",
+        # "tt_sl_powheg",
+        "tt_*",
         "hh_ggf_hbb_htt_kl1_kt1*",
         # "hh_ggf_hbb_htt_kl0_kt1*",
         )
@@ -233,9 +233,7 @@ class DataConfig:
         h = tuple(hashable_dict)
         return hashlib.sha256(str(h).encode("utf-8")).hexdigest()[:10]
 
-    def era_size(self, era):
-        # rounded lumi
-        # roughly the lumi, used in merging incremental eras together, to start with lowest and go to highest
+    def luminosity(self, era=None):
         size = {
             "22pre": 7.9,
             "22post": 26.6,
@@ -243,6 +241,8 @@ class DataConfig:
             "23post": 9.6,
             "24": 110,
         }
+        if era is None:
+            return size
         return size[era]
 
 
