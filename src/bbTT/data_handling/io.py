@@ -32,7 +32,9 @@ def load_root_and_convert_to_numpy(
         ak.Array: awkward array containing all data from the root files
 
     """
-    logger_inst.info("Start loading and conversion of root files:")
+
+    d = files_path.split("/")[-2]
+    logger_inst.info(f"Start loading and conversion of root files: { d }")
     if depthCount(branches) > 1 and branches is not None:
         raise ValueError(f"branches must be a flat list but is {depthCount(branches)}-dimensional")
 
