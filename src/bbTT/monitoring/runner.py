@@ -164,10 +164,10 @@ class RequirementNotMet(Exception):
     because the underlying data doesn't exist in this context.
     Caught by run_plots to skip optional plots gracefully.
     """
-    def __init__(self, artifact, plot_name=None):
+    def __init__(self, artifact, requester=None):
         self.artifact = artifact
-        self.plot_name = plot_name
+        self.requester = requester
         super().__init__(
-            f"Requirement '{artifact}' cannot be met for plot '{plot_name}' "
+            f"Requirement '{artifact}' cannot be met for plot '{requester}' "
             f"— no builder provides it and it is not in the context. Skipping."
         )

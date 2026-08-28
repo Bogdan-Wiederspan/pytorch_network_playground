@@ -16,6 +16,7 @@ class EvalContext:
         event_weights: torch.Tensor,
         global_step: int,
         mode: str,
+        **kwargs,
         ):
         """
         Context Object is a manager to hold everything relevant for evaluation and monitoring.
@@ -42,10 +43,10 @@ class EvalContext:
         self.targets = targets.detach().cpu()
         self.target_map = target_map
         self.event_weights = event_weights.detach().cpu()
-
         # meta data
         self.global_step = global_step # current batch iteration
         self.mode = mode # batch, train oder valid, influences the meta tag
+        self.optional_defaults = kwargs
 
         # dynamic features existence depending on model or plots
         self.features = {}

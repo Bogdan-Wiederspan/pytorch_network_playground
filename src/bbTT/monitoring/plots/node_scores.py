@@ -211,3 +211,69 @@ def plot_network_predictions_hh_training_bin_edges(
         ax.set_xlim((left_bound, right_bound))
         ax.grid()
     return fig, axes
+
+
+import bbTT.utils.transformations as fn
+
+
+@register_plot("output_score_hh_node", requires={"evaluation_state.binning_edges"})
+def plot_network_predictions_hh_training_bin_edges(
+    ctx,
+    normalize=True,
+    **kwargs,
+) -> tuple[Figure, Axes]:
+    """
+    Plot the HH-node output score, split by true process, against active bin edges.
+
+    Draws two panels: (0) signal vs. combined background, (1) signal vs.
+    each background process separately (dy, tt). Predictions are
+    logit-transformed before histogramming, matching the space that
+    `active_edges` is defined in.
+
+    Args:
+        ctx (EvalContext): Must expose `targets`, `predictions`,
+            `target_map`, and provide "active_edges".
+        normalize (bool, optional): If True, weight each process's
+            histogram by 1/n_events so processes are compared as shape
+            (frequency) rather than absolute count. Defaults to True.
+        **kwargs: May include "title" (str), "histtype" (str, default
+            "step"), "alpha" (float, default 0.7). Other keys are ignored.
+
+    Returns:
+        tuple[matplotlib.figure.Figure, numpy.ndarray]: The figure and
+        its array of 2 axes.
+    """
+    y_true = ctx.targets
+    # TODO: transformation applied here (logit) is hardcoded; ctx doesn't
+    # currently track which transform, if any, active_edges was computed
+    # under. Works today because active_edges is known to live in
+    # logit space — revisit if that assumption ever changes.
+    y_pred = fn.logit.forward(ctx.predictions)
+
+    target_map = ctx.target_map
+    binning_edges = ctx.get("evaluation_state.binning_edges").flatten()
+
+    signal_idx = target_map["hh"]
+    num_plots = 2
+    fig, axes = plt.subplots(1, num_plots, figsize=(12 * num_plots, 12))
+
+    title = kwargs.pop("title", None)
+    if title is not None:
+        fig.suptitle(title)
+
+    # identify events using TRUTH information to create masks
+    masks = {process: (y_true[:, idx] == 1) for process, idx in target_map.items()}
+    # to get node information, apply index filtering on PREDICTION
+    hh_node = {process: y_pred[masks[process]][:, signal_idx] for process in target_map}
+    hh_node["background"] = torch.cat([hh_node["dy"], hh_node["tt"]], dim=0)
+
+    # number of events is not evenly distributed outside of the sampler;
+    # normalize is a factor that also shows up in the legend.
+    # by default weight is None (unweighted, raw counts)
+    weights = {process: None for process in hh_node}
+    if normalize:
+        weights = {process: np.full(value.shape, 1 / len(value)) for process, value in hh_node.items()}
+
+    plt_cfg = {
+        "histtype": kwargs.get("histtype", "step"),
+        "alpha": kwargs.get("alpha",

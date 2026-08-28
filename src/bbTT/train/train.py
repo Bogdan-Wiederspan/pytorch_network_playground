@@ -189,6 +189,7 @@ def main(**kwargs):
                         "model_evaluation_state": model_evaluation_state,
                         "target_map": full_config.dataset_config.target_map,
                         "global_step": current_iteration,
+                        "default_n_bins": full_config.binning_config.num_bins,
                     }
 
                     ctx_batch = EvalContext(
@@ -236,8 +237,7 @@ def main(**kwargs):
                     evaluation_runner_inst.run_plots(
                         ctx_batch,
                         plots=[
-                            # "active_kernels",
-                            "active_kernels_advance"
+                            "kernels_monitor"
                         ]
                     )
                     # run metrics and store them
@@ -246,10 +246,9 @@ def main(**kwargs):
                         plots=[
                             "confusion_matrix",
                             "roc",
-                            # "asimov_small_signal",
                             "output_score_hh_node",
                             "output_score_hh_node_untransformed",
-                            "active_kernels_advance"
+                            "kernels_monitor"
                         ],
                     )
 
@@ -258,10 +257,9 @@ def main(**kwargs):
                         plots=[
                             "confusion_matrix",
                             "roc",
-                            # "asimov_small_signal",
                             "output_score_hh_node",
                             "output_score_hh_node_untransformed",
-                            "active_kernels_advance"
+                            "kernels_monitor"
                         ],
                     )
 
