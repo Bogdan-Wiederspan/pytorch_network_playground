@@ -20,3 +20,6 @@ def to_numpy(values):
     elif isinstance(values, (tuple, list)):
         values = np.array(values)
     return values
+
+def make_plotable(tensor):
+    return tensor.detach.cpu().numpy()
