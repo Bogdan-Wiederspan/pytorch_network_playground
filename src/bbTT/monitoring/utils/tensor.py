@@ -22,4 +22,4 @@ def to_numpy(values):
     return values
 
 def make_plotable(tensor):
-    return tensor.detach.cpu().numpy()
+    return tensor.detach().cpu().numpy()
