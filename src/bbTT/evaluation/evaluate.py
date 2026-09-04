@@ -24,10 +24,10 @@ def last_fn_picker(last_fn):
         return torch.softmax(x, dim=-1)
 
     def identity(x):
-        return lambda x: x
+        return x
 
-    choices = {"sigmoid": sigmoid, "softmax": softmax, "identity": identity}
-    return choices[last_fn]
+    choices = {"sigmoid": sigmoid, "softmax": softmax, "none": identity}
+    return choices[last_fn.lower()]
 
 
 def evaluate_model_on_fold(
@@ -135,12 +135,14 @@ if __name__ == "__main__":
         description="Evaluate Model in Checkpoint on test, training or validation set of the given input data",
     )
     args = parser.args
+    model_name = args.path.stem
 
     DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     logger_inst.info(f"DEVICE: {DEVICE}")
 
     model_inst, full_config = rebuild_checkpoint_information(args.path)
-
+    # is part of the name so everybody nows which data was used to train the network
+    used_data_hash = full_config.dataset_config.content_hash()
     torch.manual_seed(full_config.training_config.seed)
     np.random.seed(full_config.training_config.seed)
 
@@ -149,7 +151,8 @@ if __name__ == "__main__":
     for evaluate_on in args.evaluate_on:
         stem = args.file_path.stem
         suffix = args.file_path.suffix
-        path = args.file_path.with_stem(f"{evaluate_on}_{stem}").with_suffix(suffix)
+
+        path = args.file_path.with_stem(f"{used_data_hash}_{model_name}_{evaluate_on}_{stem}").with_suffix(suffix)
 
         evaluated_data = evaluate_model_on_fold(
             model_inst=model_inst,
@@ -158,7 +161,6 @@ if __name__ == "__main__":
             evaluate_on=evaluate_on,
             last_activation_fn=args.add_activation,
             events=events,
-            num_threads=args.num_threads,
             batch_size=args.batch_size,
         )
 
