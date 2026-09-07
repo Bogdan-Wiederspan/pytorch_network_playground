@@ -8,35 +8,38 @@ from plotly.subplots import make_subplots
 
 
 class HistogramPlotter2D:
-    """
-    Interactive feature-vs-feature 2D plotter with per-plot cuts, a
-    dynamic add menu, live column overrides, and sidebars to remove
-    registered plots/overrides.
-
-    Args:
-        df: DataFrame containing the event data.
-        predefined_cuts: Name -> pandas query string (global, AND-combined).
-        column_overrides: Optional initial column name -> {"range": (lo, hi), "n_bins": int}.
-            Can also be extended live through the UI.
-        n_bins_default: Default bin count for columns without an override.
-        n_bins_range: (min, max) for the global bins slider.
-        clip_quantiles: (low, high) percentiles defining the default range.
-        n_cols: Number of columns in the subplot grid.
-    """
-
     def __init__(
         self,
-        df,
-        predefined_cuts,
-        column_overrides=None,
-        n_bins_default=30,
-        n_bins_range=(5, 100),
-        clip_quantiles=(0.01, 0.99),
-        n_cols=2,
+        df: pd.DataFrame,
+        predefined_cuts: dict[str],
+        column_overrides: dict[str] = None,
+        n_bins_default: int = 30,
+        n_bins_range: tuple[int, int] = (5, 100),
+        clip_quantiles: tuple[float, float] = (0.01, 0.99),
+        n_cols: int = 2,
         plot_pairs: list[dict] = None,
     ):
+        """
+        Interactive feature-vs-feature 2D plotter with per-plot cuts, a
+        dynamic add menu, live column overrides, and sidebars to remove
+        registered plots/overrides.
+
+        Args:
+            df (pd.DataFrame): DataFrame containing the event data.
+            predefined_cuts (dict[str]): Name -> pandas query string (global, AND-combined).
+            column_overrides (dict[dict[str]]) : Optional initial column name -> {"range": (lo, hi), "n_bins": int}.
+                Can also be extended live through the UI.
+            n_bins_default (int): Default bin count for columns without an override.
+            n_bins_range (tuple[int, int]): (min, max) for the global bins slider.
+            clip_quantiles (tuple[float, float]): (low, high) percentiles defining the default range.
+            n_cols (int) : Number of columns in the subplot grid.
+            plot_pairs (list[dict]): List of plots that should be displayed by default.
+        """
         self.df = df
         self.predefined_cuts = predefined_cuts
+        if not isinstance(predefined_cuts, dict):
+            raise TypeError(f"Predefined cuts should be a dict and not {type(predefined_cuts)}")
+
         self.column_overrides = dict(column_overrides or {})
         self.numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
         self.n_bins_default = n_bins_default
