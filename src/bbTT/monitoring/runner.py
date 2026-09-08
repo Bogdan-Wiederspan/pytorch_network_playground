@@ -136,7 +136,7 @@ class EvaluationRunner:
             except RequirementNotMet as e:
                 if spec.optional:
                     if plot_is_not_skipped:
-                        logger_inst.debug(f"Skipping optional plot '{plot_name} in mode{ctx.mode} ': {e}")
+                        logger_inst.debug(f"Skipping optional plot '{plot_name}' in mode '{ctx.mode}' : {e}")
                         self._skipped_plots.add((plot_name, ctx.mode))
                 else:
                     # required plot whose requirements aren't met — this IS a bug

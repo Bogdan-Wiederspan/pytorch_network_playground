@@ -134,8 +134,9 @@ def main(**kwargs):
                 sampler=training_sampler,
                 device=DEVICE,
                 sample_columns=full_config.training_config.sample_attributes,
-                scheduler_handler_inst=scheduler_handler_inst,
+                scheduler_handler=scheduler_handler_inst,
             )
+
             # ----
             # Verbose and Metrics that are triggered often
             # ----
