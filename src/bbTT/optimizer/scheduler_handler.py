@@ -16,21 +16,21 @@ class SchedulerHandler():
         self,
         model_inst: torch.nn.Module,
         optimizer_inst : torch.optim.Optimizer,
-        metric: torch.Tensor=None
+        metric: torch.Tensor=None,
         ) -> bool:
         """
         Call once per evaluation.
         There are two place where a step happens: Once per batch OR when a metric is evaluated.
         The latter is at the end of the training, while the former is direct after the optimizer step.
         The correct one is chosen depending on _needs_metric and chosen scheduler_inst.
+        An scheduler_step should reload the model when a metric exist.
 
         Args:
-            model_inst (_type_): Passed ML model instance.
-            optimizer_inst (_type_): Passed Optimizer instance.
-            metric (_type_, optional): _description_. Defaults to None.
+            model_inst (torch.nn.Module): Passed ML model instance.
+            optimizer_inst (torch.optim.Optimizer): Passed Optimizer instance.
+            metric (torch.Tensor, optional): _description_. Defaults to None.
 
-        Returns:
-            _type_: _description_
+        Returns (bool): If the handler did a step or not
         """
 
         if self.scheduler_inst is None:
@@ -56,12 +56,14 @@ class SchedulerHandler():
         if previous_lr == current_lr:
             return False
 
-        return self._reload_after_lr_drop(
-            model_inst=model_inst,
-            optimizer_inst=optimizer_inst,
-            previous_lr=previous_lr,
-            current_lr=current_lr,
+        if metric_given:
+            return self._reload_after_lr_drop(
+                model_inst=model_inst,
+                optimizer_inst=optimizer_inst,
+                previous_lr=previous_lr,
+                current_lr=current_lr,
             )
+        return True
 
 
     def _reload_after_lr_drop(

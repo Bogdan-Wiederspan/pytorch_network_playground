@@ -130,11 +130,11 @@ def main(**kwargs):
                 monitor = training_monitor_inst,
                 kind_of_data= mode_batch,
                 loss_fn=training_loss_inst,
-                optimizer=optimizer_inst,
                 sampler=training_sampler,
                 device=DEVICE,
                 sample_columns=full_config.training_config.sample_attributes,
-                scheduler_handler=scheduler_handler_inst,
+                scheduler_handler_inst=scheduler_handler_inst,
+                optimizer_inst=optimizer_inst,
             )
 
             # ----

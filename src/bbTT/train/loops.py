@@ -84,15 +84,15 @@ class BaseLoop:
     def cleanup(self, monitor, model_inst, **kwargs):
         pass
 
-    def __call__(self, *args, monitor=None, model_inst=None, kind_of_data=None, **kwargs):
+    def __call__(self, *args, monitor=None, model_inst=None, kind_of_data=None, scheduler_handler_inst=None, optimizer_inst=None, **kwargs):
         # registered loop is just an unbound function
         # bound by passing self as first argument
         self.setup(monitor=monitor, model_inst=model_inst, kind_of_data=kind_of_data)
         try:
             fn = self.REGISTERED_LOOPS[self.MODE][self.which_fn]
-            result = fn(self, *args, monitor=monitor, model_inst=model_inst, **kwargs)
+            result = fn(self, *args, monitor=monitor, model_inst=model_inst, optimizer_inst=optimizer_inst, **kwargs)
         finally:
-            self.cleanup(monitor=monitor, model_inst=model_inst)
+            self.cleanup(monitor=monitor, model_inst=model_inst, scheduler_handler_inst=scheduler_handler_inst, optimizer_inst = optimizer_inst)
         return result
 
 
@@ -106,8 +106,11 @@ class TrainingLoop(BaseLoop):
         super().setup(monitor, model_inst, kind_of_data)
         model_inst.enable_gradient_hooks()
 
-    def cleanup(self, monitor=None, model_inst=None):
+    def cleanup(self, monitor=None, model_inst=None, optimizer_inst=None, scheduler_handler_inst=None, **kwargs):
         super().cleanup(monitor=monitor, model_inst=model_inst)
+        if scheduler_handler_inst is not None:
+            scheduler_handler_inst.step(model_inst=model_inst, optimizer_inst=optimizer_inst, metric=None)
+
         model_inst.disable_gradient_hooks()
         if monitor is not None:
             monitor.check_gradient_correctness(expected_names=model_inst.monitored_gradient_names())
@@ -115,21 +118,21 @@ class TrainingLoop(BaseLoop):
     @register_loop(name="sam")
     def sam_optimizer(
         self,
-        model,
+        model_inst,
         loss_fn,
-        optimizer,
+        optimizer_inst,
         sampler,
         device,
         *args,
         **kwargs,
     ):
-        optimizer.zero_grad()
+        optimizer_inst.zero_grad()
 
         events = sampler.sample_batch(device=device)
         categorical, continuous = events.get("categorical"), events.get("continuous")
         targets = events["targets"].reshape(self.target_shape)
 
-        pred = model(categorical_inputs=categorical, continuous_inputs=continuous)
+        pred = model_inst(categorical_inputs=categorical, continuous_inputs=continuous)
         predictions, optimization_predictions = self.separate_prediction(pred)
 
         loss = loss_fn(
@@ -139,15 +142,15 @@ class TrainingLoop(BaseLoop):
 
         # optimizer routine differs for sam optimizers
         # first step included scouting, second step is the actual optimized step, batch norm needs to be disabled for that
-        optimizer.first_step(zero_grad=True)
+        optimizer_inst.first_step(zero_grad=True)
 
         # second forward step with disabled batchnorm running stats in second forward step
-        optimizer.disable_running_stats(model)
-        pred_2 = model(categorical_inputs=categorical, continuous_inputs=continuous)
+        optimizer_inst.disable_running_stats(model_inst)
+        pred_2 = model_inst(categorical_inputs=categorical, continuous_inputs=continuous)
         loss_fn(pred_2, targets).backward()
 
-        optimizer.second_step(zero_grad=True)
-        optimizer.enable_running_stats(model)  # <- this is the important line
+        optimizer_inst.second_step(zero_grad=True)
+        optimizer_inst.enable_running_stats(model_inst)  # <- this is the important line
 
         return {
             "loss": loss,
@@ -161,16 +164,15 @@ class TrainingLoop(BaseLoop):
         self,
         model_inst,
         loss_fn,
-        optimizer,
+        optimizer_inst,
         sampler,
         device,
-        scheduler_inst=None,
         sample_columns=None,
         monitor=None,
         **kwargs,
     ):
         # this loss never uses a binning network thus, a single prediction is expected
-        optimizer.zero_grad()
+        optimizer_inst.zero_grad()
 
         events = sampler.sample_batch(sample_from=sample_columns, device=device)
         categorical, continuous = events.get("categorical"), events.get("continuous")
@@ -180,10 +182,7 @@ class TrainingLoop(BaseLoop):
         # training does not need event weights. The oversampling algorithm takes care of this
         loss = loss_fn(predictions, targets, event_weights=None)
         loss.backward()
-        optimizer.step()
-        if scheduler_inst is not None:
-            scheduler_inst.step()
-
+        optimizer_inst.step()
         return {
             "loss": loss,
             "predictions": predictions,
@@ -196,15 +195,13 @@ class TrainingLoop(BaseLoop):
         self,
         model_inst,
         loss_fn,
-        optimizer,
+        optimizer_inst,
         sampler,
         sample_columns,
         device,
-        scheduler_handler=None,
-        monitor=None,
         **kwargs,
     ):
-        optimizer.zero_grad()
+        optimizer_inst.zero_grad()
 
         events = sampler.sample_batch(sample_from=sample_columns, device=device)
         categorical, continuous = events.get("categorical"), events.get("continuous")
@@ -225,10 +222,7 @@ class TrainingLoop(BaseLoop):
         )
 
         loss.backward()
-        optimizer.step()
-        if scheduler_handler is not None:
-            scheduler_handler.step(model_inst=model_inst, optimizer_inst=optimizer, metric=None)
-
+        optimizer_inst.step()
         return {
             "loss": loss,
             "predictions": predictions,
