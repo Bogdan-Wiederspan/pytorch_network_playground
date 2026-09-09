@@ -12,6 +12,7 @@ from bbTT.configs.full_config import FullConfig
 
 # personal imports
 from bbTT.data_handling import io, k_fold
+from bbTT.data_handling.cache_standardization import FeatureStatisticCache
 from bbTT.data_handling.sampling.weight import WeightAggregator
 from bbTT.data_handling.utils import hash_dictionary
 from bbTT.loss import init_loss
@@ -99,12 +100,19 @@ def main(**kwargs):
             **_sampler_config,
         )
 
+        feature_statistic_cache = FeatureStatisticCache(
+            dataset_config = full_config.dataset_config,
+            sampler= training_sampler,
+            return_dummy=full_config.debug_config.get_batch_statistic_return_dummy,
+            verbose=True
+            )
+        full_config.model_building_config.standardization.mean = feature_statistic_cache.mean
+        full_config.model_building_config.standardization.std = feature_statistic_cache.std
         #----
         ### model build and configuration, including optimizer, scheduler, early stopping and loss function
         #----
         model_inst = init_model(full_config=full_config)
         model_inst = model_inst.to(DEVICE).train()
-
         training_loop, validation_loop = TrainingLoop(full_config), ValidationLoop(full_config)
 
         optimizer_inst = init_optimizer(full_config=full_config, model_inst=model_inst)

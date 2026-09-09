@@ -14,7 +14,19 @@ if TYPE_CHECKING:
     from bbTT.configs.io_config import DataConfig
 
 
-class DataCacher():
+class BaseCacher():
+    def __init__(self, config):
+        self.config = config
+        self.hash = self.config.content_hash()
+        self.cache_root = pathlib.Path(os.environ["CACHE_DIR"])
+
+        self.path = self.cache_root / self.hash
+        if not self.cache_root.exists():
+            raise FileExistsError(f"Root directory does not exist at {self.cache_root} - create it" )
+        self.path.mkdir(parents=False, exist_ok=True) # no automatic dir creation, want to prevent wrong paths
+
+
+class DataCacher(BaseCacher):
     def __init__(self, config: DataConfig):
         """
         Defines a cache saved in location defined by CACHE_DIR variable.
@@ -25,17 +37,7 @@ class DataCacher():
         Args:
             config (DataConfig): DataConfig instance.
         """
-
-        self.config = config
-
-        self.hash = self.config.content_hash()
-        self.cache_root = pathlib.Path(os.environ["CACHE_DIR"])
-
-        self.path = self.cache_root / self.hash
-        if not self.cache_root.exists():
-            raise FileExistsError(f"Root directory does not exist at {self.cache_root} - create it" )
-        self.path.mkdir(parents=False, exist_ok=True) # no automatic dir creation, want to prevent wrong paths
-
+        super().__init__(config=config)
 
     def _era_path(self, era):
         return self.path / f"{era}.pkl"
