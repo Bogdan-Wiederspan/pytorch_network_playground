@@ -19,6 +19,7 @@ from bbTT.models.utils import init_model
 
 # from .train_utils import log_metrics
 from bbTT.monitoring import EvalContext, EvaluationRunner, TrainingMonitor, load_registers, setup_monitoring
+from bbTT.monitoring.context.batch_composition_context import BatchCompositionHistory
 from bbTT.monitoring.logger.logger import get_logger
 from bbTT.monitoring.logger.tensorboard_logger import TensorboardLogger
 from bbTT.optimizer.early_stopping import CheckPoint
@@ -113,6 +114,8 @@ def main(**kwargs):
         training_monitor_inst = TrainingMonitor(to_cpu=True, non_blocking=True)
         scheduler_handler_inst = SchedulerHandler(scheduler_inst=scheduler_inst, checkpoint_inst=checkpoint_inst, logger_inst=logger_inst)
         mode_batch, mode_eval_training, mode_eval_validation = "training_batch", "evaluation_training", "evaluation_validation"
+        batch_composition_history_inst = BatchCompositionHistory()
+
         setup_monitoring(
             training_monitor_inst,
             model_inst,
@@ -137,10 +140,13 @@ def main(**kwargs):
                 optimizer_inst=optimizer_inst,
             )
 
+            if full_config.record_config.batch_metrics:
+                batch_composition_history_inst.record(step=current_iteration, cursors=training_sampler.cursors)
+
             # ----
             # Verbose and Metrics that are triggered often
             # ----
-            if current_iteration % full_config.training_config.verbose_interval == 0:
+            if current_iteration % full_config.record_config.verbose_interval == 0:
                 tensorboard_writer.log_lr(optimizer_inst, current_iteration)
                 batch_loss = batch_result["loss"].item()
                 tensorboard_writer.log_loss({"batch_loss": batch_loss}, step=current_iteration)
@@ -150,7 +156,7 @@ def main(**kwargs):
             #----
             #### Evaluation of training and validation data, logging and checkpointing
             #----
-            evaluation_condition = (current_iteration % full_config.training_config.validation_interval == 0) & (current_iteration >= 0)
+            evaluation_condition = (current_iteration % full_config.record_config.validation_interval == 0) & (current_iteration >= 0)
             if evaluation_condition:
                 # evaluation of training data
                 logger_inst.info(f"Iteration {current_iteration}. Start evaluation of training data.")
@@ -182,7 +188,7 @@ def main(**kwargs):
                 logger_inst.training(f"Iteration: {current_iteration} - TLoss: {eval_t_loss:.2E} VLoss: {eval_v_loss:.2E}")
 
                 # TODO when edges should be tracked add this in a way that is universal and does not break for models without binning layer, e.g. add property to model that returns None if no binning layer is present and add check in log_metrics
-                if full_config.training_config.log_metrics:
+                if full_config.record_config.log_metrics:
                     # --- plots on evaluation, on training data ---
                     model_evaluation_state = model_inst.evaluation_state()
 
@@ -191,6 +197,7 @@ def main(**kwargs):
                         "target_map": full_config.dataset_config.target_map,
                         "global_step": current_iteration,
                         "default_n_bins": full_config.binning_config.num_bins,
+                        "batch_composition": batch_composition_history_inst,
                     }
 
                     ctx_batch = EvalContext(
@@ -238,7 +245,8 @@ def main(**kwargs):
                     evaluation_runner_inst.run_plots(
                         ctx_batch,
                         plots=[
-                            "kernels_monitor"
+                            # "kernels_monitor",
+                            "batch_composition_history",
                         ]
                     )
                     # run metrics and store them

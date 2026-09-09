@@ -13,13 +13,10 @@ VALIDATION_LOOP_CHOICE = Literal["signal_efficiency", "cross_entropy"]
 @dataclass
 class TrainingConfig:
     save_model_name: str = "delete2" # name of the model used to save
-    log_metrics: bool = True # whether to log metrics to tensorboard during training, if false only validation loss is logged
     model_choice: MODEL_CHOICE = "lbn_dense"
     training_fn: TRAINING_LOOP_CHOICE = "cross_entropy" # name of the training loop
     validation_fn: VALIDATION_LOOP_CHOICE = "cross_entropy" # name of the validation loop
     max_train_iteration: int = 15000 # max number of batches
-    verbose_interval: int = 5 # interval between two logger outputs of training loss
-    validation_interval: int = 30 # interval between two validation passes / plots are done during validation
     gamma: float = 0.5
     label_smoothing: float = 0.0
     train_folds: Tuple[int, ...] = (0,) # which training folds to use

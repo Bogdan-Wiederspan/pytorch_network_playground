@@ -8,10 +8,10 @@ from bbTT.configs import (
     LossConfig,
     ModelConfig,
     OptimizerConfig,
+    RecordConfig,
     SchedulerConfig,
     TrainingConfig,
 )
-
 from bbTT.monitoring.logger.logger import get_logger
 
 logger_inst = get_logger("Configs")
@@ -26,6 +26,7 @@ class FullConfig:
     optimizer_config: OptimizerConfig = field(default_factory=OptimizerConfig)
     loss_config: LossConfig = field(default_factory=LossConfig)
     debug_config: DebugConfig = field(default_factory=DebugConfig)
+    record_config: RecordConfig = field(default_factory=RecordConfig)
 
 
     def _compatibility_rules(self) -> list[tuple[Callable[[], bool], str]]:
