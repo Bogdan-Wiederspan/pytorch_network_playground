@@ -124,7 +124,7 @@ class ProcessSampleCursor:
         n = len(self.process)
         self.indices = torch.randperm(n) if self.randomize else torch.arange(n)
 
-    def sample(self, sample_from: tuple[str, ...], number: int = None, device=CPU_DEVICE) -> dict[str, torch.Tensor]:
+    def sample_wrong(self, sample_from: tuple[str, ...], number: int = None, device=CPU_DEVICE) -> dict[str, torch.Tensor]:
         """
         Sample *number* events from the process. Wraps around (reshuffling if randomize=True)
         once the end is reached. If *number* is None, the process's own sample_size is used.
@@ -147,6 +147,48 @@ class ProcessSampleCursor:
 
         self.last_idx = idx
         self.current_idx = next_idx
+        return self.process.gather(idx=idx, sample_from=sample_from, device=device)
+
+    def sample(
+        self,
+        sample_from: tuple[str, ...],
+        number: int = None,
+        device=CPU_DEVICE,
+    ) -> dict[str, torch.Tensor]:
+        """
+        Sample *number* events from the process.
+
+        Always returns exactly *number* events. When the cursor reaches the end of
+        the process it wraps around (reshuffling first if randomize=True) and keeps
+        filling from the start, so the per-process quota in a batch is never
+        silently truncated. Note that if *number* exceeds the process size, the
+        returned batch necessarily contains repeated events.
+
+        Args:
+
+        sample_from (tuple[str]): Attribute names to sample.
+        number (int, optional): Number of events to sample. Defaults to ``process.sample_size``.
+        device (torch.device, optional): Device to move the gathered tensors to.
+
+        Returns (dict[str, torch.Tensor]): Sampled tensors keyed by attribute name, plus ``"sample_weights"``.
+        """
+        max_events = len(self.process)
+        remaining = self.process.sample_size if number is None else number
+
+        # Accumulate index chunks across wraparounds.
+        # A loop is used to cover multiple spans
+        chunks: list[torch.Tensor] = []
+        while remaining > 0:
+            if self.current_idx >= max_events:
+                self.reset()
+            take = min(remaining, max_events - self.current_idx)
+            chunks.append(self.indices[self.current_idx : self.current_idx + take])
+            self.current_idx += take
+            remaining -= take
+
+        idx = chunks[0] if len(chunks) == 1 else torch.cat(chunks)
+
+        self.last_idx = idx
         return self.process.gather(idx=idx, sample_from=sample_from, device=device)
 
     def peek(self, sample_from: tuple[str, ...], device=CPU_DEVICE) -> dict[str, torch.Tensor]:

@@ -325,7 +325,7 @@ def create_sampler(
             process_id=process_id,
             process_type=process_type,
         )
-        process_sampler.add_process_instance(process)
+        process_sampler.add_process_instance(process, randomize=True)
 
     if train:
         for process_type in process_sampler.registry.process_types:
