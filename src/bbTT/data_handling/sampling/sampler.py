@@ -143,12 +143,17 @@ class ProcessSampler(t_data.Sampler):
         logger_inst.debug("Sample rates per process (PID | Sample Size)\n" + msg)
 
     def calculate_sample_size(self, process_type: str):
-        if self.batch_size < 1:
-            raise ValueError("Batch size < 1 is not supported. Try a number big enough to be representative.")
+        if self.batch_size <= 1:
+            raise ValueError("Batch size <= 1 is not supported. Try a number big enough to be representative.")
 
         logger_inst.info(f"Calculating sample sizes for subprocesses of {process_type}")
-
         procs_by_pid = self.registry.by_type(process_type)
+
+        # check if requested process ideas exist in sampler
+        missing = [pid for pid in procs_by_pid.keys() if pid not in self.sub_sample_ratio]
+        if missing:
+            logger_inst.warning(f"requested pids {missing} are not within the sampler and get dummy weight of 1")
+
         weights_by_pid = {
             pid: proc.weights_statistics.normalization_whole_sum.item() for pid, proc in procs_by_pid.items()
         }
