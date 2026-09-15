@@ -7,6 +7,7 @@ from .optimizer_config import OptimizerConfig
 from .record_config import RecordConfig
 from .scheduler_config import SchedulerConfig
 from .training_config import TrainingConfig
+from .sampler_config import SamplerConfig
 
 __all__ = [
     "BinningConfig",
@@ -18,4 +19,5 @@ __all__ = [
     "OptimizerConfig",
     "SchedulerConfig",
     "RecordConfig",
+    "SamplerConfig",
 ]

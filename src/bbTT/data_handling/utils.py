@@ -103,7 +103,27 @@ def find_datasets(dataset_patterns: list[str], year_patterns: list[str], *, file
             if dataset not in merged_over_era_data:
                 merged_over_era_data[dataset] = []
             merged_over_era_data[dataset].extend(files)
+
     return merged_over_era_data
+
+@functools.lru_cache(maxsize=None)
+def cached_find_datasets(
+    dataset_pattern: tuple[str, ...],
+    year_pattern: tuple[str, ...],
+    file_type: str = "root",
+) -> tuple[str, ...]:
+    """
+    Memoized wrapper around the expensive `find_datasets` call.
+
+    `DataConfig` is often instantiated more than once (e.g. once per module that imports it).
+    Each time re-triggering a full dataset lookup, which take time.
+    Cache prevents this.
+
+    Returns:
+        tuple[str, ...]: dataset file paths (tuple, not list, so the result stays hashable/cacheable).
+    """
+    return find_datasets(dataset_pattern, year_patterns=year_pattern, file_type=file_type, verbose=False)
+
 
 def struct_to_group_tensor(arr: np.typing.NDArray, fields: tuple[str], dtype: torch.dtype=torch.float32):
     """

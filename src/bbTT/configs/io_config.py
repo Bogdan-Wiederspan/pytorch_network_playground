@@ -8,14 +8,13 @@ from dataclasses import dataclass, field
 from string import Formatter
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
-from bbTT.data_handling.utils import find_datasets
+from bbTT.data_handling.utils import cached_find_datasets
 
 ERAS_CHOICE = Literal["22pre", "22post", "23pre", "23post", "24"]
 
 
 @dataclass
 class DataConfig:
-    # changes in this config will create a NEW hash of the data
     target_map: Dict[str, int] = field(default_factory=lambda: {
         "hh": 0, "tt": 1, "dy": 2
         }) # node: index
@@ -36,7 +35,7 @@ class DataConfig:
         "httfatjet_e", "httfatjet_px", "httfatjet_py", "httfatjet_pz",
         "nu1_px", "nu1_py", "nu1_pz",
         "nu2_px", "nu2_py", "nu2_pz",
-    )
+    ) # features for the standardization layer path
 
     categorical_features: Tuple[str] = (
         "pair_type",
@@ -47,7 +46,7 @@ class DataConfig:
         "vis_tau2_charge",
         "has_jet_pair",
         "has_fatjet",
-    )
+    ) # features for the embedding path
 
     expected_embedding_inputs: Dict[str, List[Any]] = field(default_factory=lambda: {
         "pair_type": [0, 1, 2],  # see mapping below
@@ -57,9 +56,9 @@ class DataConfig:
         "vis_tau2_charge": [-1, 1],
         "has_fatjet": [0, 1],  # whether a selected fatjet is present
         "has_jet_pair": [0, 1],  # whether two or more jets are present
-        "year_flag": [0, 1, 2, 3, 4, 5, 6, 7], # 0: 2016APV, 1: 2016, 2: 2017, 3: 2018, 4: 2022preEE, 5: 2022postEE, 6: 2023pre, 7: 2023post #noqa
+        "year_flag": [0, 1, 2, 3, 4, 5, 6, 7, 8], # 0: 2016APV, 1: 2016, 2: 2017, 3: 2018, 4: 2022preEE, 5: 2022postEE, 6: 2023pre, 7: 2023post #noqa
         "channel_id": [1, 2, 3],
-    })
+    }) # expected inputs for the embedding, raises an error when a wrong input exist
 
     dataset_pattern: Tuple[str] = (
         "dy_*",
@@ -68,46 +67,43 @@ class DataConfig:
         "tt_*",
         "hh_ggf_hbb_htt_kl1_kt1*",
         # "hh_ggf_hbb_htt_kl0_kt1*",
-        )
+        ) # pattern to find datasets
 
-    eras: Tuple[ERAS_CHOICE] = ("22pre",)
+    eras: Tuple[ERAS_CHOICE] = ("22pre",) # ERAS that are trained on. For each era a separate cache is created
 
-    flush_threshold: int = 1_000_000
+    flush_threshold: int = 1_000_000 # number of rows before a flush is initiated when creating the cache, reduce when memory issues are a problem
 
 
     datasets: Optional[List[str]] = field(init=False)
     cuts: Optional[Tuple[str]] = (
-        "({tau2_isolated} == 1)",
+        # "({tau2_isolated} == 1)", # exist only for <prod28
+        # "(({channel_id} == 1) | ({channel_id} == 2) | ({channel_id} == 3) )", # < prod 28
         "({leptons_os} == 1)",
         "(({channel_id} == 1) & ({num_taus_iso} >= 1) | ({channel_id} == 2) &  ({num_taus_iso} >= 1)| ({channel_id} == 3) &  ({num_taus_iso} >= 1))",
         "({vis_tau1_charge} == 1) | ({vis_tau1_charge} == -1)",
         "({vis_tau2_charge} == 1) | ({vis_tau2_charge} == -1)",
         "({vbf_dnn_moe_hh_vbf} < 0.5)",
-    )
-
-    # derived in __post_init__: cuts with placeholders resolved to actual array column names
+    ) # derived in __post_init__: cuts with placeholders resolved to actual array column names
 
     dummy_values: int = -99999 # value used to fill in missing values
     data_prefix: Optional[str] = field(init=False) # prefix for features, e.g. "res_dnn_pnet" or "reg_dnn_moe"
 
     # --- Helpers ---
-    def _prefix_map(self):
+    def _prefix_map(self) -> str:
+        """
+        Helper to get correct stem for data. Specific productions has sometimes name changes.
+        By default the 'default_stem' is used.
+
+        Returns:
+            str: Stem for used production line. By default 'reg_dnn_moe'.
+        """
         stem = pathlib.Path(os.environ["INPUT_DATA_DIR"]).stem
+        default_stem = "reg_dnn_moe"
         stem_to_prefix = {
         "prod14": "res_dnn_pnet",
-        "prod20_vbf": "reg_dnn_moe",
-        "prod20": "reg_dnn_moe",
         "prod19": "res_dnn_pnet",
-        "prod24" : "reg_dnn_moe",
-        "prod27_dyext" : "reg_dnn_moe",
         }
-        try:
-            return stem_to_prefix[stem]
-        except KeyError:
-            raise KeyError(
-                f"No feature prefix registered for INPUT_DATA_DIR stem: {stem}."
-                f" known stems: {sorted(stem_to_prefix)}"
-                )
+        return stem_to_prefix.get(stem, default_stem)
 
     def prefixed(self, string):
         """
@@ -250,4 +246,4 @@ class DataConfig:
     def __post_init__(self):
         # a dictionary of all files corresponding to a certain dataset
         self.data_prefix = self._prefix_map()
-        self.datasets = find_datasets(self.dataset_pattern, self.eras, file_type="root", verbose=False)
+        self.datasets = cached_find_datasets(self.dataset_pattern, self.eras, file_type="root")
