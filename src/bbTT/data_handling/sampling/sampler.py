@@ -88,10 +88,10 @@ class ProcessSampler(t_data.Sampler):
         batch_size: int = 1,
         sample_ratio: Optional[dict[str, float]] = None,
         sub_sample_ratio: Optional[dict[str, float]] = None,
-        min_size: int = 0,
         target_map: Optional[dict[str, int]] = None,
         weight_aggregator_inst=None,
         kind="training",
+        bs_allocator=None,
     ):
         """
         Args:
@@ -113,7 +113,8 @@ class ProcessSampler(t_data.Sampler):
         self.sub_sample_ratio = sub_sample_ratio or {}
         self.target_map = target_map or {"hh": 0, "tt": 1, "dy": 2}
         self.weights_aggregator_inst = weight_aggregator_inst
-        self.allocator = BatchSizeAllocator(min_size=min_size)
+        # self.allocator = BatchSizeAllocator(min_size=min_size)
+        self.allocator = bs_allocator
         self.kind = kind
 
     def add_process_instance(self, process: Process, randomize: bool = False):
@@ -148,11 +149,6 @@ class ProcessSampler(t_data.Sampler):
 
         logger_inst.info(f"Calculating sample sizes for subprocesses of {process_type}")
         procs_by_pid = self.registry.by_type(process_type)
-
-        # check if requested process ideas exist in sampler
-        missing = [pid for pid in procs_by_pid.keys() if pid not in self.sub_sample_ratio]
-        if missing:
-            logger_inst.warning(f"requested pids {missing} are not within the sampler and get dummy weight of 1")
 
         weights_by_pid = {
             pid: proc.weights_statistics.normalization_whole_sum.item() for pid, proc in procs_by_pid.items()
@@ -259,6 +255,22 @@ class ProcessSampler(t_data.Sampler):
             for batch in cursor.generator(sample_from, batch_size, device):
                 yield uid, batch
 
+    def missing_processes(self) -> bool:
+        """
+        Checks if all requested sub-samples actually are registed.
+        When mismatch exist stem a warning.
+
+        Returns (bool): True, if any requested sample is mising.
+        """
+
+        requested_sub_samples = set(self.sub_sample_ratio.keys())
+        # pid of all registered processes
+        registered_processes = set([pid[1] for pid in self.registry.all().keys()])
+        # check if requested process ideas exist in sampler
+        missing = sorted(requested_sub_samples - registered_processes)
+        if missing:
+            logger_inst.warning(f"requested pids {missing} are not within the sampler and get dummy weight of 1")
+        return bool(missing)
 
 def create_sampler(
     events: dict,
@@ -297,6 +309,9 @@ def create_sampler(
 
     sample_ratio = sample_ratio or {"dy": 0.25, "tt": 0.25, "hh": 0.5}
 
+    batch_strategy = init_strategy()
+    batch_size_allocator = BatchSizeAllocator(rounding=batch_strategy)
+
     process_sampler = ProcessSampler(
         batch_size=batch_size,
         min_size=min_size,
@@ -304,6 +319,7 @@ def create_sampler(
         target_map=target_map,
         weight_aggregator_inst=weight_aggregator_inst,
         sub_sample_ratio=sub_sample_ratio,
+        bs_allocator=batch_size_allocator
     )
 
     for uid in list(events.keys()):
@@ -333,6 +349,8 @@ def create_sampler(
         process_sampler.add_process_instance(process, randomize=True)
 
     if train:
+        process_sampler.missing_processes()
+
         for process_type in process_sampler.registry.process_types:
             process_sampler.calculate_sample_size(process_type=process_type)
 

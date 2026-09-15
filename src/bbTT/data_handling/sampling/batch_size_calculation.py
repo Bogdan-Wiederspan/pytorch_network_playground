@@ -1,7 +1,13 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import torch
 
+if TYPE_CHECKING:
+    from bbTT.data_handling.sampling.sample_stategy import RoundingStrategy
 
-class BatchSizeAllocator:
+class BatchSizeAllocatorOld:
     """
     Encapsulates the largest-remainder-style rounding algorithm used to split a
     sub-batch size across process ids proportional to their normalization weight,
@@ -63,4 +69,59 @@ class BatchSizeAllocator:
         floored[above_indices[0]] -= remainder
 
         sizes = {pid: n.item() for pid, n in zip(pids, floored)}
+        return sizes, relative_weights
+
+
+class BatchSizeAllocator:
+    """
+    Splits a sub-batch size across process ids proportional to their
+    normalization weight. The rounding behaviour is pluggable via
+    RoundingStrategy.
+    """
+
+    def __init__(self, rounding: RoundingStrategy):
+        self.rounding = rounding
+
+    def allocate(
+        self,
+        weights_by_pid: dict[str, float],
+        sub_sample_ratio: dict[str, float],
+        sub_batch_size: int,
+        sample_ratio_for_type: float,
+        generator: torch.Generator = None,
+    ) -> tuple[dict[str, int], dict[str, float]]:
+        """
+        Args:
+            weights_by_pid (dict[str, float]): Cross-section weight per process id.
+            sub_sample_ratio (dict[str, float]): Extra per-pid scale factor,
+                defaults to 1 if a pid is absent.
+            sub_batch_size (int): Events to allocate across all pids.
+            sample_ratio_for_type (float): Parent-level share this sub-batch
+                belongs to, folded into relative_weights.
+            generator (torch.Generator, optional): For reproducible draws;
+                ignored by deterministic strategies.
+
+        Returns:
+            sizes: process_id -> integer event count, summing exactly to sub_batch_size.
+            relative_weights: process_id -> relative contribution to the batch.
+        """
+        pids = list(weights_by_pid.keys())
+
+        # for oversampling certain processes raw weights are scaled
+        raw_weights = torch.tensor([
+            weights_by_pid[pid] * sub_sample_ratio.get(pid, 1) for pid in pids
+        ], dtype=torch.float32)
+        total_weight = raw_weights.sum()
+
+        # relative contribution to process
+        relative_weights = {
+            pid: (w / total_weight * sample_ratio_for_type).item()
+            for pid, w in zip(pids, raw_weights)
+        }
+
+        # normalize by total weights ensures consistent process family number
+        exact = sub_batch_size * raw_weights / total_weight
+        counts = self.rounding.round(exact, generator=generator)
+
+        sizes = {pid: n.item() for pid, n in zip(pids, counts)}
         return sizes, relative_weights
