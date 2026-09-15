@@ -67,8 +67,8 @@ class ParserBuilder():
             "--add_activation",
             required=False,
             help="If value is given, get activation function and add at end of network",
-            default=None,
-            choices=["sigmoid", "softmax", None],
+            default="None",
+            choices=["sigmoid", "softmax", "None"],
         )
 
     def add_save_path(self):

@@ -1,5 +1,5 @@
+from matplotlib.axes import Axes
 from matplotlib.figure import Figure
-from matplotlib.pyplot import Axes
 from sklearn.metrics import ConfusionMatrixDisplay
 
 from bbTT.monitoring.metrics.classification.matrix import confusion_matrix
@@ -14,24 +14,31 @@ from bbTT.monitoring.register import register_plot
 def plot_confusion_matrix(
     ctx,
     sample_weight=None,
-    normalized="true",
+    normalize="true",
     cmap="Blues",
     **kwargs
     ) -> tuple[Figure, Axes]:
     """
-    Calculates a Confusion Matrix using the truth *y_true* and prediction *y_pred* of the model.
-    The categories are defined using *target_map* and to weight give *sample_weight*. Styles are
-    changed using *cmap*.
+    Plot a confusion matrix comparing true and predicted classes.
+
+    Reads predictions, targets and class-name mapping directly from *ctx*, which are always present.
 
     Args:
-        y_true (torch.tensor): tensor of true labels
-        y_pred (torch.tensor): tensor of predicted labels
-        target_map (dict[int]): dict of class name to index mapping
-        sample_weight (torch.tensor, optional): tensor of weights on event basis. Defaults to None.
-        cmap (str, optional): style of the confusion matrix. Defaults to "Blues".
+        ctx (EvalContext): Must expose `predictions`, `targets`, and
+            `target_map` (dict mapping class name to index).
+        sample_weight (torch.Tensor, optional): Per-event weights used
+            when computing the confusion matrix. Defaults to None.
+        normalized (str, optional): Normalization mode forwarded to
+            sklearn's confusion_matrix as `normalize`. One of "true",
+            "pred", "all", or None. Defaults to "true".
+        cmap (str, optional): Colormap for the matrix display. Defaults
+            to "Blues".
+        **kwargs: May include "title" (str) to set a figure suptitle;
+            all other keys are ignored.
 
     Returns:
-        tuple: figure, axis, confusion matrix
+        tuple[matplotlib.figure.Figure, matplotlib.axes.Axes]: The
+        figure and axes containing the confusion matrix display.
     """
     y_pred = ctx.predictions
     y_true = ctx.targets
@@ -42,12 +49,16 @@ def plot_confusion_matrix(
         y_pred,
         labels=list(target_map.values()),
         sample_weight=sample_weight,
-        normalize=normalized,  # normalize to get probabilities
+        normalize=normalize,  # normalize to get probabilities
     )
     disp = ConfusionMatrixDisplay(
-        confusion_matrix=cm, display_labels=list(target_map.keys()),
+        confusion_matrix=cm,
+        display_labels=list(target_map.keys()),
     )
     disp.plot(cmap=cmap)
-    disp.figure_.suptitle(kwargs.pop("title", None))
+
+    title = kwargs.pop("title", None)
+    if title is not None:
+        disp.figure_.suptitle(title)
 
     return disp.figure_, disp.ax_

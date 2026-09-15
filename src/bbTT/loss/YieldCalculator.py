@@ -4,7 +4,7 @@ import torch
 class YieldCalculator:
     def __init__(self, sampler_inst, training=True):
         self.training = training
-        self.total_product_of_weights = sampler_inst.weights_aggregator_inst("product_of_weights", "whole_sum")
+        self.total_product_of_weights = sampler_inst.weights_aggregator_inst("product", "whole")
         self.eval_weights, self.total_process_weights = self._get_eval_weights(sampler_inst=sampler_inst)
 
     def _get_eval_weights(self, sampler_inst):
@@ -12,8 +12,9 @@ class YieldCalculator:
             return None, None
         # validation mode goes over whole validation phase space and not only over a batch
         # this information is stored in the sampler instance.
-        eval_weights = sampler_inst.weights_aggregator_inst("product_of_weights", "evaluation_sum")
-        total_process_weights = sampler_inst.weights_aggregator_inst("product_of_weights", "validation_sum")
+
+        eval_weights = sampler_inst.weights_aggregator_inst("product", "evaluation")
+        total_process_weights = sampler_inst.weights_aggregator_inst("product", "validation")
 
         return eval_weights, total_process_weights
 

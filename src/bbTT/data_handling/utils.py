@@ -1,31 +1,13 @@
+from __future__ import annotations
+
 import awkward as ak
 import numpy as np
 import numpy.lib.recfunctions as rfn
 import torch
 
 from bbTT.monitoring.logger.logger import get_logger
-
+import functools
 logger_inst = get_logger(__name__)
-
-def flatten_lists(nested_list):
-    for item in nested_list:
-        if isinstance(item, list):
-            yield from flatten_lists(item)
-        else:
-            yield item
-
-def depthCount(lst):
-    """Takes an arbitrarily nested list as a parameter and returns the maximum depth to which the list has nested sub-lists"""
-    if isinstance(lst, list):
-        return 1 + max(depthCount(x) for x in lst)
-    else:
-        return 0
-
-def pad_empty(array: ak.Array, target_length: int, pad_value: float = 0.0):
-    """Pads an akward array of lists to a specified target length with a given pad value."""
-    array = ak.pad_none(array, target_length, axis=1, clip=True)
-    array = ak.fill_none(array, pad_value)
-    return array
 
 def find_datasets(dataset_patterns: list[str], year_patterns: list[str], *, file_type: str="root", verbose=True):
     """
@@ -103,7 +85,27 @@ def find_datasets(dataset_patterns: list[str], year_patterns: list[str], *, file
             if dataset not in merged_over_era_data:
                 merged_over_era_data[dataset] = []
             merged_over_era_data[dataset].extend(files)
+
     return merged_over_era_data
+
+@functools.lru_cache(maxsize=None)
+def cached_find_datasets(
+    dataset_pattern: tuple[str, ...],
+    year_pattern: tuple[str, ...],
+    file_type: str = "root",
+) -> tuple[str, ...]:
+    """
+    Memoized wrapper around the expensive `find_datasets` call.
+
+    `DataConfig` is often instantiated more than once (e.g. once per module that imports it).
+    Each time re-triggering a full dataset lookup, which take time.
+    Cache prevents this.
+
+    Returns:
+        tuple[str, ...]: dataset file paths (tuple, not list, so the result stays hashable/cacheable).
+    """
+    return find_datasets(dataset_pattern, year_patterns=year_pattern, file_type=file_type, verbose=False)
+
 
 def struct_to_group_tensor(arr: np.typing.NDArray, fields: tuple[str], dtype: torch.dtype=torch.float32):
     """
