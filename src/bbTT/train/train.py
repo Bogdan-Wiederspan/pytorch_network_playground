@@ -80,24 +80,17 @@ def main(**kwargs):
 
         logger_inst.info("Start creation of Sampler")
 
-        _sampler_config = {
-            "weight_aggregator_inst" : weight_aggregator,
-            "target_map" : full_config.dataset_config.target_map,
-            "min_size" : full_config.training_config.min_events_in_batch,
-            "batch_size" : full_config.training_config.t_batch_size,
-            "sample_ratio" : full_config.training_config.sample_ratio,
-            "sub_sample_ratio" : full_config.training_config.sub_process_ratios,
-        }
-
         training_sampler = sampler.create_sampler(
             train_events,
             train=True,
-            **_sampler_config,
+            weight_aggregator_inst = weight_aggregator,
+            full_config = full_config,
         )
         validation_sampler = sampler.create_sampler(
             validation_events,
             train=False,
-            **_sampler_config,
+            weight_aggregator_inst = weight_aggregator,
+            full_config = full_config,
         )
 
         feature_statistic_cache = FeatureStatisticCache(
@@ -131,11 +124,12 @@ def main(**kwargs):
             training_loss_inst,
             validation_loss_inst
             )
+
         #----
         ### training loop
         #----
         logger_inst.info("Start training loop")
-        for current_iteration in range(1_000_000):
+        for current_iteration in range(full_config.training_config.max_train_iteration):
             batch_result = training_loop(
                 model_inst=model_inst,
                 monitor = training_monitor_inst,
@@ -143,7 +137,7 @@ def main(**kwargs):
                 loss_fn=training_loss_inst,
                 sampler=training_sampler,
                 device=DEVICE,
-                sample_columns=full_config.training_config.sample_attributes,
+                sample_columns=full_config.sampler_config.sample_attributes,
                 scheduler_handler_inst=scheduler_handler_inst,
                 optimizer_inst=optimizer_inst,
             )
@@ -175,7 +169,7 @@ def main(**kwargs):
                     kind_of_data= mode_eval_training,
                     loss_fn_inst=validation_loss_inst,
                     sampler_inst=training_sampler,
-                    sample_columns=full_config.training_config.sample_attributes,
+                    sample_columns=full_config.sampler_config.sample_attributes,
                     device=DEVICE,
                     )
                 # evaluation of validation
@@ -187,7 +181,7 @@ def main(**kwargs):
                     kind_of_data= mode_eval_validation,
                     loss_fn_inst=validation_loss_inst,
                     sampler_inst=validation_sampler,
-                    sample_columns=full_config.training_config.sample_attributes,
+                    sample_columns=full_config.sampler_config.sample_attributes,
                     device=DEVICE,
                     )
 

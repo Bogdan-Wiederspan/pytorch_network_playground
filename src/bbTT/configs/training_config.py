@@ -26,6 +26,7 @@ class TrainingConfig:
     train_ratio: float = 0.75 # split ratio for k-fold data into train and validation
     t_batch_size: int = 4096 * 2
     v_batch_size: int = -1 # validation batch size, -1 = full set,
+    max_training_iterations: int = 1_000_000 # number of iterations to train
 
     # Sampler Settings
 

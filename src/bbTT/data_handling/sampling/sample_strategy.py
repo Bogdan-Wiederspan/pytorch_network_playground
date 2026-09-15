@@ -14,7 +14,9 @@ class RoundingStrategy(ABC):
 
     @abstractmethod
     def round(
-        self, exact: torch.Tensor, generator: torch.Generator = None,
+        self,
+        exact: torch.Tensor,
+        generator: torch.Generator = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -42,7 +44,9 @@ class LargestRemainderRounding(RoundingStrategy):
         self.min_size = min_size
 
     def round(
-        self, exact: torch.Tensor, generator: torch.Generator = None,
+        self,
+        exact: torch.Tensor,
+        generator: torch.Generator = None,
     ) -> torch.Tensor:
         sub_batch_size = int(round(exact.sum().item()))
 
@@ -78,9 +82,7 @@ class StochasticRounding(RoundingStrategy):
         super().__init__()
         self.generator = generator
 
-    def round(
-        self, exact: torch.Tensor
-    ) -> torch.Tensor:
+    def round(self, exact: torch.Tensor) -> torch.Tensor:
         """
         Floors every share, then distributes the leftover slots by drawing from
         the fractional remainders.
@@ -101,16 +103,20 @@ class StochasticRounding(RoundingStrategy):
         if leftover > 0:
             frac = exact - counts.to(exact.dtype)
             picks = torch.multinomial(
-                frac, leftover, replacement=False, generator=self.generator,
+                frac,
+                leftover,
+                replacement=False,
+                generator=self.generator,
             )
             counts[picks] += 1
 
         return counts
 
+
 def init_strategy(sampler_config):
     cfg = sampler_config
     choice = cfg.sampler_strategy_choice
     if choice == "stochastic":
-        return StochasticRounding(**cfg.active_config)
+        return StochasticRounding(cfg.active_config.generator)
     elif (choice == "largest_remainder") or (choice == "old"):
-        return LargestRemainderRounding(**cfg.active_config)
+        return LargestRemainderRounding(cfg.active_config.min_size)

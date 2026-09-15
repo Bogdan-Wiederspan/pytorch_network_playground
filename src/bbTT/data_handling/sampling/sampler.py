@@ -1,13 +1,19 @@
+from __future__ import annotations
+
 from collections import defaultdict
-from typing import Iterable, Optional
+from typing import TYPE_CHECKING, Iterable, Optional
 
 import torch
 import torch.utils.data as t_data
 
 from bbTT.data_handling.sampling.batch_size_calculation import BatchSizeAllocator
 from bbTT.data_handling.sampling.process import Process, ProcessSampleCursor
+from bbTT.data_handling.sampling.sample_strategy import init_strategy
 from bbTT.monitoring.logger.logger import get_logger
 from bbTT.utils.utils import CPU_DEVICE
+
+if TYPE_CHECKING:
+    from bbTT.configs.full_config import FullConfig
 
 logger_inst = get_logger(__name__)
 
@@ -31,7 +37,7 @@ class ProcessRegistry:
     def __len__(self) -> int:
         return sum(len(p) for p in self._processes.values())
 
-    def __contains__(self, uid:tuple[str, str]) -> bool:
+    def __contains__(self, uid: tuple[str, str]) -> bool:
         return uid in self._processes
 
     def all(self) -> dict[tuple[str, str], Process]:
@@ -122,7 +128,7 @@ class ProcessSampler(t_data.Sampler):
         self.registry.add(process)
         self.cursors[process.uid] = ProcessSampleCursor(process, randomize=randomize)
 
-    def __contains__(self, uid:tuple[str, str]) -> bool:
+    def __contains__(self, uid: tuple[str, str]) -> bool:
         return uid in self.registry
 
     def __len__(self) -> int:
@@ -179,7 +185,6 @@ class ProcessSampler(t_data.Sampler):
         for uid, proc in self.registry.all().items():
             if uid in other:
                 proc.relative_weight = other.registry[uid].relative_weight
-
 
     # --- Sample Mechanism ---
     def sorted_pid_registry(self) -> Iterable[tuple[int, Process]]:
@@ -272,54 +277,39 @@ class ProcessSampler(t_data.Sampler):
             logger_inst.warning(f"requested pids {missing} are not within the sampler and get dummy weight of 1")
         return bool(missing)
 
+
 def create_sampler(
-    events: dict,
-    weight_aggregator_inst,
-    target_map: dict[str, int],
-    batch_size: int,
-    min_size: int = 1,
-    train: bool = True,
-    sample_ratio: Optional[dict[str, float]] = None,
-    sub_sample_ratio: Optional[dict[str, float]] = None,
+    events: dict, weight_aggregator_inst, full_config: FullConfig, train: bool = False
 ) -> ProcessSampler:
     """
     Build a ProcessSampler from raw per-uid event dicts, wrapping each into a Process
     and registering it. If train=True, also computes sample sizes for every process_type.
 
     Args:
-        events: dict[uid, dict] with keys "continuous", "categorical", "normalization_weights",
-            "product_of_weights", "evaluation_mask". Consumed (popped) during construction.
-        weight_aggregator_inst: WeightAggregator whose .weights[uid] gives a WeightStatistics
-            for each uid in events.
-        target_map: process_type -> target index.
-        batch_size: Passed through to ProcessSampler.
-        min_size: Minimum per-process sample size.
-        train: Whether this sampler is for training (controls sample-size calculation).
-        sample_ratio: process_type -> fraction of the batch.
-        sub_sample_ratio: process_id -> relative importance multiplier.
-
+        events: dict[uid, dict] with keys "continuous", "categorical", "normalization_weights", "product_of_weights", "evaluation_mask". Consumed (popped) during construction.
+        weight_aggregator_inst: WeightAggregator whose .weights[uid] gives a WeightStatistics for each uid in events.
+        full_config (FullConfig): FullConfig instance object. All necessary arguments a picked by the program itself.
+        train (bool): Is a training or validation sampler created.
     Returns:
         A populated ProcessSampler.
 
     Raises:
         ValueError: If events is empty.
     """
+
     if not events:
         raise ValueError("Sampler is not created due to feeding empty events")
 
-    sample_ratio = sample_ratio or {"dy": 0.25, "tt": 0.25, "hh": 0.5}
-
-    batch_strategy = init_strategy()
+    batch_strategy = init_strategy(sampler_config=full_config.sampler_config)
     batch_size_allocator = BatchSizeAllocator(rounding=batch_strategy)
 
     process_sampler = ProcessSampler(
-        batch_size=batch_size,
-        min_size=min_size,
-        sample_ratio=sample_ratio,
-        target_map=target_map,
+        batch_size=full_config.training_config.t_batch_size,
+        sample_ratio=(full_config.sampler_config.sample_ratio or {"dy": 0.25, "tt": 0.25, "hh": 0.5}),
+        target_map=full_config.dataset_config.target_map,
         weight_aggregator_inst=weight_aggregator_inst,
-        sub_sample_ratio=sub_sample_ratio,
-        bs_allocator=batch_size_allocator
+        sub_sample_ratio=full_config.sampler_config.sub_process_ratios,
+        bs_allocator=batch_size_allocator,
     )
 
     for uid in list(events.keys()):
@@ -331,8 +321,9 @@ def create_sampler(
         arrays = events.pop(uid)
 
         num_events = len(arrays["continuous"])
-        target_value = target_map[process_type]
-        target = torch.zeros(size=(num_events, len(target_map)), dtype=torch.float32)
+        target_value = full_config.dataset_config.target_map[process_type]
+        num_of_targets = len(full_config.dataset_config.target_map)
+        target = torch.zeros(size=(num_events, num_of_targets), dtype=torch.float32)
         target[:, target_value] = 1.0
 
         process = Process(

@@ -8,7 +8,7 @@ import uproot
 
 from bbTT.data_handling.cache import DataCacher
 from bbTT.data_handling.evaluation_phase_space import res1b_and_res2b_phase_space_mask
-from bbTT.data_handling.utils import depthCount, struct_to_group_tensor
+from bbTT.data_handling.utils import struct_to_group_tensor
 from bbTT.monitoring.logger.logger import get_logger
 
 logger_inst = get_logger(__name__)
@@ -32,12 +32,6 @@ def load_root_and_convert_to_numpy(
         ak.Array: awkward array containing all data from the root files
 
     """
-
-    d = files_path.split("/")[-2]
-    logger_inst.info(f"Start loading and conversion of root files: { d }")
-    if depthCount(branches) > 1 and branches is not None:
-        raise ValueError(f"branches must be a flat list but is {depthCount(branches)}-dimensional")
-
     # set of branches that are always extracted from root files
     meta_fields = {
         "process_id",  # filtering of sub-phase spaces
@@ -185,6 +179,7 @@ def stream_events_by_uid(
     num_events_per_dataset = {}
     num_events_per_pid = {}
     for dataset, files in dataset_paths.items():
+        logger_inst.info(f"Start loading and conversion of root files: { dataset }")
         events_bucket, num_events_of_files = load_root_and_convert_to_numpy(files, branches=columns, cut=cut)
         num_events_per_dataset[dataset] = num_events_of_files
         for events in events_bucket:
@@ -394,16 +389,15 @@ def load_and_merge_eras(config, cache: DataCacher) -> dict[str, torch.Tensor]:
 
     return all_events
 
-
-def get_data(config, save_cache=False, ignore_cache=False) -> dict[str, torch.Tensor]:
+def get_data(config=None, save_cache=False, ignore_cache=False, _hash=None) -> dict[str, torch.Tensor]:
     """
     Main function to combine all steps from loading root files to filter by
     process ids and finally convert to torch.
     """
-    cache = DataCacher(config=config)
-    create_era_caches(config=config, cache=cache, save_cache=save_cache, ignore_cache=ignore_cache)
-    return load_and_merge_eras(config=config, cache=cache)
-
+    if config is not None and _hash is None:
+        cache = DataCacher(config=config)
+        create_era_caches(config=config, cache=cache, save_cache=save_cache, ignore_cache=ignore_cache)
+        return load_and_merge_eras(config=config, cache=cache)
 
 def structure_datasets_after_eras(config):
     # {dataset: [paths to all mixed eras]}

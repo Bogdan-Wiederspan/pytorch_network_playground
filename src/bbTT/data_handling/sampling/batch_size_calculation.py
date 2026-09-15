@@ -5,7 +5,8 @@ from typing import TYPE_CHECKING
 import torch
 
 if TYPE_CHECKING:
-    from bbTT.data_handling.sampling.sample_stategy import RoundingStrategy
+    from bbTT.data_handling.sampling.sample_strategy import RoundingStrategy
+
 
 class BatchSizeAllocatorOld:
     """
@@ -31,15 +32,12 @@ class BatchSizeAllocatorOld:
             relative_weights: process_id -> relative contribution to the batch.
         """
         pids = list(weights_by_pid.keys())
-        raw_weights = torch.tensor([
-            weights_by_pid[pid] * sub_sample_ratio.get(pid, 1) for pid in pids
-        ], dtype=torch.float32)
+        raw_weights = torch.tensor(
+            [weights_by_pid[pid] * sub_sample_ratio.get(pid, 1) for pid in pids], dtype=torch.float32
+        )
         total_weight = raw_weights.sum()
 
-        relative_weights = {
-            pid: (w / total_weight * sample_ratio_for_type).item()
-            for pid, w in zip(pids, raw_weights)
-        }
+        relative_weights = {pid: (w / total_weight * sample_ratio_for_type).item() for pid, w in zip(pids, raw_weights)}
 
         ideal = sub_batch_size * raw_weights / total_weight
         floored = torch.maximum(torch.floor(ideal), torch.tensor(float(self.min_size)))
@@ -88,7 +86,6 @@ class BatchSizeAllocator:
         sub_sample_ratio: dict[str, float],
         sub_batch_size: int,
         sample_ratio_for_type: float,
-        generator: torch.Generator = None,
     ) -> tuple[dict[str, int], dict[str, float]]:
         """
         Args:
@@ -108,20 +105,17 @@ class BatchSizeAllocator:
         pids = list(weights_by_pid.keys())
 
         # for oversampling certain processes raw weights are scaled
-        raw_weights = torch.tensor([
-            weights_by_pid[pid] * sub_sample_ratio.get(pid, 1) for pid in pids
-        ], dtype=torch.float32)
+        raw_weights = torch.tensor(
+            [weights_by_pid[pid] * sub_sample_ratio.get(pid, 1) for pid in pids], dtype=torch.float32
+        )
         total_weight = raw_weights.sum()
 
         # relative contribution to process
-        relative_weights = {
-            pid: (w / total_weight * sample_ratio_for_type).item()
-            for pid, w in zip(pids, raw_weights)
-        }
+        relative_weights = {pid: (w / total_weight * sample_ratio_for_type).item() for pid, w in zip(pids, raw_weights)}
 
         # normalize by total weights ensures consistent process family number
         exact = sub_batch_size * raw_weights / total_weight
-        counts = self.rounding.round(exact, generator=generator)
+        counts = self.rounding.round(exact)
 
         sizes = {pid: n.item() for pid, n in zip(pids, counts)}
         return sizes, relative_weights
