@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import functools
+import os
+import pathlib
 
 from bbTT.monitoring.logger.logger import get_logger
 
@@ -21,8 +23,6 @@ def find_datasets(dataset_patterns: list[str], year_patterns: list[str], *, file
     Returns:
         dict: dictionary with dataset names as keys and list of file paths as values
     """
-    import os
-    import pathlib
 
     # precautions: get dir, wrap strings, set pattern
     logger_inst.info("Start searching for datasets:")
@@ -105,3 +105,30 @@ def cached_find_datasets(
         tuple[str, ...]: dataset file paths (tuple, not list, so the result stays hashable/cacheable).
     """
     return find_datasets(dataset_pattern, year_patterns=year_pattern, file_type=file_type, verbose=False)
+
+def structure_datasets_after_eras(config) -> dict[dict[str, list[str]]]:
+    """
+    Helper to divide dataset paths from glob to an era like structure:
+        Start: {dataset: [paths to all mixed eras]}
+        End: {era: {dataset: [paths]}}
+
+    Args:
+        config (DatasetConfig): Excepted to be a DatasetConfig Object
+
+    Returns:
+        dict[dict[str, list[str]]]: Dictionary with where dataset paths are sorted by era.
+    """
+    datasets = config.datasets
+
+    era_datasets = {era: {} for era in config.eras}
+    for dataset, paths in datasets.items():
+        for path in paths:
+            # path is ${INPUT_DATA_DIR}/ERA/dataset/path
+            parts = path.split("/")
+            era = parts[-3]
+
+            if dataset not in era_datasets[era]:
+                era_datasets[era][dataset] = []
+
+            era_datasets[era][dataset].append(path)
+    return era_datasets
