@@ -7,6 +7,15 @@ from bbTT.monitoring.logger.logger import get_logger
 logger_inst = get_logger(__name__)
 
 
+def filter_nan(array, features, uid):
+    event_mask = np.zeros(array.size, dtype=np.bool)
+    for f in features:
+        event_mask |= np.isnan(array[f])
+    num_filter = np.sum(event_mask)
+    if num_filter:
+        logger_inst.warning(f"Filtered {num_filter} Nan events from pid {uid}")
+    return array[~event_mask]
+
 def filter_and_convert_to_torch(events: np.array, continuous_features: list[str], categorical_features: list[str]):
     """
     Calculates final weights, extract masks aswell as extract all *continuous_features* and *categorical_features* from structured numpy array *events*.
@@ -19,21 +28,11 @@ def filter_and_convert_to_torch(events: np.array, continuous_features: list[str]
         dtype (torch.dtype, optional): Torch dtype. Defaults to None.
     """
 
-    def filter_nan_mask(array, features, uid):
-        event_mask = np.zeros(array.size, dtype=np.bool)
-        for f in features:
-            event_mask |= np.isnan(array[f])
-        num_filter = np.sum(event_mask)
-        if num_filter:
-            logger_inst.warning(f"Filtered {num_filter} Nan events from pid {uid}")
-        return ~event_mask
-
     for uid in list(events.keys()):
         arr = events.pop(uid)
 
         # filter all nans out, when result is empty array, skip whole uid
-        event_mask = filter_nan_mask(arr, continuous_features + categorical_features, uid)
-        arr = arr[event_mask]
+        arr = filter_nan(arr, continuous_features + categorical_features, uid)
 
         if arr.size == 0:
             logger_inst.warning(f"Skipping {uid} due to zero elements - which can happen after filtering nans")
@@ -69,11 +68,9 @@ def filter_and_convert_to_torch(events: np.array, continuous_features: list[str]
             "total_normalization_weights": sum_of_normalization_weights,
             "total_evaluation_weight": total_evaluation_weight,
             "evaluation_mask": final_mask,
-            "mask": {
-                "bjet": masks_tensor[:, 0],
-                "di_tau": masks_tensor[:, 1],
-                "di_bjet": masks_tensor[:, 2],
-            },
-        }
+            "mask_bjet": masks_tensor[:, 0],
+            "mask_di_tau": masks_tensor[:, 1],
+            "mask_di_bjet": masks_tensor[:, 2],
+            }
         del arr
     return events
