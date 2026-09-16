@@ -1,4 +1,3 @@
-
 import torch
 
 from bbTT.loss.YieldCalculator import YieldCalculator
@@ -6,10 +5,11 @@ from bbTT.monitoring import HookableMixin
 from bbTT.statistics.asimov import asimov, asimov_no_background, asimov_small_signal_and_no_background
 
 asimov_functions = {
-    "full" : asimov,
-    "no_unc" : asimov_no_background,
-    "approximation" : asimov_small_signal_and_no_background,
-    }
+    "full": asimov,
+    "no_unc": asimov_no_background,
+    "approximation": asimov_small_signal_and_no_background,
+}
+
 
 class SignalEfficiency(HookableMixin, torch.nn.Module):
     def __init__(
@@ -20,7 +20,7 @@ class SignalEfficiency(HookableMixin, torch.nn.Module):
         asimov_cfg=None,
         *args,
         **kwargs,
-        ) -> torch.tensor:
+    ) -> torch.tensor:
         """
         This function creates a loss using the Asimov Significance as introduced in https://arxiv.org/abs/1806.00322.
 
@@ -53,22 +53,22 @@ class SignalEfficiency(HookableMixin, torch.nn.Module):
         self.asimov_fn = asimov_functions[self.asimov_name]
         self.uncertainty = asimov_cfg.background_uncertainty
         self.asimov_epsilon = {
-            "eps_log" : asimov_cfg.epsilon_log,
-            "eps_sqrt" : asimov_cfg.epsilon_sqrt,
-            "eps" : asimov_cfg.epsilon_small_signal,
+            "eps_log": asimov_cfg.epsilon_log,
+            "eps_sqrt": asimov_cfg.epsilon_sqrt,
+            "eps": asimov_cfg.epsilon_small_signal,
         }
 
-        self.s_cls = self.target_map["hh"] # definition of signal class
+        self.s_cls = self.target_map["hh"]  # definition of signal class
         self.device = device
 
     def _uncertainty(self, b):
-        if self.uncertainty >=1:
+        if self.uncertainty >= 1:
             return self.uncertainty
         return self.uncertainty * b + 1
 
     def reduce_yield(self, event):
         # sum over all predictions in bins
-        return torch.sum(event, dim = -1)
+        return torch.sum(event, dim=-1)
 
     def stabilize(self, x, eps):
         return torch.clamp(x, min=eps)
@@ -85,27 +85,21 @@ class SignalEfficiency(HookableMixin, torch.nn.Module):
     def monitored_tensor_names(self):
         return ["signal_yield", "background_yield", "binned_significance"]
 
-
     def forward(self, prediction, truth, product_of_weights, evaluation_mask):
         # prediction can be of shape [bin, event, node] or [event, node]
         # only signal node is necessary
-        signal_node_prediction = prediction[..., self.s_cls] # can be 2D or 1D
-        signal_node_truth = truth[..., self.s_cls] # is 1D
+        signal_node_prediction = prediction[..., self.s_cls]  # can be 2D or 1D
+        signal_node_truth = truth[..., self.s_cls]  # is 1D
 
         # filter weights after signal and background only events
         s, b = self.yield_calculator(
             prediction=signal_node_prediction,
             truth=signal_node_truth,
             event_weight=product_of_weights,
-            evaluation_mask=evaluation_mask
+            evaluation_mask=evaluation_mask,
         )
 
-        significance = self.asimov_fn(
-            s=s,
-            b=b,
-            unc_b=self._uncertainty(b),
-            **self.asimov_epsilon
-            )
+        significance = self.asimov_fn(s=s, b=b, unc_b=self._uncertainty(b), **self.asimov_epsilon)
         self.monitor_tensor(name="binned_significance", tensor=significance)
         self.monitor_tensor(name="signal_yield", tensor=s)
         self.monitor_tensor(name="background_yield", tensor=b)

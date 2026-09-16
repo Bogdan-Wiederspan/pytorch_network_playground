@@ -7,6 +7,7 @@ class WeightedCrossEntropy(torch.nn.CrossEntropyLoss):
     """
     An extension to normal CrossEntropy enabling to add event weights and not only class specific weights.
     """
+
     def forward(self, prediction, target, event_weights: torch.Tensor | None = None):
         # save original reduction mode
         reduction = self.reduction

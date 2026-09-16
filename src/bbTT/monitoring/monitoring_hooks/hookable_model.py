@@ -10,10 +10,7 @@ class HookableModelMixin:
 
     def _hookable_layers(self) -> list[HookableMixin]:
         """Returns all Layers that have hooking mechanism inplace."""
-        return [
-            module for module in self.modules()
-            if isinstance(module, HookableMixin) and module is not self
-        ]
+        return [module for module in self.modules() if isinstance(module, HookableMixin) and module is not self]
 
     def register_monitor(self, monitor):
         """Wire monitor callbacks into every hookable sublayer. Call once at setup."""

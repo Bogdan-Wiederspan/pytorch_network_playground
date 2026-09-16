@@ -17,7 +17,7 @@ class RotatePhiLayer(torch.nn.Module):  # noqa: F811
         TODO proper docstring
         """
         super().__init__()
-        self.separator=separator
+        self.separator = separator
         self.ref_indices = torch.nn.Buffer(self.find_indices_of(columns, ref_phi_columns, True), persistent=True)
         self.rotate_indices = torch.nn.Buffer(self.find_indices_of(columns, rotate_columns, True), persistent=True)
         self.active = active
@@ -33,7 +33,6 @@ class RotatePhiLayer(torch.nn.Module):  # noqa: F811
         search_in: list[str],
         search_for: list[str],
         _expand: bool = False,
-
     ) -> torch.FloatTensor | None:
         if search_in is None or search_for is None:
             return None
@@ -73,6 +72,7 @@ class RotatePhiLayer(torch.nn.Module):  # noqa: F811
             torch.where(torch.logical_and(x == 0, y < 0), -(pi / 2), phis, out=phis)
             torch.where(torch.logical_and(x == 0, y == 0), torch.tensor(0), phis, out=phis)
             return phis + phi_shift
+
         return arctan2(x=x, y=y)
 
     def rotate_pt_to_phi(

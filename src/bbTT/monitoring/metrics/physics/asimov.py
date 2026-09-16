@@ -11,7 +11,9 @@ def _no_grad_asimov(fn):
     def wrapper(*args, **kwargs):
         with torch.no_grad():
             return fn(*args, **kwargs)
+
     return wrapper
+
 
 asimov_metric = _no_grad_asimov(_asimov.asimov)
 asimov_no_background_metric = _no_grad_asimov(_asimov.asimov_no_background)

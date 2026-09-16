@@ -15,7 +15,9 @@ from bbTT.monitoring.utils.tensor import make_plotable
     requires={"sample_attributes"},
     optional=True,
 )
-def plot_score_mass_sculpting(ctx: EvalContext, mass_column: str="mass_tautau", node: str="hh", bins: int=30, **kwargs) -> tuple[Figure, Axes]:
+def plot_score_mass_sculpting(
+    ctx: EvalContext, mass_column: str = "mass_tautau", node: str = "hh", bins: int = 30, **kwargs
+) -> tuple[Figure, Axes]:
     """
     Check whether the classifier score correlates with a mass variable, background only.
 

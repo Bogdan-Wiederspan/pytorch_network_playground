@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import torch
 
-from ..register import MODEL_REGISTRY
 from ..preprocessing import EmptyLayer
+from ..register import MODEL_REGISTRY
+
 
 class WeightNormalizedLinear(torch.nn.Linear):  # noqa: F811
-    def __init__(self ,*args, normalize=False, **kwargs):
+    def __init__(self, *args, normalize=False, **kwargs):
         """
         If normalize is set to True, Linear layer is replaced by weight normalized layer as described in https://arxiv.org/abs/1602.07868.
         If false, the layer is a normal linear layer.
@@ -20,17 +21,20 @@ class WeightNormalizedLinear(torch.nn.Linear):  # noqa: F811
         """
         super().__init__(*args, **kwargs)
         if normalize:
-            self = torch.nn.utils.parametrizations.weight_norm(self, name='weight', dim=0)
+            self = torch.nn.utils.parametrizations.weight_norm(self, name="weight", dim=0)
+
 
 def optional_layer(layer: torch.nn.Module | None) -> torch.nn.Module:
     if layer is None:
         return torch.nn.Identity()
     return layer
 
+
 def dummy_empty(condition, layer: torch.nn.Module | None) -> torch.nn.Module:
     if condition:
         return EmptyLayer()
     return layer
+
 
 def init_model(full_config):
     """

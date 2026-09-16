@@ -17,11 +17,9 @@ class MyKernel(BaseKernel):
         left_notch: float = 0.0,
         right_notch: float = 0.0,
         absolute_notch: bool = False,
-
         # --- kernel-specific parameters ---
         parameter1: float = ...,
         parameter2: float = ...,
-
         bin_height: float = 1.0,
         **kwargs,
     ):
@@ -94,9 +92,11 @@ class MyKernel(BaseKernel):
 
 class MyUnderflowKernel(UnderflowKernel, MyKernel):
     """One-sided version extending to -∞."""
+
     pass
 
 
 class MyOverflowKernel(OverflowKernel, MyKernel):
     """One-sided version extending to +∞."""
+
     pass

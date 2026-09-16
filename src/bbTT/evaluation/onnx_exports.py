@@ -96,7 +96,6 @@ def export_onnx(
         input_names=["cat", "cont"],
         output_names=["output"],
         # if opset is none highest available will be used
-
         opset_version=opset_version,
         do_constant_folding=True,
         dynamic_axes={

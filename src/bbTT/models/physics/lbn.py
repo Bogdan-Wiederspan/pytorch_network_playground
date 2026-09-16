@@ -12,9 +12,16 @@ class LBN(torch.nn.Module):
     """
 
     KNOWN_FEATURES = [
-        "e", "px", "py", "pz",
-        "pt", "eta", "phi", "m",
-        "pair_cos", "pair_dr",
+        "e",
+        "px",
+        "py",
+        "pz",
+        "pt",
+        "eta",
+        "phi",
+        "m",
+        "pair_cos",
+        "pair_dr",
     ]
 
     DEFAULT_FEATURES = ["e", "pt", "eta", "phi", "m", "pair_cos"]
@@ -30,7 +37,6 @@ class LBN(torch.nn.Module):
         eps: float = 1.0e-5,
     ) -> None:
         super().__init__()
-
 
         # validate features
         if features is None:
@@ -66,11 +72,7 @@ class LBN(torch.nn.Module):
         n_pair = sum(1 for f in self.features if f.startswith("pair_"))
 
         # compute output dimension
-        n = (
-            (
-            len(self.features) - n_pair) * self.M +
-            n_pair * (self.M**2 - self.M) // 2
-        )
+        n = (len(self.features) - n_pair) * self.M + n_pair * (self.M**2 - self.M) // 2
         return n
 
     @property
@@ -118,7 +120,7 @@ class LBN(torch.nn.Module):
         restframe_vecs = restframe_vecs.permute(0, 2, 1)
 
         # regularize vectors such that e > p
-        particle_p = torch.sum(particle_vecs[..., PX:]**2, dim=-1)**0.5  # (B, M)
+        particle_p = torch.sum(particle_vecs[..., PX:] ** 2, dim=-1) ** 0.5  # (B, M)
         # avoid in-place modifications which break autograd when tensors are used in multiple
         # places; construct a new tensor with the adjusted energy component
         new_particle_E = torch.maximum(particle_vecs[..., E], particle_p + self.eps)
@@ -127,7 +129,7 @@ class LBN(torch.nn.Module):
             dim=-1,
         )
 
-        restframe_p = torch.sum(restframe_vecs[..., PX:]**2, dim=-1)**0.5  # (B, M)
+        restframe_p = torch.sum(restframe_vecs[..., PX:] ** 2, dim=-1) ** 0.5  # (B, M)
         new_restframe_E = torch.maximum(restframe_vecs[..., E], restframe_p + self.eps)
         restframe_vecs = torch.stack(
             [new_restframe_E, restframe_vecs[..., PX], restframe_vecs[..., PY], restframe_vecs[..., PZ]],
@@ -135,8 +137,8 @@ class LBN(torch.nn.Module):
         )
 
         # create boost objects
-        restframe_m = (restframe_vecs[..., E]**2 - restframe_p**2)**0.5  # (B, M)
-        gamma = restframe_vecs[..., E] / (restframe_m + self.eps) # (B, M)
+        restframe_m = (restframe_vecs[..., E] ** 2 - restframe_p**2) ** 0.5  # (B, M)
+        gamma = restframe_vecs[..., E] / (restframe_m + self.eps)  # (B, M)
         beta = restframe_p / restframe_vecs[..., E]  # (B, M)
         beta_vecs = restframe_vecs[..., PX:] / restframe_vecs[..., E, None]  # (B, M, 3)
         n_vecs = beta_vecs / beta[..., None]  # (B, M, 3)
@@ -144,9 +146,9 @@ class LBN(torch.nn.Module):
 
         # build Lambda
         Lambda = self.I4 + (
-            (self.U + gamma[..., None, None]) *
-            (self.U1 * beta[..., None, None] - self.U) *
-            (e_vecs[..., None] * e_vecs[..., None, :])
+            (self.U + gamma[..., None, None])
+            * (self.U1 * beta[..., None, None] - self.U)
+            * (e_vecs[..., None] * e_vecs[..., None, :])
         )  # (B, M, 4, 4)
 
         # apply boosting
@@ -157,6 +159,7 @@ class LBN(torch.nn.Module):
 
         # cached feature provision
         cache = {}
+
         def get(feature: str) -> torch.Tensor:
             # check cache first
             if feature in cache:
@@ -172,27 +175,26 @@ class LBN(torch.nn.Module):
                 return boosted_vecs[..., PZ]
             # cached  access
             if feature == "pt2":
-                f = get("px")**2 + get("py")**2
+                f = get("px") ** 2 + get("py") ** 2
             elif feature == "pt":
-                f = get("pt2")**0.5
+                f = get("pt2") ** 0.5
             elif feature == "p2":
-                f = get("pt2") + get("pz")**2
+                f = get("pt2") + get("pz") ** 2
             elif feature == "p":
-                f = get("p2")**0.5
+                f = get("p2") ** 0.5
             elif feature == "eta":
                 # clamp when near -1 or 1
-                ratio = torch.clip(get("pz") / get("p"), min = -1 + self.eps, max = 1 - self.eps)
+                ratio = torch.clip(get("pz") / get("p"), min=-1 + self.eps, max=1 - self.eps)
                 f = torch.atanh(ratio)
             elif feature == "phi":
                 f = torch.atan2(get("py"), get("px"))
             elif feature == "m":
-                f = (torch.maximum(get("e")**2, get("p2")) - get("p"))**0.5
+                f = (torch.maximum(get("e") ** 2, get("p2")) - get("p")) ** 0.5
             elif feature == "pair_cos":
                 boosted_pvecs = boosted_vecs[..., PX:]  # (B, M, 3)
                 boosted_p = get("p")
                 f = (
-                    (boosted_pvecs @ boosted_pvecs.transpose(1, 2)) /
-                    (boosted_p[..., None] @ boosted_p[:, None, :])
+                    (boosted_pvecs @ boosted_pvecs.transpose(1, 2)) / (boosted_p[..., None] @ boosted_p[:, None, :])
                 ).flatten(start_dim=1)[..., self.lower_tril_indices]  # (B, (M**2-M)/2)
             elif feature == "pair_dr":
                 boosted_phi = get("phi")
@@ -202,7 +204,7 @@ class LBN(torch.nn.Module):
                 boosted_dphi = torch.where(boosted_dphi > torch.pi, 2 * torch.pi - boosted_dphi, boosted_dphi)
                 boosted_deta = boosted_eta[..., None] - boosted_eta[:, None, :]  # (B, M, M)
                 boosted_deta = boosted_deta.flatten(start_dim=1)[..., self.lower_tril_indices]  # (B, (M**2-M)/2)
-                f = (boosted_dphi**2 + boosted_deta**2)**0.5
+                f = (boosted_dphi**2 + boosted_deta**2) ** 0.5
             else:
                 raise RuntimeError(f"unknown feature '{feature}'")
             # cache and return

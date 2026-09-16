@@ -15,27 +15,65 @@ ERAS_CHOICE = Literal["22pre", "22post", "23pre", "23post", "24"]
 
 @dataclass
 class DataConfig:
-    target_map: Dict[str, int] = field(default_factory=lambda: {
-        "hh": 0, "tt": 1, "dy": 2
-        }) # node: index
+    target_map: Dict[str, int] = field(default_factory=lambda: {"hh": 0, "tt": 1, "dy": 2})  # node: index
 
     continuous_features: Tuple[str] = (
-        "met_px", "met_py",
-        "met_cov00", "met_cov01", "met_cov11",
-        "vis_tau1_px", "vis_tau1_py", "vis_tau1_pz", "vis_tau1_e",
-        "vis_tau2_px", "vis_tau2_py", "vis_tau2_pz", "vis_tau2_e",
-        "bjet1_px", "bjet1_py", "bjet1_pz", "bjet1_e",
-        "bjet1_tag_b", "bjet1_tag_cvsb", "bjet1_tag_cvsl", "bjet1_hhbtag",
-        "bjet2_px", "bjet2_py", "bjet2_pz", "bjet2_e",
-        "bjet2_tag_b", "bjet2_tag_cvsb", "bjet2_tag_cvsl", "bjet2_hhbtag",
-        "fatjet_px", "fatjet_py", "fatjet_pz", "fatjet_e",
-        "htt_e", "htt_px", "htt_py", "htt_pz",
-        "hbb_e", "hbb_px", "hbb_py", "hbb_pz",
-        "htthbb_e", "htthbb_px", "htthbb_py", "htthbb_pz",
-        "httfatjet_e", "httfatjet_px", "httfatjet_py", "httfatjet_pz",
-        "nu1_px", "nu1_py", "nu1_pz",
-        "nu2_px", "nu2_py", "nu2_pz",
-    ) # features for the standardization layer path
+        "met_px",
+        "met_py",
+        "met_cov00",
+        "met_cov01",
+        "met_cov11",
+        "vis_tau1_px",
+        "vis_tau1_py",
+        "vis_tau1_pz",
+        "vis_tau1_e",
+        "vis_tau2_px",
+        "vis_tau2_py",
+        "vis_tau2_pz",
+        "vis_tau2_e",
+        "bjet1_px",
+        "bjet1_py",
+        "bjet1_pz",
+        "bjet1_e",
+        "bjet1_tag_b",
+        "bjet1_tag_cvsb",
+        "bjet1_tag_cvsl",
+        "bjet1_hhbtag",
+        "bjet2_px",
+        "bjet2_py",
+        "bjet2_pz",
+        "bjet2_e",
+        "bjet2_tag_b",
+        "bjet2_tag_cvsb",
+        "bjet2_tag_cvsl",
+        "bjet2_hhbtag",
+        "fatjet_px",
+        "fatjet_py",
+        "fatjet_pz",
+        "fatjet_e",
+        "htt_e",
+        "htt_px",
+        "htt_py",
+        "htt_pz",
+        "hbb_e",
+        "hbb_px",
+        "hbb_py",
+        "hbb_pz",
+        "htthbb_e",
+        "htthbb_px",
+        "htthbb_py",
+        "htthbb_pz",
+        "httfatjet_e",
+        "httfatjet_px",
+        "httfatjet_py",
+        "httfatjet_pz",
+        "nu1_px",
+        "nu1_py",
+        "nu1_pz",
+        "nu2_px",
+        "nu2_py",
+        "nu2_pz",
+    )  # features for the standardization layer path
 
     categorical_features: Tuple[str] = (
         "pair_type",
@@ -46,47 +84,45 @@ class DataConfig:
         "vis_tau2_charge",
         "has_jet_pair",
         "has_fatjet",
-    ) # features for the embedding path
+    )  # features for the embedding path
 
-    expected_embedding_inputs: Dict[str, List[Any]] = field(default_factory=lambda: {
-        "pair_type": [0, 1, 2],  # see mapping below
-        "dm1": [-1, 0, 1, 10, 11],  # -1 for e/mu
-        "dm2": [0, 1, 10, 11],
-        "vis_tau1_charge": [-1, 1],
-        "vis_tau2_charge": [-1, 1],
-        "has_fatjet": [0, 1],  # whether a selected fatjet is present
-        "has_jet_pair": [0, 1],  # whether two or more jets are present
-        "year_flag": [0, 1, 2, 3, 4, 5, 6, 7, 8], # 0: 2016APV, 1: 2016, 2: 2017, 3: 2018, 4: 2022preEE, 5: 2022postEE, 6: 2023pre, 7: 2023post #noqa
-        "channel_id": [1, 2, 3],
-    }) # expected inputs for the embedding, raises an error when a wrong input exist
+    expected_embedding_inputs: Dict[str, List[Any]] = field(
+        default_factory=lambda: {
+            "pair_type": [0, 1, 2],  # see mapping below
+            "dm1": [-1, 0, 1, 10, 11],  # -1 for e/mu
+            "dm2": [0, 1, 10, 11],
+            "vis_tau1_charge": [-1, 1],
+            "vis_tau2_charge": [-1, 1],
+            "has_fatjet": [0, 1],  # whether a selected fatjet is present
+            "has_jet_pair": [0, 1],  # whether two or more jets are present
+            "year_flag": [0, 1, 2, 3, 4, 5, 6, 7, 8],  # noqa 0: 2016APV, 1: 2016, 2: 2017, 3: 2018, 4: 2022preEE, 5: 2022postEE, 6: 2023pre, 7: 2023post, 8: 24
+            "channel_id": [1, 2, 3],
+        }
+    )  # expected inputs for the embedding, raises an error when a wrong input exist
 
     dataset_pattern: Tuple[str] = (
         "dy_*",
-        # "dy_m50toinf_0j_amcatnlo",
-        # "tt_sl_powheg",
         "tt_*",
         "hh_ggf_hbb_htt_kl1_kt1*",
-        # "hh_ggf_hbb_htt_kl0_kt1*",
-        ) # pattern to find datasets
+    )  # pattern to find datasets
 
-    eras: Tuple[ERAS_CHOICE] = ("22pre",) # ERAS that are trained on. For each era a separate cache is created
+    eras: Tuple[ERAS_CHOICE] = ("22pre",)  # ERAS that are trained on. For each era a separate cache is created
 
-    flush_threshold: int = 1_000_000 # number of rows before a flush is initiated when creating the cache, reduce when memory issues are a problem
-
+    flush_threshold: int = 1_000_000  # number of rows before a flush is initiated when creating the cache, reduce when memory issues are a problem
 
     datasets: Optional[List[str]] = field(init=False)
     cuts: Optional[Tuple[str]] = (
         # "({tau2_isolated} == 1)", # exist only for <prod28
         # "(({channel_id} == 1) | ({channel_id} == 2) | ({channel_id} == 3) )", # < prod 28
         "({leptons_os} == 1)",
-        "(({channel_id} == 1) & ({num_taus_iso} >= 1) | ({channel_id} == 2) &  ({num_taus_iso} >= 1)| ({channel_id} == 3) &  ({num_taus_iso} >= 1))",
+        "(({channel_id} == 1) & ({num_taus_iso} >= 1) | ({channel_id} == 2) &  ({num_taus_iso} >= 1)| ({channel_id} == 3) &  ({num_taus_iso} >= 1))",  # noqa
         "({vis_tau1_charge} == 1) | ({vis_tau1_charge} == -1)",
         "({vis_tau2_charge} == 1) | ({vis_tau2_charge} == -1)",
         "({vbf_dnn_moe_hh_vbf} < 0.5)",
-    ) # derived in __post_init__: cuts with placeholders resolved to actual array column names
+    )  # derived in __post_init__: cuts with placeholders resolved to actual array column names
 
-    dummy_values: int = -99999 # value used to fill in missing values
-    data_prefix: Optional[str] = field(init=False) # prefix for features, e.g. "res_dnn_pnet" or "reg_dnn_moe"
+    dummy_values: int = -99999  # value used to fill in missing values
+    data_prefix: Optional[str] = field(init=False)  # prefix for features, e.g. "res_dnn_pnet" or "reg_dnn_moe"
 
     # --- Helpers ---
     def _prefix_map(self) -> str:
@@ -100,8 +136,8 @@ class DataConfig:
         stem = pathlib.Path(os.environ["INPUT_DATA_DIR"]).stem
         default_stem = "reg_dnn_moe"
         stem_to_prefix = {
-        "prod14": "res_dnn_pnet",
-        "prod19": "res_dnn_pnet",
+            "prod14": "res_dnn_pnet",
+            "prod19": "res_dnn_pnet",
         }
         return stem_to_prefix.get(stem, default_stem)
 
@@ -120,68 +156,68 @@ class DataConfig:
             "score_hh": "run3_dnn_moe_hh",
             "score_tt": "run3_dnn_moe_tt",
             # inputs used of normale network
-            "bjet1_e" : f"{self.data_prefix}_bjet1_e",
-            "bjet1_hhbtag" : f"{self.data_prefix}_bjet1_hhbtag",
-            "bjet1_px" : f"{self.data_prefix}_bjet1_px",
-            "bjet1_py" : f"{self.data_prefix}_bjet1_py",
-            "bjet1_pz" : f"{self.data_prefix}_bjet1_pz",
-            "bjet1_tag_b" : f"{self.data_prefix}_bjet1_tag_b",
-            "bjet1_tag_cvsb" : f"{self.data_prefix}_bjet1_tag_cvsb",
-            "bjet1_tag_cvsl" : f"{self.data_prefix}_bjet1_tag_cvsl",
-            "bjet2_e" : f"{self.data_prefix}_bjet2_e",
-            "bjet2_hhbtag" : f"{self.data_prefix}_bjet2_hhbtag",
-            "bjet2_px" : f"{self.data_prefix}_bjet2_px",
-            "bjet2_py" : f"{self.data_prefix}_bjet2_py",
-            "bjet2_pz" : f"{self.data_prefix}_bjet2_pz",
-            "bjet2_tag_b" : f"{self.data_prefix}_bjet2_tag_b",
-            "bjet2_tag_cvsb" : f"{self.data_prefix}_bjet2_tag_cvsb",
-            "bjet2_tag_cvsl" : f"{self.data_prefix}_bjet2_tag_cvsl",
-            "dm1" : f"{self.data_prefix}_dm1",
-            "dm2" : f"{self.data_prefix}_dm2",
-            "fatjet_e" : f"{self.data_prefix}_fatjet_e",
-            "fatjet_px" : f"{self.data_prefix}_fatjet_px",
-            "fatjet_py" : f"{self.data_prefix}_fatjet_py",
-            "fatjet_pz" : f"{self.data_prefix}_fatjet_pz",
-            "has_fatjet" : f"{self.data_prefix}_has_fatjet",
-            "has_jet_pair" : f"{self.data_prefix}_has_jet_pair",
-            "hbb_e" : f"{self.data_prefix}_hbb_e",
-            "hbb_px" : f"{self.data_prefix}_hbb_px",
-            "hbb_py" : f"{self.data_prefix}_hbb_py",
-            "hbb_pz" : f"{self.data_prefix}_hbb_pz",
-            "htt_e" : f"{self.data_prefix}_htt_e",
-            "htt_px" : f"{self.data_prefix}_htt_px",
-            "htt_py" : f"{self.data_prefix}_htt_py",
-            "htt_pz" : f"{self.data_prefix}_htt_pz",
-            "httfatjet_e" : f"{self.data_prefix}_httfatjet_e",
-            "httfatjet_px" : f"{self.data_prefix}_httfatjet_px",
-            "httfatjet_py" : f"{self.data_prefix}_httfatjet_py",
-            "httfatjet_pz" : f"{self.data_prefix}_httfatjet_pz",
-            "htthbb_e" : f"{self.data_prefix}_htthbb_e",
-            "htthbb_px" : f"{self.data_prefix}_htthbb_px",
-            "htthbb_py" : f"{self.data_prefix}_htthbb_py",
-            "htthbb_pz" : f"{self.data_prefix}_htthbb_pz",
-            "met_cov00" : f"{self.data_prefix}_met_cov00",
-            "met_cov01" : f"{self.data_prefix}_met_cov01",
-            "met_cov11" : f"{self.data_prefix}_met_cov11",
-            "met_px" : f"{self.data_prefix}_met_px",
-            "met_py" : f"{self.data_prefix}_met_py",
-            "nu1_px" : f"{self.data_prefix}_nu1_px",
-            "nu1_py" : f"{self.data_prefix}_nu1_py",
-            "nu1_pz" : f"{self.data_prefix}_nu1_pz",
-            "nu2_px" : f"{self.data_prefix}_nu2_px",
-            "nu2_py" : f"{self.data_prefix}_nu2_py",
-            "nu2_pz" : f"{self.data_prefix}_nu2_pz",
-            "pair_type" : f"{self.data_prefix}_pair_type",
-            "vis_tau1_charge" : f"{self.data_prefix}_vis_tau1_charge",
-            "vis_tau1_e" : f"{self.data_prefix}_vis_tau1_e",
-            "vis_tau1_px" : f"{self.data_prefix}_vis_tau1_px",
-            "vis_tau1_py" : f"{self.data_prefix}_vis_tau1_py",
-            "vis_tau1_pz" : f"{self.data_prefix}_vis_tau1_pz",
-            "vis_tau2_charge" : f"{self.data_prefix}_vis_tau2_charge",
-            "vis_tau2_e" : f"{self.data_prefix}_vis_tau2_e",
-            "vis_tau2_px" : f"{self.data_prefix}_vis_tau2_px",
-            "vis_tau2_py" : f"{self.data_prefix}_vis_tau2_py",
-            "vis_tau2_pz" : f"{self.data_prefix}_vis_tau2_pz",
+            "bjet1_e": f"{self.data_prefix}_bjet1_e",
+            "bjet1_hhbtag": f"{self.data_prefix}_bjet1_hhbtag",
+            "bjet1_px": f"{self.data_prefix}_bjet1_px",
+            "bjet1_py": f"{self.data_prefix}_bjet1_py",
+            "bjet1_pz": f"{self.data_prefix}_bjet1_pz",
+            "bjet1_tag_b": f"{self.data_prefix}_bjet1_tag_b",
+            "bjet1_tag_cvsb": f"{self.data_prefix}_bjet1_tag_cvsb",
+            "bjet1_tag_cvsl": f"{self.data_prefix}_bjet1_tag_cvsl",
+            "bjet2_e": f"{self.data_prefix}_bjet2_e",
+            "bjet2_hhbtag": f"{self.data_prefix}_bjet2_hhbtag",
+            "bjet2_px": f"{self.data_prefix}_bjet2_px",
+            "bjet2_py": f"{self.data_prefix}_bjet2_py",
+            "bjet2_pz": f"{self.data_prefix}_bjet2_pz",
+            "bjet2_tag_b": f"{self.data_prefix}_bjet2_tag_b",
+            "bjet2_tag_cvsb": f"{self.data_prefix}_bjet2_tag_cvsb",
+            "bjet2_tag_cvsl": f"{self.data_prefix}_bjet2_tag_cvsl",
+            "dm1": f"{self.data_prefix}_dm1",
+            "dm2": f"{self.data_prefix}_dm2",
+            "fatjet_e": f"{self.data_prefix}_fatjet_e",
+            "fatjet_px": f"{self.data_prefix}_fatjet_px",
+            "fatjet_py": f"{self.data_prefix}_fatjet_py",
+            "fatjet_pz": f"{self.data_prefix}_fatjet_pz",
+            "has_fatjet": f"{self.data_prefix}_has_fatjet",
+            "has_jet_pair": f"{self.data_prefix}_has_jet_pair",
+            "hbb_e": f"{self.data_prefix}_hbb_e",
+            "hbb_px": f"{self.data_prefix}_hbb_px",
+            "hbb_py": f"{self.data_prefix}_hbb_py",
+            "hbb_pz": f"{self.data_prefix}_hbb_pz",
+            "htt_e": f"{self.data_prefix}_htt_e",
+            "htt_px": f"{self.data_prefix}_htt_px",
+            "htt_py": f"{self.data_prefix}_htt_py",
+            "htt_pz": f"{self.data_prefix}_htt_pz",
+            "httfatjet_e": f"{self.data_prefix}_httfatjet_e",
+            "httfatjet_px": f"{self.data_prefix}_httfatjet_px",
+            "httfatjet_py": f"{self.data_prefix}_httfatjet_py",
+            "httfatjet_pz": f"{self.data_prefix}_httfatjet_pz",
+            "htthbb_e": f"{self.data_prefix}_htthbb_e",
+            "htthbb_px": f"{self.data_prefix}_htthbb_px",
+            "htthbb_py": f"{self.data_prefix}_htthbb_py",
+            "htthbb_pz": f"{self.data_prefix}_htthbb_pz",
+            "met_cov00": f"{self.data_prefix}_met_cov00",
+            "met_cov01": f"{self.data_prefix}_met_cov01",
+            "met_cov11": f"{self.data_prefix}_met_cov11",
+            "met_px": f"{self.data_prefix}_met_px",
+            "met_py": f"{self.data_prefix}_met_py",
+            "nu1_px": f"{self.data_prefix}_nu1_px",
+            "nu1_py": f"{self.data_prefix}_nu1_py",
+            "nu1_pz": f"{self.data_prefix}_nu1_pz",
+            "nu2_px": f"{self.data_prefix}_nu2_px",
+            "nu2_py": f"{self.data_prefix}_nu2_py",
+            "nu2_pz": f"{self.data_prefix}_nu2_pz",
+            "pair_type": f"{self.data_prefix}_pair_type",
+            "vis_tau1_charge": f"{self.data_prefix}_vis_tau1_charge",
+            "vis_tau1_e": f"{self.data_prefix}_vis_tau1_e",
+            "vis_tau1_px": f"{self.data_prefix}_vis_tau1_px",
+            "vis_tau1_py": f"{self.data_prefix}_vis_tau1_py",
+            "vis_tau1_pz": f"{self.data_prefix}_vis_tau1_pz",
+            "vis_tau2_charge": f"{self.data_prefix}_vis_tau2_charge",
+            "vis_tau2_e": f"{self.data_prefix}_vis_tau2_e",
+            "vis_tau2_px": f"{self.data_prefix}_vis_tau2_px",
+            "vis_tau2_py": f"{self.data_prefix}_vis_tau2_py",
+            "vis_tau2_pz": f"{self.data_prefix}_vis_tau2_pz",
         }
 
     @property
@@ -241,7 +277,6 @@ class DataConfig:
         if era is None:
             return size
         return size[era]
-
 
     def __post_init__(self):
         # a dictionary of all files corresponding to a certain dataset

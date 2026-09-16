@@ -11,33 +11,39 @@ KERNEL_CHOICE = Literal["GaussianKernelV3", "GaussianKernelFinal", "Tanh"]
 
 # --- Binning functions and their corresponding configs
 
+
 @dataclass
-class LinearConfig():
+class LinearConfig:
     pass
 
-@dataclass
-class LogitConfig():
-    eps: float=1e-6
 
 @dataclass
-class TangentConfig():
-    shift: float=0.5
+class LogitConfig:
+    eps: float = 1e-6
+
 
 @dataclass
-class CubicConfig():
-    shift: float=0.5
-    min: float | None=None
-    max: float | None=None
-    stretching_factor: float| None=None
+class TangentConfig:
+    shift: float = 0.5
+
+
+@dataclass
+class CubicConfig:
+    shift: float = 0.5
+    min: float | None = None
+    max: float | None = None
+    stretching_factor: float | None = None
+
 
 BINNING_REGISTRY: dict[BINNING_CHOICE, tuple[Any, Any]] = {
-    "logit" : (LogitConfig, logit),
-    "tangent" : (TangentConfig, tangent),
-    "linear" : (LinearConfig, linspace),
-    "cubic" : (CubicConfig, cubic),
+    "logit": (LogitConfig, logit),
+    "tangent": (TangentConfig, tangent),
+    "linear": (LinearConfig, linspace),
+    "cubic": (CubicConfig, cubic),
 }
 
 # Kernel functions and their corresponding configs
+
 
 @dataclass
 class BinningConfig:
@@ -53,18 +59,18 @@ class BinningConfig:
     kernel_config: Dict[str, Dict[str, Any]] = field(
         default_factory=lambda: {
             "General": {
-                "left_notch": 0.2, # shift transition function towards bin center from left, cannot exceed half of bin width
-                "right_notch": 0.2, # shift transition function towards bin center from right
-                "bin_height" : 1, # bin height should stay 1 normally
-                "absolute_notch": False, # notches are
+                "left_notch": 0.2,  # shift transition function towards bin center from left, cannot exceed half of bin width
+                "right_notch": 0.2,  # shift transition function towards bin center from right
+                "bin_height": 1,  # bin height should stay 1 normally
+                "absolute_notch": False,  # notches are
             },
             "GaussianKernelFinal": {
-                "smoothing_width": 0.0, # width of gaussian where it goes from 100% to 10%
+                "smoothing_width": 0.0,  # width of gaussian where it goes from 100% to 10%
             },
             "Tanh": {
-                "eps" : 1e-3, # needs to be by default between 0 and 1
-                "full_width" : None, # full width in transformed space where function goes from 1-eps to eps
-            }
+                "eps": 1e-3,  # needs to be by default between 0 and 1
+                "full_width": None,  # full width in transformed space where function goes from 1-eps to eps
+            },
         }
     )
 

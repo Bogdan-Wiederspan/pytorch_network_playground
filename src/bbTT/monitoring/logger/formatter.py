@@ -12,6 +12,7 @@ class ColoredFormatter(logging.Formatter):
     Covers both, standard and custom case.
     Levels with not entry are colorless.
     """
+
     def __init__(self, fmt=None, datefmt=None, style="%", use_color=True, stream=None):
         super().__init__(fmt=fmt, datefmt=datefmt, style=style)
         stream = stream if stream is not None else sys.stderr

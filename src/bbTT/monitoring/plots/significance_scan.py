@@ -13,7 +13,9 @@ from bbTT.monitoring.register import register_plot
     requires=None,
     optional=False,
 )
-def plot_significance_scan(ctx: EvalContext, node: str="hh", n_thresholds: int=100, **kwargs) -> tuple[Figure, Axes]:
+def plot_significance_scan(
+    ctx: EvalContext, node: str = "hh", n_thresholds: int = 100, **kwargs
+) -> tuple[Figure, Axes]:
     """
     Plot Asimov significance as a function of a single moving score cut.
 
@@ -62,9 +64,13 @@ def plot_significance_scan(ctx: EvalContext, node: str="hh", n_thresholds: int=1
     ax.axvline(thresholds[best_idx].item(), color="black", linestyle="--", linewidth=1)
     ax.scatter([thresholds[best_idx].item()], [significances[best_idx].item()], color="black", zorder=5)
     ax.text(
-        0.97, 0.95,
+        0.97,
+        0.95,
         f"best cut = {thresholds[best_idx].item():.3f}\nZ = {significances[best_idx].item():.3f}",
-        transform=ax.transAxes, ha="right", va="top", fontsize=9,
+        transform=ax.transAxes,
+        ha="right",
+        va="top",
+        fontsize=9,
         bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
     )
 

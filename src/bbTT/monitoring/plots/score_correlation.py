@@ -48,11 +48,13 @@ def plot_score_correlation_matrix(ctx: EvalContext, **kwargs) -> tuple[Figure, A
     for i in range(len(node_names)):
         for j in range(len(node_names)):
             ax.text(
-                j, i, f"{corr_matrix[i, j]:.2f}",
+                j,
+                i,
+                f"{corr_matrix[i, j]:.2f}",
                 ha="center",
                 va="center",
                 color="white" if abs(corr_matrix[i, j]) > 0.5 else "black",
-                )
+            )
 
     fig.colorbar(im, ax=ax, label="Pearson correlation")
     ax.set_title(kwargs.pop("title", None) or "Output-node score correlation matrix")

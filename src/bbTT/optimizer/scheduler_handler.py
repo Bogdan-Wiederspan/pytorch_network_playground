@@ -1,23 +1,19 @@
 import torch
 
 
-class SchedulerHandler():
+class SchedulerHandler:
     def __init__(self, scheduler_inst, checkpoint_inst, logger_inst):
         self.scheduler_inst = scheduler_inst
         self.checkpoint_inst = checkpoint_inst
         self.logger_inst = logger_inst
-        self._needs_metric = isinstance(
-            scheduler_inst,
-            (torch.optim.lr_scheduler.ReduceLROnPlateau,)
-            )
-
+        self._needs_metric = isinstance(scheduler_inst, (torch.optim.lr_scheduler.ReduceLROnPlateau,))
 
     def step(
         self,
         model_inst: torch.nn.Module,
-        optimizer_inst : torch.optim.Optimizer,
-        metric: torch.Tensor=None,
-        ) -> bool:
+        optimizer_inst: torch.optim.Optimizer,
+        metric: torch.Tensor = None,
+    ) -> bool:
         """
         Call once per evaluation.
         There are two place where a step happens: Once per batch OR when a metric is evaluated.
@@ -44,7 +40,6 @@ class SchedulerHandler():
         if metric_given != self._needs_metric:
             return False
 
-
         # step for plateau scheduler is different
         previous_lr = optimizer_inst.param_groups[0]["lr"]
         if self._needs_metric:
@@ -65,23 +60,21 @@ class SchedulerHandler():
             )
         return True
 
-
     def _reload_after_lr_drop(
         self,
         model_inst: torch.nn.Module,
         optimizer_inst: torch.optim.Optimizer,
         previous_lr: torch.Tensor,
-        current_lr: torch.Tensor
-        ) -> bool:
+        current_lr: torch.Tensor,
+    ) -> bool:
         checkpoint = self.checkpoint_inst.last_checkpoint
 
         if checkpoint is None:
             return False
 
         self.logger_inst.info(
-            f"{previous_lr} -> {current_lr}" +
-            "\nReload model and optimizer from iteration"
-            f" {checkpoint['iteration']}")
+            f"{previous_lr} -> {current_lr}" + f"\nReload model and optimizer from iteration {checkpoint['iteration']}"
+        )
 
         model_inst.load_state_dict(checkpoint["model_state_dict"])
         optimizer_inst.load_state_dict(checkpoint["optimizer_state_dict"])

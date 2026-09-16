@@ -89,6 +89,7 @@ def _draw_weighted_prediction_hist(ax, transformed_prediction, targets, target_m
     lines, labels = add_number_legend(ax, "Weighted Prediction")
     ax.legend(lines, labels, fontsize="small", handlelength=1.5, labelspacing=0.3)
 
+
 def _draw_weighted_stacked_hist(ax, target_map, targets, predictions, event_weights, x_hist, signal_scale=1):
     """
     Draw log-scale weighted signal/background prediction histograms.
@@ -107,36 +108,36 @@ def _draw_weighted_stacked_hist(ax, target_map, targets, predictions, event_weig
     values = []
     weights = []
 
-    signal_mask = (targets[:, target_map.get("hh")] == 1)
+    signal_mask = targets[:, target_map.get("hh")] == 1
     s_predictions = predictions[signal_mask]
     s_weights = event_weights[signal_mask]
 
     for pidx in process_idx:
-        mask = (targets[:, pidx] == 1)
+        mask = targets[:, pidx] == 1
         weights.append(event_weights[mask])
         values.append(predictions[mask])
 
     signal_label = "signal" if signal_scale == 1.0 else f"signal (×{signal_scale:g})"
 
     ax.hist(
-            values,
-            bins=x_hist,
-            histtype="stepfilled",
-            stacked=True,
-            label=order_process,
-            weights=weights,
-            linewidth=4,
-            alpha=0.7,
-        )
+        values,
+        bins=x_hist,
+        histtype="stepfilled",
+        stacked=True,
+        label=order_process,
+        weights=weights,
+        linewidth=4,
+        alpha=0.7,
+    )
     ax.hist(
-            s_predictions,
-            bins=x_hist,
-            histtype="step",
-            label=signal_label,
-            weights=s_weights * signal_scale,
-            alpha=0.7,
-            color="blue"
-        )
+        s_predictions,
+        bins=x_hist,
+        histtype="step",
+        label=signal_label,
+        weights=s_weights * signal_scale,
+        alpha=0.7,
+        color="blue",
+    )
 
     ax.set_yscale("log")
     lines, labels = add_number_legend(ax, "Weighted Prediction", position=0)
@@ -212,7 +213,6 @@ def plot_kernels_monitor(
     binned_sig = ctx.get("monitored_tensor.binned_significance")
     total_sig = torch.sqrt(torch.sum(binned_sig**2))
     event_weights = ctx.event_weights.flatten()
-
 
     # get signal node and apply transform fn
     signal_idx = ctx.target_map["hh"]

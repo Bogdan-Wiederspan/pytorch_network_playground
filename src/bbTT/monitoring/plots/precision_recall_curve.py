@@ -14,7 +14,9 @@ from bbTT.monitoring.utils.tensor import make_plotable
     requires=None,
     optional=False,
 )
-def plot_precision_recall(ctx: EvalContext, sample_weight: torch.Tensor=None, labels: list[str]=None, colors: list[str]=None, **kwargs) -> tuple[Figure, Axes]:
+def plot_precision_recall(
+    ctx: EvalContext, sample_weight: torch.Tensor = None, labels: list[str] = None, colors: list[str] = None, **kwargs
+) -> tuple[Figure, Axes]:
     """
     Plot one-vs-rest precision-recall curves for each class.
 

@@ -8,7 +8,7 @@ class RoundingStrategy(ABC):
     Turns exact (non-integer) per-pid shares of a batch into integer counts
     summing exactly to the batch size.
 
-    Kept separate from BatchSizeAllocator so the two rounding behaviours can be
+    Kept separate from BatchSizeAllocator so the two rounding behaviors can be
     swapped without touching the weight computation they share.
     """
 
@@ -36,7 +36,7 @@ class LargestRemainderRounding(RoundingStrategy):
     resulting overflow back from the least-clamped pids.
 
     Deterministic and reproducible, but the minimum systematically
-    overrepresents any pid whose ideal share is below min_size — a pid at
+    overrepresented any pid whose ideal share is below min_size — a pid at
     0.2 always gets min_size, not 0.2 on average.
     """
 
@@ -91,7 +91,7 @@ class StochasticRounding(RoundingStrategy):
         the target sum, leaving at most (n_pids - 1) slots to distribute. Keeps
         E[count] exactly equal to the ideal share for every pid, which matters
         for a loss that is nonlinear in the summed background — a systematic
-        over- or underrepresentation biases it, sampling noise does not (in
+        over- or under representation biases it, sampling noise does not (in
         expectation).
         """
 

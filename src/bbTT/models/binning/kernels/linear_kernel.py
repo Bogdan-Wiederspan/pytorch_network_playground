@@ -88,9 +88,11 @@ class LinearKernel(BaseKernel):
 
 class LinearUnderflowKernel(UnderflowKernel, LinearKernel):
     """One-sided version extending to -∞."""
+
     pass
 
 
 class LinearOverflowKernel(OverflowKernel, LinearKernel):
     """One-sided version extending to +∞."""
+
     pass

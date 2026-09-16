@@ -30,19 +30,24 @@ def rebuild_dataclass_from_dict(full_cfg: dict[dict]) -> dataclasses.dataclass:
     # create sub-configs
     sub_dataclasses = {}
     for cls_cfg, sub_cfg in full_cfg.items():
-        sub_dataclasses[cls_cfg] = (dataclasses.make_dataclass(cls_cfg, [(k, type(v)) for k,v in sub_cfg.items()])(**sub_cfg))
+        sub_dataclasses[cls_cfg] = dataclasses.make_dataclass(cls_cfg, [(k, type(v)) for k, v in sub_cfg.items()])(
+            **sub_cfg
+        )
 
     # create full config that hosts all sub-configs
-    full_config = dataclasses.make_dataclass("full_config", [(dataclass, type(dataclass)) for dataclass in sub_dataclasses])(**sub_dataclasses)
+    full_config = dataclasses.make_dataclass(
+        "full_config", [(dataclass, type(dataclass)) for dataclass in sub_dataclasses]
+    )(**sub_dataclasses)
     return full_config
 
 
 def resolve_checkpoint_path(model, suffix=None):
     p = pathlib.Path(os.environ["MODELS_DIR"])
-    p = (p / model)
+    p = p / model
     if suffix is not None:
         p = p.with_suffix(suffix)
     return p
+
 
 def load_checkpoint(path):
     return torch.load(path, map_location=CPU_DEVICE, weights_only=False)
@@ -79,8 +84,8 @@ def rebuild_model_from_checkpoint(checkpoint: dict, cfg_dataclass: FullConfig) -
     # when instance is saved load this
     # otherwise rebuild model from module and class name and load state dict
     model_choice = cfg_dataclass.training_config.model_choice
-    model_cls = MODEL_REGISTRY[model_choice] # pick correct cls from registered models
-    model_inst = model_cls(cfg_dataclass) # create new instance with config
+    model_cls = MODEL_REGISTRY[model_choice]  # pick correct cls from registered models
+    model_inst = model_cls(cfg_dataclass)  # create new instance with config
     model_inst.load_state_dict(checkpoint["model_state_dict"])
     model_inst.eval()
     return model_inst

@@ -17,7 +17,7 @@ class EvalContext:
         global_step: int,
         mode: str,
         **kwargs,
-        ):
+    ):
         """
         Context Object is a manager to hold everything relevant for evaluation and monitoring.
         Since this is an evaluation object no gradients are required.
@@ -44,8 +44,8 @@ class EvalContext:
         self.target_map = target_map
         self.event_weights = event_weights.detach().cpu()
         # meta data
-        self.global_step = global_step # current batch iteration
-        self.mode = mode # batch, train oder valid, influences the meta tag
+        self.global_step = global_step  # current batch iteration
+        self.mode = mode  # batch, train oder valid, influences the meta tag
         self.optional_defaults = kwargs
 
         # dynamic features existence depending on model or plots
@@ -81,10 +81,7 @@ class EvalContext:
             return True
 
         if key.startswith("evaluation_state."):
-            return self._has_nested(
-                self.evaluation_state,
-                key.split(".")[1:]
-            )
+            return self._has_nested(self.evaluation_state, key.split(".")[1:])
 
         if key in self.optional_defaults:
             return True
@@ -92,24 +89,24 @@ class EvalContext:
         return False
 
     def _core_artifacts(self) -> dict[str, Any]:
-            """
-            Always-present artifacts, exposed under the same lookup protocol.
+        """
+        Always-present artifacts, exposed under the same lookup protocol.
 
-            Defined in one place so ``has``, ``get`` and ``list_registered`` cannot
-            drift apart — previously ``list_registered`` advertised these while
-            ``get`` rejected them.
+        Defined in one place so ``has``, ``get`` and ``list_registered`` cannot
+        drift apart — previously ``list_registered`` advertised these while
+        ``get`` rejected them.
 
-            Returns:
-                dict[str, Any]: Core artifacts keyed by name.
-            """
-            return {
-                "predictions": self.predictions,
-                "targets": self.targets,
-                "target_map": self.target_map,
-                "event_weights": self.event_weights,
-                "global_step": self.global_step,
-                "mode": self.mode,
-            }
+        Returns:
+            dict[str, Any]: Core artifacts keyed by name.
+        """
+        return {
+            "predictions": self.predictions,
+            "targets": self.targets,
+            "target_map": self.target_map,
+            "event_weights": self.event_weights,
+            "global_step": self.global_step,
+            "mode": self.mode,
+        }
 
     def _has_nested(self, obj, parts):
         for part in parts:
@@ -163,10 +160,7 @@ class EvalContext:
             return self.optional_defaults[key]
 
         if key.startswith("evaluation_state."):
-            return self._get_nested(
-                self.evaluation_state,
-                key.split(".")[1:]
-            )
+            return self._get_nested(self.evaluation_state, key.split(".")[1:])
         raise KeyError(key)
 
     def _get_nested(self, obj, parts):
@@ -202,7 +196,7 @@ class EvalContext:
             *self.features,
             *self.cache,
             *self.optional_defaults,
-            }
+        }
 
     def expand(self, pattern: str) -> list[str]:
         """
@@ -215,7 +209,4 @@ class EvalContext:
         if not any(c in pattern for c in ("*", "?", "[")):
             return [pattern]
 
-        return [
-            key for key in self.list_registered()
-            if fnmatch.fnmatch(key, pattern)
-        ]
+        return [key for key in self.list_registered() if fnmatch.fnmatch(key, pattern)]

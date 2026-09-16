@@ -2,12 +2,8 @@ import torch
 
 
 def asimov_small_signal_and_no_background(
-    s: torch.Tensor,
-    b: torch.Tensor,
-    eps: torch.Tensor=torch.as_tensor(0),
-    *args,
-    **kwargs
-    ) -> torch.Tensor:
+    s: torch.Tensor, b: torch.Tensor, eps: torch.Tensor = torch.as_tensor(0), *args, **kwargs
+) -> torch.Tensor:
     """
     Asimov Significance for the case when no background uncertainty is given AND signal is small relative to background.
     Approximation coming from https://arxiv.org/abs/1806.00322 eq. 3.3.
@@ -27,12 +23,8 @@ def asimov_small_signal_and_no_background(
 
 
 def asimov_no_background(
-    s: torch.tensor,
-    b: torch.tensor,
-    eps_log: torch.Tensor=torch.as_tensor(0),
-    *args,
-    **kwargs
-    ) -> torch.Tensor:
+    s: torch.tensor, b: torch.tensor, eps_log: torch.Tensor = torch.as_tensor(0), *args, **kwargs
+) -> torch.Tensor:
     """
     Asimov Significance for the case when background uncertainty is set to 0.
     Approximation coming from asimov for no background uncertainty: https://arxiv.org/abs/1806.00322 eq. 3.2
@@ -51,19 +43,10 @@ def asimov_no_background(
     """
     b_log = b + eps_log
     # b_log = b
-    return torch.sqrt(
-        2 * ((s  + b) * torch.log(1 + s / b_log) - s)
-        )
+    return torch.sqrt(2 * ((s + b) * torch.log(1 + s / b_log) - s))
 
 
-
-def asimov(
-    s: torch.Tensor,
-    b: torch.Tensor,
-    unc_b: torch.Tensor,
-    *args,
-    **kwargs
-    ) -> torch.Tensor:
+def asimov(s: torch.Tensor, b: torch.Tensor, unc_b: torch.Tensor, *args, **kwargs) -> torch.Tensor:
     """
     Full asimov formula with background uncertainty as described in https://arxiv.org/abs/1806.00322 eq. 3.1.
     This function is unstable for:

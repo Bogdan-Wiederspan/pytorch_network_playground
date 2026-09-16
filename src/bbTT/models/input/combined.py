@@ -29,6 +29,7 @@ class OptionalInputLayer(torch.nn.Module):  # noqa: F811
         )
         return x
 
+
 class InputLayer(torch.nn.Module):  # noqa: F811
     def __init__(
         self,
@@ -63,7 +64,8 @@ class InputLayer(torch.nn.Module):  # noqa: F811
                     embedding_dim=embedding_dim,
                     categories=categorical_inputs,
                     expected_categorical_inputs=expected_categorical_inputs,
-                    empty=empty)
+                    empty=empty,
+                )
             # otherwise ?
             elif category_dims:
                 self.embedding_layer = CatEmbeddingLayer(

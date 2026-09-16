@@ -3,7 +3,7 @@ import os
 import pathlib
 
 
-class ParserBuilder():
+class ParserBuilder:
     def __init__(self, *args, description=""):
         self.parser = argparse.ArgumentParser(description=description)
         self.build(args)
@@ -16,25 +16,25 @@ class ParserBuilder():
             dest="tensorboard_name",
             action="store",
             default=None,
-            help="Name of the tensorboard, if given, turns off generated name (default: None)"
-            )
+            help="Name of the tensorboard, if given, turns off generated name (default: None)",
+        )
 
     def add_cache(self):
         self.parser.add_argument(
-        "--ignore_cache",
-        "-ic",
-        action="store_true",
-        default=False,
-        help="Ignore cache when running the program (default: False)"
+            "--ignore_cache",
+            "-ic",
+            action="store_true",
+            default=False,
+            help="Ignore cache when running the program (default: False)",
         )
 
         self.parser.add_argument(
-        "--save-cache",
-        "-s",
-        dest="save_cache",
-        action="store_true",
-        default=True,
-        help="Save cache (default: False)"
+            "--save-cache",
+            "-s",
+            dest="save_cache",
+            action="store_true",
+            default=True,
+            help="Save cache (default: False)",
         )
 
     def add_load_checkpoint(self):
@@ -46,7 +46,7 @@ class ParserBuilder():
             type=pathlib.Path,
             required=True,
             action="store",
-            help="Path to model checkpoint to load, typically with .pt suffix"
+            help="Path to model checkpoint to load, typically with .pt suffix",
         )
 
         def parse_folds(value):
@@ -59,7 +59,7 @@ class ParserBuilder():
             required=True,
             default="0",
             type=parse_folds,
-            help="Comma separated list of folds respective test data."
+            help="Comma separated list of folds respective test data.",
         )
 
     def add_activation_fn(self):
@@ -90,11 +90,11 @@ class ParserBuilder():
             type=valid_output_path,
             required=True,
             help=(
-            """
+                """
             Path to destination of saved output scores.
             If absolute path is given a parental check is performed, else data is saved in EVALUATION_DIR.
             """
-            )
+            ),
         )
 
     def add_evaluate_choices(self):
@@ -114,10 +114,10 @@ class ParserBuilder():
             type=choices,
             required=True,
             help=(
-            """
+                """
             Comma separated list of choices one can have to evaluate the data.
             """
-            )
+            ),
         )
 
     def add_batching(self):
@@ -133,15 +133,16 @@ class ParserBuilder():
             type=valid_batch_size,
             required=True,
             help=(
-            """
+                """
             Batch Size used for event loop.
             """
-            )
+            ),
         )
 
     def add_num_threading(self):
         def valid_threads(value):
             import torch
+
             value = int(value)
             assert value >= 0, "num of threads can't be negative"
 
@@ -157,12 +158,11 @@ class ParserBuilder():
             type=valid_threads,
             required=False,
             help=(
-            """
+                """
             Number of threads for interops calculations. If threads is set 0 all existing threads are used.
             """
-            )
+            ),
         )
-
 
     def build(self, args):
         commands = [f"add_{arg}" for arg in args]

@@ -9,13 +9,14 @@ from bbTT.configs import (
     ModelConfig,
     OptimizerConfig,
     RecordConfig,
+    SamplerConfig,
     SchedulerConfig,
     TrainingConfig,
-    SamplerConfig,
 )
 from bbTT.monitoring.logger.logger import get_logger
 
 logger_inst = get_logger("Configs")
+
 
 @dataclass
 class FullConfig:
@@ -30,47 +31,39 @@ class FullConfig:
     record_config: RecordConfig = field(default_factory=RecordConfig)
     sampler_config: SamplerConfig = field(default_factory=SamplerConfig)
 
-
     def _compatibility_rules(self) -> list[tuple[Callable[[], bool], str]]:
         """Each rule: (is_violated, message). is_violated() returning True raises."""
         return [
             (
-                lambda: (
-                    self.optimizer_config.optimizer_choice == "sam"
-                    and self.training_config.training_fn != "sam"
-                    ),
-                f"When using Optimizer SAM, training_fn must be 'sam', "
-                f"currently: {self.training_config.training_fn!r}",
+                lambda: self.optimizer_config.optimizer_choice == "sam" and self.training_config.training_fn != "sam",
+                f"When using Optimizer SAM, training_fn must be 'sam', currently: {self.training_config.training_fn!r}",
             ),
             (
                 lambda: (
                     self.loss_config.loss_fn == "cross_entropy"
                     and self.training_config.training_fn != "cross_entropy"
                     and self.training_config.validation_fn != "cross_entropy"
-                    ),
+                ),
                 f"Cross Entropy Loss expects the correct choices of Loop, current choice is:"
                 f"training -> {self.training_config.training_fn}"
-                f"validation -> {self.training_config.validation_fn}"
-                ),
+                f"validation -> {self.training_config.validation_fn}",
+            ),
             (
                 lambda: (
                     self.loss_config.loss_fn == "signal_efficiency"
                     and self.training_config.training_fn != "signal_efficiency"
                     and self.training_config.validation_fn != "signal_efficiency"
-                    ),
+                ),
                 f"Cross Entropy Loss expects the correct choices of Loop, current choice is:"
                 f"training -> {self.training_config.training_fn}"
-                f"validation -> {self.training_config.validation_fn}"
-                ),
-
+                f"validation -> {self.training_config.validation_fn}",
+            ),
             # add more rules here, e.g.:
             # (
             #     lambda: self.binning_config.enable_binning and not self.model_building_config.enable_binning,
             #     "BinningConfig.enable_binning=True requires ModelConfig.enable_binning=True",
             # ),
         ]
-
-
 
     def __post_init__(self):
         num_violations = 0

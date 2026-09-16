@@ -14,14 +14,13 @@ class BinningLayer(HookableMixin, torch.nn.Module):
         self,
         num_bins: int,
         bounds: tuple[float],
-
-        binning_fn: callable, # like linspace or logspace to create initial edges
+        binning_fn: callable,  # like linspace or logspace to create initial edges
         binning_cfg,
-        kernel_map, # dict with mapping to bins factories
+        kernel_map,  # dict with mapping to bins factories
         kernel_cfg,
         *args,
-        **kwargs
-        ):
+        **kwargs,
+    ):
         """
         Creates *num_bins* kernel instances of *kernel_cls* with configuration defined in *kernel_cfg*.
         The initial edge are defined by a given binning function *binning_fn*.
@@ -48,13 +47,13 @@ class BinningLayer(HookableMixin, torch.nn.Module):
         # --- Geometry ---
         self.num_bins = num_bins
         self.original_bounds = bounds
-        self.bounds = bounds # after apply trans_fn
+        self.bounds = bounds  # after apply trans_fn
         self.is_transformed = False
 
         # --- Transformations ---
         self.binning_fn = binning_fn
         self.binning_cfg = binning_cfg
-        self.init_learnable_edges() # saves parameter as: relative_bin_width
+        self.init_learnable_edges()  # saves parameter as: relative_bin_width
 
         # --- Kernels ---
         self.kernel_map = kernel_map
@@ -88,7 +87,9 @@ class BinningLayer(HookableMixin, torch.nn.Module):
 
     def create_kernels(self):
         # kernel_cls is a dict of kernel pointers
-        edges = self.bin_intervals.detach() # kernels should NOT have any gradient behavior since they only act as ENCHANCER
+        edges = (
+            self.bin_intervals.detach()
+        )  # kernels should NOT have any gradient behavior since they only act as ENCHANCER
         kernels = []
         n_bins = len(edges)
         # --- creation of kernels
@@ -120,14 +121,10 @@ class BinningLayer(HookableMixin, torch.nn.Module):
         for bin_idx, kernel in enumerate(kernels):
             # set left cut
             if bin_idx > 0:
-                kernel.set_cuts(
-                left = kernels[bin_idx - 1].right_transition_coordinate
-            )
+                kernel.set_cuts(left=kernels[bin_idx - 1].right_transition_coordinate)
             # set right cut
             if bin_idx < n_bins - 1:
-                kernel.set_cuts(
-                right = kernels[bin_idx + 1].left_transition_coordinate
-                )
+                kernel.set_cuts(right=kernels[bin_idx + 1].left_transition_coordinate)
         return kernels
 
     # --- Geometry handling ---
@@ -152,7 +149,7 @@ class BinningLayer(HookableMixin, torch.nn.Module):
 
         right = self.lower_edge + torch.cumsum(width, dim=0)
         left = right - width
-        return torch.stack((left, right), dim = 1)
+        return torch.stack((left, right), dim=1)
 
     @property
     def bin_intervals(self):
@@ -183,14 +180,14 @@ class BinningLayer(HookableMixin, torch.nn.Module):
     def bin_edges(self):
         intervals = self.bin_intervals
         edges = [intervals[:, 0].reshape(-1, 1), intervals[-1, 1].reshape(-1, 1)]
-        return torch.flatten(torch.concatenate(edges, dim = 0))
+        return torch.flatten(torch.concatenate(edges, dim=0))
 
     @property
     def bin_edges_original(self):
         left, right = self.original_bounds
         return torch.linspace(left, right, self.num_bins + 1)
 
-    def _transform_bounds(self) -> tuple[torch.Tensor,torch.Tensor]:
+    def _transform_bounds(self) -> tuple[torch.Tensor, torch.Tensor]:
         """
         What are the current active bounds.
 
@@ -204,18 +201,14 @@ class BinningLayer(HookableMixin, torch.nn.Module):
         self.is_transformed = True
         return (
             self.binning_fn.forward(torch.as_tensor(self.original_bounds[0]), **self.binning_cfg),
-            self.binning_fn.forward(torch.as_tensor(self.original_bounds[1]), **self.binning_cfg)
+            self.binning_fn.forward(torch.as_tensor(self.original_bounds[1]), **self.binning_cfg),
         )
 
     def _create_initial_edges(self) -> torch.Tensor:
         """
         Creates and returns linspace edges in current transformed edge space.
         """
-        return torch.linspace(
-            self.lower_edge,
-            self.upper_edge,
-            self.num_bins + 1
-            )
+        return torch.linspace(self.lower_edge, self.upper_edge, self.num_bins + 1)
 
     def init_learnable_edges(self):
         """
@@ -229,20 +222,15 @@ class BinningLayer(HookableMixin, torch.nn.Module):
 
         self.relative_bin_width = torch.nn.Parameter(relative_width)
 
-        parametrize.register_parametrization(
-            self,
-            "relative_bin_width",
-            torch.nn.Softmax(dim=0)
-            )
+        parametrize.register_parametrization(self, "relative_bin_width", torch.nn.Softmax(dim=0))
 
     def create_evaluation_state(self) -> dict[str, Any]:
-            return {
-                "kernels": copy.deepcopy(self.kernels).cpu(),
-                "binning_fn": self.binning_fn,
-                "active_edges": self.bin_edges.detach().cpu(),
-                "original_edges": self.bin_edges_original.detach().cpu(),
-            }
-
+        return {
+            "kernels": copy.deepcopy(self.kernels).cpu(),
+            "binning_fn": self.binning_fn,
+            "active_edges": self.bin_edges.detach().cpu(),
+            "original_edges": self.bin_edges_original.detach().cpu(),
+        }
 
     def monitored_gradient_names(self):
         names = ["dnn_score", "binned_tensor"]
@@ -263,7 +251,7 @@ class BinningLayer(HookableMixin, torch.nn.Module):
             bin_weight = kernel(transformed_y)
             kernel_weights.append(bin_weight)
             bin_y = bin_weight * y
-            self.monitor_gradient(tensor=bin_y,name=f"weighted_dnn_score_bin_{bin_num}")
+            self.monitor_gradient(tensor=bin_y, name=f"weighted_dnn_score_bin_{bin_num}")
             weighted_bins_y.append(bin_y)
         output = torch.stack(weighted_bins_y, dim=0)
         self.monitor_gradient(tensor=y, name="dnn_score")
@@ -278,9 +266,9 @@ class BinningLayer(HookableMixin, torch.nn.Module):
         transformed_y = (self.binning_fn.forward(y, **self.binning_cfg)).detach()
 
         # normalize
-        lower_edge_ind = torch.bucketize(transformed_y, self.bin_edges, right=True)[:,0]
+        lower_edge_ind = torch.bucketize(transformed_y, self.bin_edges, right=True)[:, 0]
         _bins = self.binning_fn.inverse(self.bin_edges)
-        lower_bin_edge, upper_bin_edge = _bins[lower_edge_ind - 1].reshape(-1,1), _bins[lower_edge_ind].reshape(-1,1)
+        lower_bin_edge, upper_bin_edge = _bins[lower_edge_ind - 1].reshape(-1, 1), _bins[lower_edge_ind].reshape(-1, 1)
         normalized_y = (y - lower_bin_edge) / (upper_bin_edge - lower_bin_edge)
         # apply kernel weight
         for bin_num, kernel in enumerate(self.kernels):
@@ -291,11 +279,10 @@ class BinningLayer(HookableMixin, torch.nn.Module):
         output = torch.stack(weighted_bins_y, dim=0)
 
         self.monitor_gradient(tensor=y, name="dnn_score")
-        self.monitor_gradient(tensor=bin_y,name=f"weighted_dnn_score_bin_{bin_num}")
+        self.monitor_gradient(tensor=bin_y, name=f"weighted_dnn_score_bin_{bin_num}")
         self.monitor_tensor(tensor=kernel_weights, name="kernel_weights")
         self.monitor_gradient(tensor=output, name="binned_tensor")
         return output
-
 
     def forward(self, y):
         # y and not x due to y being an neural network output

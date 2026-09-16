@@ -9,14 +9,14 @@ class GaussianKernel(BaseKernel):
     def __init__(
         self,
         edges,
-        left_notch: float   = 0,
-        right_notch: float  = 0,
+        left_notch: float = 0,
+        right_notch: float = 0,
         smoothing_width: float = 0.1,
         abs_mode: bool = False,
         bin_height: float = 1,
         *args,
         **kwargs,
-        ):
+    ):
         """
         Kernel object that models a bin with smoothed edges.
         The lower and upper edge is contained in *edge*.
@@ -38,12 +38,14 @@ class GaussianKernel(BaseKernel):
         self.initial_lower_edge, self.initial_upper_edge = edges
         self.absolute_width = abs_mode
 
-        self._left_notch, self._right_notch, self._smoothing_width  = self.wrap_tensors(left_notch, right_notch, smoothing_width)
+        self._left_notch, self._right_notch, self._smoothing_width = self.wrap_tensors(
+            left_notch, right_notch, smoothing_width
+        )
 
         # calculate std for gaussian function based on gi
         self.std = self.sigma_for_given_width_at_percentage(self.smoothing_width, 0.1)
 
-        self.bin_height = bin_height # TODO USE THIS
+        self.bin_height = bin_height  # TODO USE THIS
         self.checks()
 
     # --- Geometry ---
@@ -75,8 +77,8 @@ class GaussianKernel(BaseKernel):
             torch.tensor: Sigma that correspond to given half_width and percentage
         """
         constants = {
-            0.5 : torch.tensor(2.35482), # 2 * torch.sqrt(2 * torch.log(2)) exact calculation
-            0.1 : torch.tensor(4.29193), # 2 * torch.sqrt(2 * torch.log(10)) exact calculation
+            0.5: torch.tensor(2.35482),  # 2 * torch.sqrt(2 * torch.log(2)) exact calculation
+            0.1: torch.tensor(4.29193),  # 2 * torch.sqrt(2 * torch.log(10)) exact calculation
         }
         return (2 * half_width) / constants[percentage]
 
@@ -112,8 +114,7 @@ class GaussianKernel(BaseKernel):
             torch.tensor: y-value of the gaussian.
         """
         x, center, smooth_std = self.wrap_tensors(x, center, self.std)
-        return torch.exp(-(1/2) * ((x - center) / (smooth_std))**2)
-
+        return torch.exp(-(1 / 2) * ((x - center) / (smooth_std)) ** 2)
 
     def left_transition_fn(self, x):
         left = self.left_transition_coordinate
@@ -123,8 +124,7 @@ class GaussianKernel(BaseKernel):
         right = self.right_transition_coordinate
         return self.gaussian(x, right)
 
-
-    def control_plot(self, x, x_ticks=(0,1,21), with_h_lines=False):
+    def control_plot(self, x, x_ticks=(0, 1, 21), with_h_lines=False):
         # helper plot to visualize the kernel
         fig, ax = super(self.control_plot(x, x_ticks))
 
@@ -141,7 +141,7 @@ class GaussianKernel(BaseKernel):
             ax.vlines([init_low, init_up], ymin=0, ymax=1, color="black", linestyles="-")
 
             # horizontal marking 10%
-            ax.hlines(0.1, 0, 1, color = "black", linestyles=":")
+            ax.hlines(0.1, 0, 1, color="black", linestyles=":")
 
         return fig, ax
 

@@ -19,11 +19,8 @@ class YieldCalculator:
         return eval_weights, total_process_weights
 
     def _compute_transfer_factor(
-        self,
-        event_weight: torch.Tensor,
-        evaluation_mask: dict[torch.Tensor],
-        is_signal: bool
-        ) -> torch.Tensor:
+        self, event_weight: torch.Tensor, evaluation_mask: dict[torch.Tensor], is_signal: bool
+    ) -> torch.Tensor:
         """
         Calculate the Transfer Factor which moves result from batch space to total evaluation space.
         Computation changes in training and evaluation mode.
@@ -41,8 +38,8 @@ class YieldCalculator:
         """
         if self.training:
             # when in trainings mode, calculate factors on batch base
-            eval_yield = torch.sum(event_weight * evaluation_mask) # term 3
-            batch_yield = torch.sum(event_weight) # term 2
+            eval_yield = torch.sum(event_weight * evaluation_mask)  # term 3
+            batch_yield = torch.sum(event_weight)  # term 2
         else:
             # for validation a batch cover whole validation space, not just a batch
             # these reduces the factors to constants, where s is hh and b is dy + tt factor
@@ -53,7 +50,7 @@ class YieldCalculator:
                 eval_yield = self.eval_weights["dy"] + self.eval_weights["tt"]
                 batch_yield = self.total_process_weights["dy"] + self.total_process_weights["tt"]
 
-        return eval_yield  / batch_yield
+        return eval_yield / batch_yield
 
     def compute_yield(
         self,
@@ -62,7 +59,7 @@ class YieldCalculator:
         event_weight: torch.Tensor,
         evaluation_mask: torch.Tensor,
         is_signal: bool,
-        ) -> torch.Tensor:
+    ) -> torch.Tensor:
         """
         Computes s or b yield depending on if *is_signal* is set true or false.
 
@@ -78,7 +75,7 @@ class YieldCalculator:
         """
 
         if is_signal:
-            selector =  truth
+            selector = truth
         else:
             selector = 1 - truth
 
@@ -86,9 +83,7 @@ class YieldCalculator:
         weighted_prediction = prediction * selected_weight
 
         transfer_factor = self._compute_transfer_factor(
-            event_weight = selected_weight,
-            evaluation_mask = evaluation_mask,
-            is_signal = is_signal
+            event_weight=selected_weight, evaluation_mask=evaluation_mask, is_signal=is_signal
         )
         reduced_prediction = weighted_prediction.sum(dim=-1)
         return transfer_factor * reduced_prediction
@@ -99,7 +94,7 @@ class YieldCalculator:
         truth: torch.Tensor,
         event_weight: torch.Tensor,
         evaluation_mask: torch.Tensor,
-        ) -> torch.Tensor:
+    ) -> torch.Tensor:
         return self.compute_yield(
             prediction=prediction,
             truth=truth,
@@ -114,7 +109,7 @@ class YieldCalculator:
         truth: torch.Tensor,
         event_weight: torch.Tensor,
         evaluation_mask: torch.Tensor,
-        ) -> torch.Tensor:
+    ) -> torch.Tensor:
         return self.compute_yield(
             prediction=prediction,
             truth=truth,

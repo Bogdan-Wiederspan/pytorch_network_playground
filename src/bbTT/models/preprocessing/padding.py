@@ -22,14 +22,8 @@ class PaddingLayer(torch.nn.Module):  # noqa: F811
         """
         super().__init__()
 
-        self.target_value = torch.nn.Buffer(
-            torch.tensor(target_value).to(torch.float32),
-            persistent=True
-            )
-        self.padding_value = torch.nn.Buffer(
-            torch.tensor(padding_value).to(torch.float32),
-            persistent=True
-            )
+        self.target_value = torch.nn.Buffer(torch.tensor(target_value).to(torch.float32), persistent=True)
+        self.padding_value = torch.nn.Buffer(torch.tensor(padding_value).to(torch.float32), persistent=True)
         self.target_dtype = target_dtype
         self.active = active
 

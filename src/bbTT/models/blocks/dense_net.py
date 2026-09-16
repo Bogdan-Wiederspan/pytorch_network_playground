@@ -12,12 +12,12 @@ class DenseNetBlock(torch.nn.Module):
         output_nodes,
         skip_connection_init=1.0,
         freeze_skip_connection=False,
-        activation_functions = "PReLu",
+        activation_functions="PReLu",
         eps=1e-5,
         normalize=False,
         *args,
         **kwargs,
-        ):
+    ):
         # TODO Docstring
         super().__init__(*args, **kwargs)
         self.input_dim = input_nodes
@@ -27,7 +27,7 @@ class DenseNetBlock(torch.nn.Module):
             output_nodes=output_nodes,
             activation_functions=activation_functions,
             normalize=normalize,
-            eps=eps
+            eps=eps,
         )
         self.skip_connection_amplifier = torch.nn.Parameter(torch.ones(1) * skip_connection_init)
         if freeze_skip_connection:
@@ -36,7 +36,7 @@ class DenseNetBlock(torch.nn.Module):
     def forward(self, x):
         _input = x * self.skip_connection_amplifier
         x = self.dense_block(x)
-        x = torch.concatenate((x, _input), dim = 1)
+        x = torch.concatenate((x, _input), dim=1)
         return x
 
 

@@ -9,12 +9,12 @@ class GaussianKernel(BaseKernel):
     def __init__(
         self,
         edge: tuple[torch.tensor],
-        left_notch: float  | None = None,
+        left_notch: float | None = None,
         right_notch: float | None = None,
         smoothing_width: float = 0.1,
-        bin_type = "normal",
+        bin_type="normal",
         bin_height: float = 1,
-        ):
+    ):
         """
         Kernel object that models a bin with smoothed edges.
         The lower and upper edge is contained in *edge*.
@@ -34,13 +34,15 @@ class GaussianKernel(BaseKernel):
 
         self.low, self.upper = edge
 
-        self._left_notch, self._right_notch, self._smoothing_width = self.wrap_tensors(left_notch, right_notch, smoothing_width)
+        self._left_notch, self._right_notch, self._smoothing_width = self.wrap_tensors(
+            left_notch, right_notch, smoothing_width
+        )
 
         # calculate std for gaussian function based on gi
         self.std = self.sigma_for_full_width_at_tenth_of_maximum(self.smoothing_width)
 
         self.bin_type = bin_type
-        self.bin_height = bin_height # TODO USE THIS
+        self.bin_height = bin_height  # TODO USE THIS
 
         self.checks()
 
@@ -63,11 +65,12 @@ class GaussianKernel(BaseKernel):
     def checks(self):
         # helper function to gather all assert checks
         init_variables = {
-            name: getattr(self,name)
-            for name in ("low", "upper", "smoothing_width", "left_notch", "right_notch")
-            }
+            name: getattr(self, name) for name in ("low", "upper", "smoothing_width", "left_notch", "right_notch")
+        }
 
-        assert self.bin_type in ("normal", "underflow", "overflow"), f"Bin type is {self.bin_type}, which is not supported"
+        assert self.bin_type in ("normal", "underflow", "overflow"), (
+            f"Bin type is {self.bin_type}, which is not supported"
+        )
 
         # everything should be tensors
         is_tensor = {name: torch.is_tensor(attribute) for name, attribute in (init_variables).items()}
@@ -76,7 +79,7 @@ class GaussianKernel(BaseKernel):
         # low and upper should be in the correct order
         assert self.low < self.upper, f"Lower edge is above upper edge - low: {self.low}, upper: {self.upper}"
 
-        #TODO NOTCHING MECHANISM
+        # TODO NOTCHING MECHANISM
         # # gaussian should not extend middle part
         # bin_width = self.upper - self.low
         # smoothing_inside_bin = self.smooth_width
@@ -112,9 +115,6 @@ class GaussianKernel(BaseKernel):
         end = self.upper - shift
         return start, end
 
-
-
-
     def shifted_gaussian(self, x: torch.tensor, shift: torch.tensor) -> torch.tensor:
         """
         Gaussian Kernel implementation, where *x* is the input, and *shift* is there to simulate the left or right side of the gaussian.
@@ -127,7 +127,7 @@ class GaussianKernel(BaseKernel):
             torch.tensor: y-value of the gaussian.
         """
         x, shift, smooth_std = self.wrap_tensors(x, shift, self.std)
-        return torch.exp(-((x - shift) / (2* smooth_std))**2)
+        return torch.exp(-(((x - shift) / (2 * smooth_std)) ** 2))
 
     # def arg_for_y(self,y, shift, std):
     #     # returns x for given y
@@ -183,7 +183,7 @@ class GaussianKernel(BaseKernel):
             torch.tensor: Sigma that correspond to given half_width
         """
         # l = 4.29 * sigma
-        constant = torch.tensor(4.29193) # 2 * torch.sqrt(2 * torch.log(10)) exact calculation
+        constant = torch.tensor(4.29193)  # 2 * torch.sqrt(2 * torch.log(10)) exact calculation
         return half_width / constant
 
     # def overflow_kernel(self, x):
@@ -237,9 +237,10 @@ class GaussianKernel(BaseKernel):
     def control_plot(self, x, show=True, with_h_lines=True):
         # helper plot to visualize the kernel
         import matplotlib.pyplot as plt
+
         y = self(x).cpu()
         plt.plot(x.cpu(), y)
-        plt.xticks(torch.linspace(0,1,21).numpy(), rotation=45)
+        plt.xticks(torch.linspace(0, 1, 21).numpy(), rotation=45)
         if with_h_lines:
             # start is shifted to right, end to left
             start, end = self.middle_coordinates
@@ -247,31 +248,31 @@ class GaussianKernel(BaseKernel):
             plt.vlines([start, end], ymin=0, ymax=1, color="red", linestyles=":")
 
             # gaussian v line reaching 10%
-            plt.vlines([self.gaussian_left_coordinates[0], self.gaussian_right_coordinates[1]], ymin=0, ymax=1, color="green")
+            plt.vlines(
+                [self.gaussian_left_coordinates[0], self.gaussian_right_coordinates[1]], ymin=0, ymax=1, color="green"
+            )
             # ORIGINAL BIN
             plt.vlines([self.low, self.upper], ymin=0, ymax=1, color="black", linestyles="-")
             # horizontal marking 10%
-            plt.hlines(0.1, 0, 1, color = "black", linestyles=":")
+            plt.hlines(0.1, 0, 1, color="black", linestyles=":")
         if show:
             plt.show()
 
-
     def __call__(self, *args, **kwds):
         return self.kernel(*args, **kwds) / self.normalization
-
 
 
 class GaussianKernelV2(BaseKernel):
     def __init__(
         self,
         initial_edge: tuple[torch.tensor],
-        left_notch: float   = 0,
-        right_notch: float  = 0,
+        left_notch: float = 0,
+        right_notch: float = 0,
         smoothing_width: float = 0.1,
         abs_mode: bool = False,
-        bin_type = "normal",
+        bin_type="normal",
         bin_height: float = 1,
-        ):
+    ):
         """
         Kernel object that models a bin with smoothed edges.
         The lower and upper edge is contained in *edge*.
@@ -293,13 +294,15 @@ class GaussianKernelV2(BaseKernel):
         self.initial_lower_edge, self.initial_upper_edge = initial_edge
         self.abs_mode = abs_mode
 
-        self._left_notch, self._right_notch, self._smoothing_width = self.wrap_tensors(left_notch, right_notch, smoothing_width)
+        self._left_notch, self._right_notch, self._smoothing_width = self.wrap_tensors(
+            left_notch, right_notch, smoothing_width
+        )
 
         # calculate std for gaussian function based on gi
         self.std = self.sigma_for_given_width_at_percentage(self.smoothing_width, 0.1)
 
         self.bin_type = bin_type
-        self.bin_height = bin_height # TODO USE THIS
+        self.bin_height = bin_height  # TODO USE THIS
         self.checks()
 
     @property
@@ -323,21 +326,27 @@ class GaussianKernelV2(BaseKernel):
     def checks(self):
         # helper function to gather all assert checks
         init_variables = {
-            name: getattr(self,name)
+            name: getattr(self, name)
             for name in ("initial_lower_edge", "initial_upper_edge", "smoothing_width", "left_notch", "right_notch")
-            }
+        }
 
-        assert self.bin_type in ("normal", "underflow", "overflow"), f"Bin type is {self.bin_type}, which is not supported"
+        assert self.bin_type in ("normal", "underflow", "overflow"), (
+            f"Bin type is {self.bin_type}, which is not supported"
+        )
 
         # everything should be tensors
         is_tensor = {name: torch.is_tensor(attribute) for name, attribute in (init_variables).items()}
         assert all(is_tensor.values()), f"All arguments should be tensors but have\n {is_tensor.items()}"
 
         # low and upper should be in the correct order
-        assert self.initial_lower_edge < self.initial_upper_edge, f"Lower edge is above upper edge - low: {self.initial_lower_edge}, upper: {self.initial_upper_edge}"
+        assert self.initial_lower_edge < self.initial_upper_edge, (
+            f"Lower edge is above upper edge - low: {self.initial_lower_edge}, upper: {self.initial_upper_edge}"
+        )
 
         # gaussian should not over whole bin
-        assert self._left_notch + self._right_notch <= 1, f"Notches should not exceed whole bin, but left notch is {self._left_notch}, right notch is {self._right_notch} and their sum is {self._left_notch + self._right_notch}"
+        assert self._left_notch + self._right_notch <= 1, (
+            f"Notches should not exceed whole bin, but left notch is {self._left_notch}, right notch is {self._right_notch} and their sum is {self._left_notch + self._right_notch}"
+        )
 
     @property
     def coordinates(self):
@@ -364,7 +373,7 @@ class GaussianKernelV2(BaseKernel):
             torch.tensor: y-value of the gaussian.
         """
         x, shift, smooth_std = self.wrap_tensors(x, shift, self.std)
-        return torch.exp(-(1/2) * ((x - shift) / (smooth_std))**2)
+        return torch.exp(-(1 / 2) * ((x - shift) / (smooth_std)) ** 2)
 
     @property
     def FW50M(self):
@@ -388,8 +397,8 @@ class GaussianKernelV2(BaseKernel):
             torch.tensor: Sigma that correspond to given half_width and percentage
         """
         constants = {
-            0.5 : torch.tensor(2.35482), # 2 * torch.sqrt(2 * torch.log(2)) exact calculation
-            0.1 : torch.tensor(4.29193), # 2 * torch.sqrt(2 * torch.log(10)) exact calculation
+            0.5: torch.tensor(2.35482),  # 2 * torch.sqrt(2 * torch.log(2)) exact calculation
+            0.1: torch.tensor(4.29193),  # 2 * torch.sqrt(2 * torch.log(10)) exact calculation
         }
         return (2 * half_width) / constants[percentage]
 
@@ -438,41 +447,42 @@ class GaussianKernelV2(BaseKernel):
     def control_plot(self, x, show=True, with_h_lines=True):
         # helper plot to visualize the kernel
         import matplotlib.pyplot as plt
+
         y = self(x).cpu()
         plt.plot(x.cpu(), y)
-        plt.xticks(torch.linspace(0,1,21).numpy(), rotation=45)
+        plt.xticks(torch.linspace(0, 1, 21).numpy(), rotation=45)
         if with_h_lines:
             # gaussian v line reaching 10%
             low, up = self.coordinates
             plt.vlines([low - self.smoothing_width, up + self.smoothing_width], ymin=0, ymax=1, color="green")
 
             # ORIGINAL BIN
-            plt.vlines([self.initial_lower_edge, self.initial_upper_edge], ymin=0, ymax=1, color="black", linestyles="-")
+            plt.vlines(
+                [self.initial_lower_edge, self.initial_upper_edge], ymin=0, ymax=1, color="black", linestyles="-"
+            )
 
             # horizontal marking 10%
-            plt.hlines(0.1, 0, 1, color = "black", linestyles=":")
+            plt.hlines(0.1, 0, 1, color="black", linestyles=":")
         if show:
             plt.show()
 
-
     def __call__(self, *args, **kwds):
-        return self.kernel(*args, **kwds) #/ self.normalization
-
+        return self.kernel(*args, **kwds)  # / self.normalization
 
 
 class GaussianKernelV3(BaseKernel):
     def __init__(
         self,
         edges,
-        left_notch: float   = 0,
-        right_notch: float  = 0,
+        left_notch: float = 0,
+        right_notch: float = 0,
         smoothing_width: float = 0.1,
         abs_mode: bool = False,
-        bin_type = "normal",
+        bin_type="normal",
         bin_height: float = 1,
         *args,
         **kwargs,
-        ):
+    ):
         """
         Kernel object that models a bin with smoothed edges.
         The lower and upper edge is contained in *edge*.
@@ -493,13 +503,15 @@ class GaussianKernelV3(BaseKernel):
         self.initial_lower_edge, self.initial_upper_edge = edges
         self.abs_mode = abs_mode
 
-        self._left_notch, self._right_notch, self._smoothing_width  = self.wrap_tensors(left_notch, right_notch, smoothing_width)
+        self._left_notch, self._right_notch, self._smoothing_width = self.wrap_tensors(
+            left_notch, right_notch, smoothing_width
+        )
 
         # calculate std for gaussian function based on gi
         self.std = self.sigma_for_given_width_at_percentage(self.smoothing_width, 0.1)
 
         self.bin_type = bin_type
-        self.bin_height = bin_height # TODO USE THIS
+        self.bin_height = bin_height  # TODO USE THIS
         self.checks()
 
     @property
@@ -523,21 +535,27 @@ class GaussianKernelV3(BaseKernel):
     def checks(self):
         # helper function to gather all assert checks
         init_variables = {
-            name: getattr(self,name)
+            name: getattr(self, name)
             for name in ("initial_lower_edge", "initial_upper_edge", "smoothing_width", "left_notch", "right_notch")
-            }
+        }
 
-        assert self.bin_type in ("normal", "underflow", "overflow"), f"Bin type is {self.bin_type}, which is not supported"
+        assert self.bin_type in ("normal", "underflow", "overflow"), (
+            f"Bin type is {self.bin_type}, which is not supported"
+        )
 
         # everything should be tensors
         is_tensor = {name: torch.is_tensor(attribute) for name, attribute in (init_variables).items()}
         assert all(is_tensor.values()), f"All arguments should be tensors but have\n {is_tensor.items()}"
 
         # low and upper should be in the correct order
-        assert self.initial_lower_edge < self.initial_upper_edge, f"Lower edge is above upper edge - low: {self.initial_lower_edge}, upper: {self.initial_upper_edge}"
+        assert self.initial_lower_edge < self.initial_upper_edge, (
+            f"Lower edge is above upper edge - low: {self.initial_lower_edge}, upper: {self.initial_upper_edge}"
+        )
 
         # gaussian should not over whole bin
-        assert self._left_notch + self._right_notch <= 1, f"Notches should not exceed whole bin, but left notch is {self._left_notch}, right notch is {self._right_notch} and their sum is {self._left_notch + self._right_notch}"
+        assert self._left_notch + self._right_notch <= 1, (
+            f"Notches should not exceed whole bin, but left notch is {self._left_notch}, right notch is {self._right_notch} and their sum is {self._left_notch + self._right_notch}"
+        )
 
     @property
     def coordinates(self):
@@ -564,7 +582,7 @@ class GaussianKernelV3(BaseKernel):
             torch.tensor: y-value of the gaussian.
         """
         x, shift, smooth_std = self.wrap_tensors(x, shift, self.std)
-        return torch.exp(-(1/2) * ((x - shift) / (smooth_std))**2)
+        return torch.exp(-(1 / 2) * ((x - shift) / (smooth_std)) ** 2)
 
     @property
     def FW50M(self):
@@ -588,8 +606,8 @@ class GaussianKernelV3(BaseKernel):
             torch.tensor: Sigma that correspond to given half_width and percentage
         """
         constants = {
-            0.5 : torch.tensor(2.35482), # 2 * torch.sqrt(2 * torch.log(2)) exact calculation
-            0.1 : torch.tensor(4.29193), # 2 * torch.sqrt(2 * torch.log(10)) exact calculation
+            0.5: torch.tensor(2.35482),  # 2 * torch.sqrt(2 * torch.log(2)) exact calculation
+            0.1: torch.tensor(4.29193),  # 2 * torch.sqrt(2 * torch.log(10)) exact calculation
         }
         return (2 * half_width) / constants[percentage]
 
@@ -638,18 +656,21 @@ class GaussianKernelV3(BaseKernel):
     def control_plot(self, x, show=True, with_h_lines=True):
         # helper plot to visualize the kernel
         import matplotlib.pyplot as plt
+
         y = self(x).cpu()
         plt.plot(x.cpu(), y)
-        plt.xticks(torch.linspace(0,1,21).numpy(), rotation=45)
+        plt.xticks(torch.linspace(0, 1, 21).numpy(), rotation=45)
         if with_h_lines:
             # gaussian v line reaching 10%
             low, up = self.coordinates
             plt.vlines([low - self.smoothing_width, up + self.smoothing_width], ymin=0, ymax=1, color="green")
 
             # ORIGINAL BIN
-            plt.vlines([self.initial_lower_edge, self.initial_upper_edge], ymin=0, ymax=1, color="black", linestyles="-")
+            plt.vlines(
+                [self.initial_lower_edge, self.initial_upper_edge], ymin=0, ymax=1, color="black", linestyles="-"
+            )
 
             # horizontal marking 10%
-            plt.hlines(0.1, 0, 1, color = "black", linestyles=":")
+            plt.hlines(0.1, 0, 1, color="black", linestyles=":")
         if show:
             plt.show()

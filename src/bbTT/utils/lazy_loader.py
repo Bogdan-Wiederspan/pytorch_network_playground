@@ -25,7 +25,9 @@ def maybe_import(module_name):
             def _dummy(*args, **kwargs):
                 print(f"Dummy Module implemented return None instead of calling {name}")
                 return None
+
             return _dummy
+
     dummy = DummyModule(module_name)
     # register as sys.modules, ensuring that normal import still works
     sys.modules[module_name] = dummy

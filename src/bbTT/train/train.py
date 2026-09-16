@@ -43,7 +43,7 @@ def main(**kwargs):
     tensorboard_writer = TensorboardLogger(
         name=hash_dictionary(dataclasses.asdict(full_config.training_config)),
         path=kwargs["tensorboard_name"],
-        )
+    )
     evaluation_runner_inst = EvaluationRunner(tensorboard_writer)
     # load all registered plots and metrics
     load_registers()
@@ -51,15 +51,17 @@ def main(**kwargs):
     logger_inst.i_info(f"Tensorboard logs: {tensorboard_writer.path}")
 
     # load data
-    for current_fold in (full_config.training_config.train_folds):
+    for current_fold in full_config.training_config.train_folds:
         logger_inst.info(f"Trainings fold: {current_fold}/{full_config.training_config.k_fold - 1}")
-        #-----
+        # -----
         ### data loading and preprocessing
-        #-----
+        # -----
         # HINT: order matters, due to memory constraints views are moved in and out of dictionaries
         # load data from cache is necessary or from root files
         # events is of form : {uid : {"continuous","categorical", "weight": torch tensor}}
-        events = io.get_data(full_config.dataset_config, ignore_cache=kwargs["ignore_cache"], save_cache=kwargs["save_cache"])
+        events = io.get_data(
+            full_config.dataset_config, ignore_cache=kwargs["ignore_cache"], save_cache=kwargs["save_cache"]
+        )
         # split data into training and validation according to fold and get collect all weight statistics
         fold_split_coordinator = k_fold.FoldAndSplitCoordinator(
             events=events,
@@ -70,8 +72,18 @@ def main(**kwargs):
             randomize=True,
         )
 
-        columns_to_split = ("continuous", "categorical", "event_id", "normalization_weights", "product_of_weights", "evaluation_mask")
-        train_events, validation_events = fold_split_coordinator(events, which="training", columns=columns_to_split), fold_split_coordinator(events, which="validation", columns=columns_to_split) #noqa
+        columns_to_split = (
+            "continuous",
+            "categorical",
+            "event_id",
+            "normalization_weights",
+            "product_of_weights",
+            "evaluation_mask",
+        )
+        train_events, validation_events = (
+            fold_split_coordinator(events, which="training", columns=columns_to_split),
+            fold_split_coordinator(events, which="validation", columns=columns_to_split),
+        )  # noqa
         weight_aggregator = WeightAggregator(events, fold_split_coordinator.indices)
 
         # release initial fields
@@ -83,38 +95,48 @@ def main(**kwargs):
         training_sampler = sampler.create_sampler(
             train_events,
             train=True,
-            weight_aggregator_inst = weight_aggregator,
-            full_config = full_config,
+            weight_aggregator_inst=weight_aggregator,
+            full_config=full_config,
         )
         validation_sampler = sampler.create_sampler(
             validation_events,
             train=False,
-            weight_aggregator_inst = weight_aggregator,
-            full_config = full_config,
+            weight_aggregator_inst=weight_aggregator,
+            full_config=full_config,
         )
 
         feature_statistic_cache = FeatureStatisticCache(
-            dataset_config = full_config.dataset_config,
-            sampler= training_sampler,
+            dataset_config=full_config.dataset_config,
+            sampler=training_sampler,
             return_dummy=full_config.debug_config.get_batch_statistic_return_dummy,
-            verbose=True
-            )
+            verbose=True,
+        )
         full_config.model_building_config.standardization.mean = feature_statistic_cache.mean
         full_config.model_building_config.standardization.std = feature_statistic_cache.std
-        #----
+        # ----
         ### model build and configuration, including optimizer, scheduler, early stopping and loss function
-        #----
+        # ----
         model_inst = init_model(full_config=full_config)
         model_inst = model_inst.to(DEVICE).train()
         training_loop, validation_loop = TrainingLoop(full_config), ValidationLoop(full_config)
 
         optimizer_inst = init_optimizer(full_config=full_config, model_inst=model_inst)
-        training_loss_inst, validation_loss_inst = init_loss(full_config=full_config, device=DEVICE, training_sampler=training_sampler)
+        training_loss_inst, validation_loss_inst = init_loss(
+            full_config=full_config, device=DEVICE, training_sampler=training_sampler
+        )
         scheduler_inst = init_scheduler(full_config=full_config, optimizer_inst=optimizer_inst)
-        checkpoint_inst = CheckPoint(checkpoint_name=full_config.training_config.save_model_name, checkpoint_fold=current_fold)
+        checkpoint_inst = CheckPoint(
+            checkpoint_name=full_config.training_config.save_model_name, checkpoint_fold=current_fold
+        )
         training_monitor_inst = TrainingMonitor(to_cpu=True, non_blocking=True)
-        scheduler_handler_inst = SchedulerHandler(scheduler_inst=scheduler_inst, checkpoint_inst=checkpoint_inst, logger_inst=logger_inst)
-        mode_batch, mode_eval_training, mode_eval_validation = "training_batch", "evaluation_training", "evaluation_validation"
+        scheduler_handler_inst = SchedulerHandler(
+            scheduler_inst=scheduler_inst, checkpoint_inst=checkpoint_inst, logger_inst=logger_inst
+        )
+        mode_batch, mode_eval_training, mode_eval_validation = (
+            "training_batch",
+            "evaluation_training",
+            "evaluation_validation",
+        )
         batch_composition_history_inst = BatchCompositionHistory()
 
         setup_monitoring(
@@ -122,18 +144,18 @@ def main(**kwargs):
             model_inst,
             # model_inst.binning_layer,
             training_loss_inst,
-            validation_loss_inst
-            )
+            validation_loss_inst,
+        )
 
-        #----
+        # ----
         ### training loop
-        #----
+        # ----
         logger_inst.info("Start training loop")
         for current_iteration in range(full_config.training_config.max_train_iteration):
             batch_result = training_loop(
                 model_inst=model_inst,
-                monitor = training_monitor_inst,
-                kind_of_data= mode_batch,
+                monitor=training_monitor_inst,
+                kind_of_data=mode_batch,
                 loss_fn=training_loss_inst,
                 sampler=training_sampler,
                 device=DEVICE,
@@ -155,39 +177,43 @@ def main(**kwargs):
                 current_lr = optimizer_inst.param_groups[0]["lr"]
                 logger_inst.training(f"T-It: {current_iteration} - LR: {current_lr} - batch loss: {batch_loss:.2E}")
 
-            #----
+            # ----
             #### Evaluation of training and validation data, logging and checkpointing
-            #----
-            evaluation_condition = (current_iteration % full_config.record_config.validation_interval == 0) & (current_iteration >= 0)
+            # ----
+            evaluation_condition = (current_iteration % full_config.record_config.validation_interval == 0) & (
+                current_iteration >= 0
+            )
             if evaluation_condition:
                 # evaluation of training data
                 logger_inst.info(f"Iteration {current_iteration}. Start evaluation of training data.")
 
                 evaluation_training_result = validation_loop(
                     model_inst=model_inst,
-                    monitor = training_monitor_inst,
-                    kind_of_data= mode_eval_training,
+                    monitor=training_monitor_inst,
+                    kind_of_data=mode_eval_training,
                     loss_fn_inst=validation_loss_inst,
                     sampler_inst=training_sampler,
                     sample_columns=full_config.sampler_config.sample_attributes,
                     device=DEVICE,
-                    )
+                )
                 # evaluation of validation
                 logger_inst.info(f"Iteration {current_iteration}. Start evaluation of validation data.")
 
                 evaluation_validation_result = validation_loop(
                     model_inst=model_inst,
-                    monitor = training_monitor_inst,
-                    kind_of_data= mode_eval_validation,
+                    monitor=training_monitor_inst,
+                    kind_of_data=mode_eval_validation,
                     loss_fn_inst=validation_loss_inst,
                     sampler_inst=validation_sampler,
                     sample_columns=full_config.sampler_config.sample_attributes,
                     device=DEVICE,
-                    )
+                )
 
                 eval_t_loss = evaluation_training_result["loss"].item()
                 eval_v_loss = evaluation_validation_result["loss"].item()
-                logger_inst.training(f"Iteration: {current_iteration} - TLoss: {eval_t_loss:.2E} VLoss: {eval_v_loss:.2E}")
+                logger_inst.training(
+                    f"Iteration: {current_iteration} - TLoss: {eval_t_loss:.2E} VLoss: {eval_v_loss:.2E}"
+                )
 
                 # TODO when edges should be tracked add this in a way that is universal and does not break for models without binning layer, e.g. add property to model that returns None if no binning layer is present and add check in log_metrics
                 if full_config.record_config.log_metrics:
@@ -249,7 +275,7 @@ def main(**kwargs):
                         plots=[
                             # "kernels_monitor",
                             "batch_composition_history",
-                        ]
+                        ],
                     )
                     # run metrics and store them
                     evaluation_runner_inst.run_plots(
@@ -259,7 +285,8 @@ def main(**kwargs):
                             "roc",
                             "output_score_hh_node",
                             "output_score_hh_node_untransformed",
-                            "kernels_monitor"
+                            "kernels_monitorscore_correlation_matrix",
+                            "precision_recall",
                         ],
                     )
 
@@ -270,25 +297,26 @@ def main(**kwargs):
                             "roc",
                             "output_score_hh_node",
                             "output_score_hh_node_untransformed",
-                            "kernels_monitor"
+                            "kernels_monitor",
+                            "score_correlation_matrix",
+                            "precision_recall",
                         ],
                     )
 
                     evaluation_runner_inst.run_scalars(
                         ctx=ctx_train,
                         artifact_names={
-                            "CrossEntropy/Evaluation Training" : "cross_entropy",
-                            "Loss/Evaluation Training Loss" :"loss",
-                            },
+                            "CrossEntropy/Evaluation Training": "cross_entropy",
+                            "Loss/Evaluation Training Loss": "loss",
+                        },
                     )
 
                     evaluation_runner_inst.run_scalars(
                         ctx=ctx_validation,
                         artifact_names={
                             "CrossEntropy/Evaluation Validation": "cross_entropy",
-                            "Loss/Validation VLoss": "loss"
-                            },
-
+                            "Loss/Validation VLoss": "loss",
+                        },
                     )
 
                 ### checkpoint criteria checks and saving
@@ -303,8 +331,8 @@ def main(**kwargs):
 
                 scheduler_handler_inst.step(model_inst, optimizer_inst, metric=eval_v_loss)
 
-
         from IPython import embed
+
         embed(header="Training ends: Check if everything is as you thought it would be")
 
 

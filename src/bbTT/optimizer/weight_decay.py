@@ -6,6 +6,7 @@ from bbTT.monitoring.logger.logger import get_logger
 
 logger_inst = get_logger(__name__)
 
+
 def normalized_weight_decay(
     model: torch.nn.Module,
     decay_factor: float = 1e-1,
@@ -29,6 +30,7 @@ def normalized_weight_decay(
             - The first dictionary contains parameters that should not have weight decay applied.
             - The second dictionary contains parameters that should have weight decay applied.
     """
+
     def get_l2_layer_parameters(model):
         ### PROBLEM: https://discuss.pytorch.org/t/weight-decay-only-for-weights-of-nn-linear-and-nn-conv/114348/2
         with_weight_decay = []
@@ -36,18 +38,18 @@ def normalized_weight_decay(
             # first filter the layers correctly:
             # only apply on linear layer, but not last layer
             is_linear_layer = isinstance(module, torch.nn.Linear)
-            is_not_last_layer = (name != "last_linear") # last linear layer is the classification node
+            is_not_last_layer = name != "last_linear"  # last linear layer is the classification node
 
             # add only specific parameters
             # special case for parametrization:
-            if (is_linear_layer & is_not_last_layer):
+            if is_linear_layer & is_not_last_layer:
                 for parameter_name, parameter in module.named_parameters():
                     if parameter_name == "bias":
                         continue
                     if torch.nn.utils.parametrize.is_parametrized(module):
-                    # parametrization of linear layers have 2 parameters - magnitude and direction
-                    # since both coming from an operation they are now non-leaf tensors (which is not allowed for parameter)
-                    # TODO: currently only using magnitude, maybe wrong?
+                        # parametrization of linear layers have 2 parameters - magnitude and direction
+                        # since both coming from an operation they are now non-leaf tensors (which is not allowed for parameter)
+                        # TODO: currently only using magnitude, maybe wrong?
                         # magnitude
                         if parameter_name == "parametrizations.weight.original0":
                             with_weight_decay.append(parameter)
@@ -67,9 +69,7 @@ def normalized_weight_decay(
         decay_factor = decay_factor / num_weight_decay_params
         logger_inst.debug(f"\tNormalize weight decay factor by number of parameters to: {decay_factor}")
 
-    return {
-        "weight_decay_params":{"params": weight_decay_parameters, "weight_decay": decay_factor}
-            }
+    return {"weight_decay_params": {"params": weight_decay_parameters, "weight_decay": decay_factor}}
 
 
 # def init_optimizer(optimizer, optimizer_config) -> None:

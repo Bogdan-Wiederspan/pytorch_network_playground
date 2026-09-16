@@ -32,10 +32,7 @@ def build_batch_composition_parts(ctx, **kwargs):
 
     by_uid = {uid: [counts[uid] for counts in history.counts] for uid in uids}
     by_parent = {
-        parent: [
-            sum(counts[uid] for uid in uids if uid[0] == parent)
-            for counts in history.counts
-        ]
+        parent: [sum(counts[uid] for uid in uids if uid[0] == parent) for counts in history.counts]
         for parent in parents
     }
 

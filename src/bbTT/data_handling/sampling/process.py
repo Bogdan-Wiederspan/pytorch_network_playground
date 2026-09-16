@@ -9,6 +9,7 @@ from bbTT.utils.utils import CPU_DEVICE
 
 logger_inst = get_logger(__name__)
 
+
 class Process(t_data.Dataset):
     """
     Stateless container for all data belonging to one process (process_id, process_type).
@@ -124,7 +125,9 @@ class ProcessSampleCursor:
         n = len(self.process)
         self.indices = torch.randperm(n) if self.randomize else torch.arange(n)
 
-    def sample_wrong(self, sample_from: tuple[str, ...], number: int = None, device=CPU_DEVICE) -> dict[str, torch.Tensor]:
+    def sample_wrong(
+        self, sample_from: tuple[str, ...], number: int = None, device=CPU_DEVICE
+    ) -> dict[str, torch.Tensor]:
         """
         Sample *number* events from the process. Wraps around (reshuffling if randomize=True)
         once the end is reached. If *number* is None, the process's own sample_size is used.
@@ -143,7 +146,7 @@ class ProcessSampleCursor:
 
         number = self.process.sample_size if number is None else min(number, num)
         next_idx = min(self.current_idx + number, num)
-        idx = self.indices[self.current_idx:next_idx]
+        idx = self.indices[self.current_idx : next_idx]
 
         self.last_idx = idx
         self.current_idx = next_idx

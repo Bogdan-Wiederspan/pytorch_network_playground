@@ -5,8 +5,8 @@ from bbTT.monitoring.runner import RequirementNotMet
 @register_builder(
     "kernel_state",
     provides={"kernels", "binning_fn", "active_edges", "original_edges"},
-    requires={"evaluation_state.binning"}
-    )
+    requires={"evaluation_state.binning"},
+)
 def build_kernel_state(ctx, **kwargs):
     """
     Provide raw binning-layer internals (kernels, binning_fn, edges).
@@ -25,4 +25,4 @@ def build_kernel_state(ctx, **kwargs):
         "binning_fn": raw_state["binning_fn"],
         "active_edges": raw_state["active_edges"],
         "original_edges": raw_state["original_edges"],
-        }
+    }

@@ -14,7 +14,7 @@ def particle_net_wp(year, wp_level="medium"):
 
 
 def di_tau_mass_window(events, suffix="res_dnn_pnet"):
-    """Reconstruct Lepton Pair Mass for given *events*, which are saved with given *suffix* """
+    """Reconstruct Lepton Pair Mass for given *events*, which are saved with given *suffix*"""
     # tau mass window
     l_px = events[f"{suffix}_vis_tau1_px"] + events[f"{suffix}_vis_tau2_px"]
     l_py = events[f"{suffix}_vis_tau1_py"] + events[f"{suffix}_vis_tau2_py"]
@@ -34,7 +34,7 @@ def b_jet_mask(events, year="22pre", wp_level="medium", atleast_num=1):
 
 
 def di_b_jet_mask_window(events, suffix="res_dnn_pnet"):
-    """Reconstruct b-Jet Pair Mass for given *events*, which are saved with given *suffix* """
+    """Reconstruct b-Jet Pair Mass for given *events*, which are saved with given *suffix*"""
     b_px = events[f"{suffix}_bjet1_px"] + events[f"{suffix}_bjet2_px"]
     b_py = events[f"{suffix}_bjet1_py"] + events[f"{suffix}_bjet2_py"]
     b_pz = events[f"{suffix}_bjet1_pz"] + events[f"{suffix}_bjet2_pz"]
@@ -45,7 +45,7 @@ def di_b_jet_mask_window(events, suffix="res_dnn_pnet"):
     return di_bjet_mass_window_mask
 
 
-def res1b_and_res2b_phase_space_mask(events: ak.Array, year: list[str], suffix: str = "res_dnn_pnet") -> tuple[ak.Array, ak.Array, ak.Array]:
+def res1b_and_res2b_phase_space_mask(events: ak.Array, year: list[str], suffix: str = "res_dnn_pnet") -> tuple[ak.Array, ak.Array, ak.Array]: # noqa
     """
     Calculates Masks to get into our evaluation phase space.
     Depends on *year*, apply  base *cut* and depending on the producer add a *suffix* to fields in root file.

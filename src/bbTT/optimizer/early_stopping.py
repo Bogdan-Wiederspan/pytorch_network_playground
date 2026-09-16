@@ -20,10 +20,9 @@ class EarlyStopSignal:
         self.patience = patience
         self.min_delta = min_delta
         self.counter = 0
-        self.min_validation_loss = float('inf')
+        self.min_validation_loss = float("inf")
         self.relative_delta = relative_delta
         self.best_models = []
-
 
     def early_stop_signal(self, validation_loss):
         if self.relative_delta:
@@ -40,15 +39,14 @@ class EarlyStopSignal:
                 return True
         return False
 
-
     def reset(self):
         self.counter = 0
 
     def __call__(self, loss):
         return self.early_stop_signal(loss)
 
-class EarlyStopOnPlateau:
 
+class EarlyStopOnPlateau:
     def __init__(self):
         self.previous_validation_loss = 100_000
         self.best_model = None
@@ -73,12 +71,12 @@ class EarlyStopOnPlateau:
 
 
 class CheckPoint:
-    def __init__(self, checkpoint_name, checkpoint_fold,  patience=0, delta=0, verbose=True):
+    def __init__(self, checkpoint_name, checkpoint_fold, patience=0, delta=0, verbose=True):
         self.fold = checkpoint_fold
         self.name = checkpoint_name
 
-        self.patience = patience # number of iteration before starting to look again
-        self.delta = delta # minimum threshold that needs to be overcome
+        self.patience = patience  # number of iteration before starting to look again
+        self.delta = delta  # minimum threshold that needs to be overcome
         self.verbose = verbose
 
         self.best_loss = None
@@ -95,11 +93,13 @@ class CheckPoint:
         # when loss is small, save model
         if self.no_improvement_count >= self.patience:
             if (self.best_loss is None) or (self.best_loss >= (loss - self.delta)):
-                logger_inst.info(f"Checkpoint criteria trigger started at {loss:6E} - after {self.no_improvement_count} waiting epochs")
+                logger_inst.info(
+                    f"Checkpoint criteria trigger started at {loss:6E} - after {self.no_improvement_count} waiting epochs"
+                )
                 self.no_improvement_count = 0
                 self.best_loss = loss
                 return True
-        self.no_improvement_count +=1
+        self.no_improvement_count += 1
         return False
 
     def create_checkpoint(self, model, optimizer, scheduler, current_iteration, full_config):
@@ -107,9 +107,11 @@ class CheckPoint:
             "epoch": current_iteration,
             "model_cls_module": model.__class__.__module__,
             "model_cls_name": model.__class__.__name__,
-            "model_inst" : (None if model.is_parametrized else model), # when using a parametrization model_inst can't be saved, in this case return None
-            "model_state_dict" : model.state_dict().copy(),
-            "optimizer" : optimizer,
+            "model_inst": (
+                None if model.is_parametrized else model
+            ),  # when using a parametrization model_inst can't be saved, in this case return None
+            "model_state_dict": model.state_dict().copy(),
+            "optimizer": optimizer,
             "optimizer_state_dict": optimizer.state_dict().copy(),
             "lr_scheduler": scheduler,
             "iteration": current_iteration,

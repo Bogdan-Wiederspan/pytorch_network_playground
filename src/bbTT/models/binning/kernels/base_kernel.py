@@ -61,7 +61,7 @@ class BaseKernel(torch.nn.Module, abc.ABC):
         return (
             self.left_transition_coordinate,
             self.right_transition_coordinate,
-            )
+        )
 
     @abc.abstractmethod
     def _compute_normalization(self) -> torch.Tensor:
@@ -128,9 +128,9 @@ class BaseKernel(torch.nn.Module, abc.ABC):
     def _apply_cut_mask(self, x, y):
         outside = torch.zeros_like(x, dtype=torch.bool)
         if self.left_cut is not None:
-            outside |= (x < self.left_cut)
+            outside |= x < self.left_cut
         if self.right_cut is not None:
-            outside |= (x > self.right_cut)
+            outside |= x > self.right_cut
         return y.masked_fill(outside, 0.0)
 
     def kernel(self, x: torch.Tensor) -> torch.Tensor:
@@ -151,12 +151,12 @@ class UnderflowKernel(BaseKernel):
 
     def _rectangular_mask(self, x: torch.Tensor) -> torch.Tensor:
         _, right = self.transition_points
-        return (x <= right)
+        return x <= right
 
     def _apply_cut_mask(self, x, y):
         outside = torch.zeros_like(x, dtype=torch.bool)
         if self.right_cut is not None:
-            outside |= (x > self.right_cut)
+            outside |= x > self.right_cut
         return y.masked_fill(outside, 0.0)
 
 
@@ -167,9 +167,9 @@ class OverflowKernel(BaseKernel):
     def _apply_cut_mask(self, x, y):
         outside = torch.zeros_like(x, dtype=torch.bool)
         if self.left_cut is not None:
-            outside |= (x < self.left_cut)
+            outside |= x < self.left_cut
         return y.masked_fill(outside, 0.0)
 
     def _rectangular_mask(self, x: torch.Tensor) -> torch.Tensor:
         left, _ = self.transition_points
-        return (x >= left)
+        return x >= left

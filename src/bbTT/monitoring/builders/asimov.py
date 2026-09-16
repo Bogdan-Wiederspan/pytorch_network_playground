@@ -16,21 +16,12 @@ def build_asimov_inputs(ctx, **kwargs):
 
     signal_idx = target_map["hh"]
     # mask that says: you belong to this process
-    event_classification_masks = {
-        name: (y_true[: , idx] == 1)
-        for name, idx in target_map.items()
-    }
+    event_classification_masks = {name: (y_true[:, idx] == 1) for name, idx in target_map.items()}
 
     # score for each process, but onl the signal node
-    scores = {
-        name: y_pred[event_classification_masks[name]][:, signal_idx]
-        for name in target_map
-    }
+    scores = {name: y_pred[event_classification_masks[name]][:, signal_idx] for name in target_map}
 
-    weights = {
-        name: event_weights[event_classification_masks[name]]
-        for name in target_map
-    }
+    weights = {name: event_weights[event_classification_masks[name]] for name in target_map}
 
     # calculate s and b in signal node
     s, _ = torch.histogram(
@@ -40,7 +31,7 @@ def build_asimov_inputs(ctx, **kwargs):
     )
     # combine b scores
     b = (
-        torch.histogram(scores["dy"], bins=binning_edges, weight=weights["dy"])[0] +
-        torch.histogram(scores["tt"], bins=binning_edges, weight=weights["tt"])[0]
+        torch.histogram(scores["dy"], bins=binning_edges, weight=weights["dy"])[0]
+        + torch.histogram(scores["tt"], bins=binning_edges, weight=weights["tt"])[0]
     )
     return {"s_hist": s, "b_hist": b}

@@ -6,8 +6,9 @@ from bbTT.monitoring.logger.logger import get_logger
 
 logger_inst = get_logger(__name__)
 
+
 class TrainingMonitor:
-    def __init__(self, to_cpu:bool=True, non_blocking:bool=True):
+    def __init__(self, to_cpu: bool = True, non_blocking: bool = True):
         """
         Data store for gradients and tensor hooks.
         A Monitor instance needs to be connected to the Torch Modules that has gradient monitoring enabled.
@@ -16,14 +17,14 @@ class TrainingMonitor:
             to_cpu (bool, optional): Moves storage to CPU. Defaults to True.
             non_blocking (bool, optional): Does not block GPU when moving to CPU. If True backwards pass is always disrupted when moving. Defaults to True.
         """
-        self.to_cpu=to_cpu
+        self.to_cpu = to_cpu
         self.non_blocking = non_blocking
-        self.gradients: dict[str, dict[str, tuple]] = {} # name -> (step, tensor)
-        self.tensors: dict[str, dict[str, tuple]] = {} # name -> (step, tensor)
-        self._steps: dict[str, float] = {} # type of loop -> (step)
+        self.gradients: dict[str, dict[str, tuple]] = {}  # name -> (step, tensor)
+        self.tensors: dict[str, dict[str, tuple]] = {}  # name -> (step, tensor)
+        self._steps: dict[str, float] = {}  # type of loop -> (step)
         self._active_mode = None
 
-    def set_mode(self, mode:str):
+    def set_mode(self, mode: str):
         self._active_mode = mode
         if mode not in self.gradients:
             self.gradients[mode] = {}
@@ -50,9 +51,8 @@ class TrainingMonitor:
         value = value.detach()
         if self.to_cpu:
             # non blocking prevents synchronization during backwards
-            value = value.to("cpu", non_blocking = self.non_blocking)
+            value = value.to("cpu", non_blocking=self.non_blocking)
         store[self._active_mode][name] = (self.current_step(), value)
-
 
     def state(self, mode: str | None = None) -> dict[torch.Tensor, torch.Tensor]:
         """
@@ -66,25 +66,25 @@ class TrainingMonitor:
         """
         if mode is not None:
             return {
-                "gradients" : self.get_gradients(mode),
-                "tensors" : self.get_tensors(mode),
+                "gradients": self.get_gradients(mode),
+                "tensors": self.get_tensors(mode),
             }
 
         return {
             mode: {
-                "gradients" : self.get_gradients(mode),
-                "tensors" : self.get_tensors(mode),
+                "gradients": self.get_gradients(mode),
+                "tensors": self.get_tensors(mode),
             }
             for mode in set(self.gradients) | set(self.tensors)
         }
 
-    def get_gradients(self, mode:str, unwrap=True, prefix=""):
+    def get_gradients(self, mode: str, unwrap=True, prefix=""):
         bucket = self.gradients.get(mode, {})
         if unwrap:
             return {f"{prefix}{name}": gradient for name, (step, gradient) in bucket.items()}
         return bucket
 
-    def get_tensors(self, mode:str, unwrap=True, prefix=""):
+    def get_tensors(self, mode: str, unwrap=True, prefix=""):
         bucket = self.tensors.get(mode, {})
         if unwrap:
             return {f"{prefix}{name}": value for name, (step, value) in bucket.items()}
@@ -95,7 +95,6 @@ class TrainingMonitor:
 
     def get_plot_tensors(self, mode):
         return tuple(self.get_tensors(mode, unwrap=True, prefix="monitored_tensor.").items())
-
 
     def sync(self):
         """
@@ -108,11 +107,13 @@ class TrainingMonitor:
     def gradient_callback(self, name):
         def save(grad):
             self._capture(store=self.gradients, name=name, value=grad)
+
         return save
 
     def tensor_callback(self, name):
         def save(value):
             self._capture(store=self.tensors, name=name, value=value)
+
         return save
 
     def stale_gradients(self, expected_names):
@@ -123,16 +124,15 @@ class TrainingMonitor:
             return expected_names
 
         return [
-            name for name in expected_names
-            if name not in self.gradients.get(mode, {})
-            or self.gradients[mode][name][0] != self.current_step()
+            name
+            for name in expected_names
+            if name not in self.gradients.get(mode, {}) or self.gradients[mode][name][0] != self.current_step()
         ]
 
     def check_gradient_correctness(self, expected_names):
         missing = self.stale_gradients(expected_names=expected_names)
         if missing:
             logger_inst.warning(f"Gradient hooks did not fire for {missing}")
-
 
     def clear_gradients(self):
         self.gradients.clear()

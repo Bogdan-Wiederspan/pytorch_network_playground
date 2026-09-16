@@ -1,15 +1,17 @@
 from __future__ import annotations
 
-import awkward as ak
+import functools
+
 import numpy as np
 import numpy.lib.recfunctions as rfn
 import torch
 
 from bbTT.monitoring.logger.logger import get_logger
-import functools
+
 logger_inst = get_logger(__name__)
 
-def find_datasets(dataset_patterns: list[str], year_patterns: list[str], *, file_type: str="root", verbose=True):
+
+def find_datasets(dataset_patterns: list[str], year_patterns: list[str], *, file_type: str = "root", verbose=True):
     """
     Find all files in variable ${INPUT_DATA_DIR} by using glob patterns following <year_pattern>/<dataset_pattern>/*.<file_type>.
     The result is as a dictionary of form: {dataset_name : [file_paths]}.
@@ -25,6 +27,7 @@ def find_datasets(dataset_patterns: list[str], year_patterns: list[str], *, file
     """
     import os
     import pathlib
+
     # precautions: get dir, wrap strings, set pattern
     logger_inst.info("Start searching for datasets:")
     if (data_dir := os.environ.get("INPUT_DATA_DIR", None)) is None:
@@ -36,7 +39,7 @@ def find_datasets(dataset_patterns: list[str], year_patterns: list[str], *, file
         raise ValueError(
             f"Given INPUT_DATA_DIR {data_dir} does not exist!\n"
             "Check if directory is named correctly in 'config.sh' or does exist at all"
-            )
+        )
 
     if isinstance(dataset_patterns, str):
         dataset_patterns = [dataset_patterns]
@@ -67,14 +70,14 @@ def find_datasets(dataset_patterns: list[str], year_patterns: list[str], *, file
                     logger_inst.critical(f"{dataset} has 0 files")
                     missing.append(dataset)
                 if verbose:
-                    size = round(sum(os.path.getsize(f) for f in files) / (1024**2),2)
+                    size = round(sum(os.path.getsize(f) for f in files) / (1024**2), 2)
                     logger_inst.debug(f"+{len(files)} files | size {size} MB | {year}/{dataset.name}")
                 data[year][dataset.name] = files
     if not data:
         raise ValueError("No datasets found with given patterns")
 
     if missing:
-        missing_msg = '\n\t'.join(missing)
+        missing_msg = "\n\t".join(missing)
         raise ValueError(f"following datasets has 0 files:\n{missing_msg}")
 
     # merge over years era information is not needed
@@ -87,6 +90,7 @@ def find_datasets(dataset_patterns: list[str], year_patterns: list[str], *, file
             merged_over_era_data[dataset].extend(files)
 
     return merged_over_era_data
+
 
 @functools.lru_cache(maxsize=None)
 def cached_find_datasets(
@@ -107,7 +111,7 @@ def cached_find_datasets(
     return find_datasets(dataset_pattern, year_patterns=year_pattern, file_type=file_type, verbose=False)
 
 
-def struct_to_group_tensor(arr: np.typing.NDArray, fields: tuple[str], dtype: torch.dtype=torch.float32):
+def struct_to_group_tensor(arr: np.typing.NDArray, fields: tuple[str], dtype: torch.dtype = torch.float32):
     """
     Small helper convert struct *arr* *fields* into torch tensor of given *dtype*.
 
@@ -126,6 +130,7 @@ def struct_to_group_tensor(arr: np.typing.NDArray, fields: tuple[str], dtype: to
     dense = np.ascontiguousarray(dense)
     return torch.from_numpy(dense)
 
+
 def hash_dictionary(dictionary: dict):
     """
     Create hash from objects defined in a dictionary.
@@ -137,6 +142,7 @@ def hash_dictionary(dictionary: dict):
         str: Hash of the given dict content.
     """
     import hashlib
+
     hashable_dict = sorted(dictionary.items(), key=lambda item: item[0])
     h = tuple(hashable_dict)
     h = hashlib.sha256(str(h).encode("utf-8")).hexdigest()[:10]

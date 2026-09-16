@@ -6,8 +6,8 @@ import torch
 class StandardizeLayer(torch.nn.Module):  # noqa: F811
     def __init__(
         self,
-        mean: float = 0.,
-        std: float = 1.,
+        mean: float = 0.0,
+        std: float = 1.0,
         active: bool = True,
     ):
         """
@@ -34,8 +34,7 @@ class StandardizeLayer(torch.nn.Module):  # noqa: F811
         if not all([isinstance(value, torch.Tensor) for value in [mean, std]]):
             raise TypeError(f"given mean or std needs to be tensor, but is {type(mean)}{type(std)}")
 
-    def update_buffer(self, mean: torch.
-                        tensor, std: torch.tensor):
+    def update_buffer(self, mean: torch.tensor, std: torch.tensor):
         """
         Update the mean and std parameter.
 

@@ -60,7 +60,9 @@ class BaseModel(HookableModelMixin, torch.nn.Module):
         return len(self.dataset_config.target_map.keys())
 
     def init_layers(self):
-        raise NotImplementedError("init_layers needs to be implemented in child class, where all layers of the model are defined")
+        raise NotImplementedError(
+            "init_layers needs to be implemented in child class, where all layers of the model are defined"
+        )
 
     @property
     def is_parametrized(self) -> bool:
@@ -93,7 +95,9 @@ class BaseModel(HookableModelMixin, torch.nn.Module):
             mode (str): String that determines the learning mode. Needs to be registered with the register_learning_mode decorator.
         """
         if mode not in self.LEARNING_MODES:
-            raise ValueError(f"Learning mode {mode} is not registered. Available learning modes are: {list(self.LEARNING_MODES.keys())}")
+            raise ValueError(
+                f"Learning mode {mode} is not registered. Available learning modes are: {list(self.LEARNING_MODES.keys())}"
+            )
         # set all layers to non trainable
         self.LEARNING_MODES["freeze_all"](self)
         # set specific layers to trainable depending on mode
@@ -107,7 +111,7 @@ class BaseModel(HookableModelMixin, torch.nn.Module):
         for _, layer in self.named_children():
             layer.requires_grad = True
 
-    def evaluation_state(self) -> dict[str: Any]:
+    def evaluation_state(self) -> dict[str:Any]:
         """
         Function handle that is supposed to return snapshots from layer the user defines.
 
@@ -121,11 +125,11 @@ class BaseModel(HookableModelMixin, torch.nn.Module):
         embedding_cfg = self.model_config.embedding
 
         embedding_layer = CatEmbeddingLayer(
-            categories = self.categorical_features,
-            embedding_dim = embedding_cfg.embedding_dim,
-            expected_categorical_inputs = self.dataset_config.expected_embedding_inputs,
-            empty = embedding_cfg.tokenizer_add_unknown_category,
-            )
+            categories=self.categorical_features,
+            embedding_dim=embedding_cfg.embedding_dim,
+            expected_categorical_inputs=self.dataset_config.expected_embedding_inputs,
+            empty=embedding_cfg.tokenizer_add_unknown_category,
+        )
         return embedding_layer
 
     def init_rotation_layer(self) -> torch.nn.Module | None:
@@ -146,7 +150,7 @@ class BaseModel(HookableModelMixin, torch.nn.Module):
             )
             return rotation_layer
 
-    def init_standardization_layer(self)-> torch.nn.Module:
+    def init_standardization_layer(self) -> torch.nn.Module:
         """
         Helper to initialize a Standardization Layer instance with mean and std as buffer.
         Mean and STD are fixed values that need to be set before the training.
@@ -156,23 +160,20 @@ class BaseModel(HookableModelMixin, torch.nn.Module):
             torch.nn.Module: Standardization layer instance with mean and std as buffer.
         """
         std_cfg = self.model_config.standardization
-        is_unset_mean = (std_cfg.mean is None)
-        is_unset_std = (std_cfg.std is None)
+        is_unset_mean = std_cfg.mean is None
+        is_unset_std = std_cfg.std is None
 
         if is_unset_mean and is_unset_std:
             # if statistics are unknown create a dummy standardize layer that does nothing
             std_layer = StandardizeLayer(
-                mean = torch.zeros(self.num_continuous_features),
-                std = torch.ones(self.num_continuous_features),
+                mean=torch.zeros(self.num_continuous_features),
+                std=torch.ones(self.num_continuous_features),
             )
         else:
-            std_layer = StandardizeLayer(
-                mean=std_cfg.mean,
-                std=std_cfg.std
-            )
+            std_layer = StandardizeLayer(mean=std_cfg.mean, std=std_cfg.std)
         return std_layer
 
-    def init_padding_layer(self)-> tuple[torch.nn.Module | None, torch.nn.Module | None]:
+    def init_padding_layer(self) -> tuple[torch.nn.Module | None, torch.nn.Module | None]:
         """
         Helper function to initialize continuous and categorical padding layer.
         The actual padding value is defined in the model building config, if the value is None, no padding layer is created.
@@ -196,7 +197,7 @@ class BaseModel(HookableModelMixin, torch.nn.Module):
             categorical_padding = PaddingLayer(
                 target_value=padding_cfg.categorical_target_value,
                 padding_value=padding_cfg.categorical_masking_value,
-                )
+            )
 
         return continuous_padding, categorical_padding
 
@@ -274,7 +275,7 @@ class BaseModel(HookableModelMixin, torch.nn.Module):
             cat_input_layer = CategoricalInputLayer(
                 embedding_layer=embedding_layer,
                 padding_categorical_layer=cat_pad_layer,
-                )
+            )
         else:
             cat_input_layer = EmptyLayer()
 

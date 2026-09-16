@@ -1,4 +1,3 @@
-
 import torch
 
 from bbTT.loss.SignalEfficiency import SignalEfficiency
@@ -6,20 +5,21 @@ from bbTT.models.binning import GaussianKernel  # mapping of asimov functions to
 from bbTT.statistics.asimov import asimov, asimov_no_background, asimov_small_signal_and_no_background
 
 asimov_functions = {
-    "full" : asimov,
-    "no_unc" : asimov_no_background,
-    "approximation" : asimov_small_signal_and_no_background,
-    }
+    "full": asimov,
+    "no_unc": asimov_no_background,
+    "approximation": asimov_small_signal_and_no_background,
+}
+
 
 class BinningAwareSignificance(SignalEfficiency):
     def __init__(
         self,
-        model_inst: torch.nn.Module=None,
-        bins: torch.tensor=None,
-        binning_config: dict=None,
+        model_inst: torch.nn.Module = None,
+        bins: torch.tensor = None,
+        binning_config: dict = None,
         *args,
-        **kwargs
-        ):
+        **kwargs,
+    ):
         """
         Extension of SignalEfficiency Loss where weighted predictions are scaled by a Gaussian binning kernel.
         The kernel is configured using a *binning_cfg*, the actual bin edges are defined in *bins*.
@@ -58,8 +58,7 @@ class BinningAwareSignificance(SignalEfficiency):
             kernels.append(k)
         self.kernels = kernels
 
-
-    def digitize_masks(self, x, bin_edges, include_left_edge = True):
+    def digitize_masks(self, x, bin_edges, include_left_edge=True):
         # TODO maybe Delete
         # create masks for each bin and save them in a mask dictionary, where the key is the bin number
         # torch implemented right as "right border is open" and "left is closed"
@@ -70,7 +69,7 @@ class BinningAwareSignificance(SignalEfficiency):
 
         masks = {}
         for bin_number in range(underflow_bin_number, overflow_bin_number + 1):
-            masks[bin_number] = (indices == bin_number)
+            masks[bin_number] = indices == bin_number
         return masks
 
     def approximation_sb(
@@ -80,8 +79,8 @@ class BinningAwareSignificance(SignalEfficiency):
         product_of_weights: dict[torch.tensor],
         evaluation_phase_space_mask: dict[torch.tensor],
         is_signal: bool,
-        epsilon=None
-        ):
+        epsilon=None,
+    ):
         """
         Approximation of (s)ignal and (b)ackground yield as defined in 4.1 and 4.2 in https://arxiv.org/abs/1806.00322
         The approximation is calculated batchwise and only defined for binary classification, which is calculated is defined by *is_signal*.
@@ -99,11 +98,11 @@ class BinningAwareSignificance(SignalEfficiency):
         """
         # get parts of approximation of s and b and then scale the prediction part
         transfer_factor, weighted_predictions = self.approximation_sb_parts(
-        prediction=prediction,
-        truth=truth,
-        product_of_weights=product_of_weights,
-        evaluation_phase_space_mask=evaluation_phase_space_mask,
-        is_signal=is_signal,
+            prediction=prediction,
+            truth=truth,
+            product_of_weights=product_of_weights,
+            evaluation_phase_space_mask=evaluation_phase_space_mask,
+            is_signal=is_signal,
         )
 
         # apply binning scaling via kernel multiplication
@@ -111,8 +110,8 @@ class BinningAwareSignificance(SignalEfficiency):
         # in the end a sum over all kernel result is done
         binned_yield = []
         for _kernel in self.kernels:
-            scale = _kernel(prediction) # tensor of shape len(events)
-            weighted_yield = torch.sum(weighted_predictions * scale) # term 1
+            scale = _kernel(prediction)  # tensor of shape len(events)
+            weighted_yield = torch.sum(weighted_predictions * scale)  # term 1
             binned_yield.append(weighted_yield * transfer_factor)
         binned_yield = torch.stack(binned_yield, dim=0)
         if epsilon is not None:
@@ -127,13 +126,8 @@ class BinningAwareSignificance(SignalEfficiency):
         signal_node_prediction = prediction[:, self.s_cls]
         # signal can be 0, since this will yield 0
         s = self.approximation_sb(
-            signal_node_prediction,
-            signal_node_truth,
-            product_of_weights,
-            evaluation_mask,
-            is_signal=True,
-            epsilon=1e-4
-            )
+            signal_node_prediction, signal_node_truth, product_of_weights, evaluation_mask, is_signal=True, epsilon=1e-4
+        )
         # background cant be 0 -> inf
         b = self.approximation_sb(
             signal_node_prediction,
@@ -141,8 +135,8 @@ class BinningAwareSignificance(SignalEfficiency):
             product_of_weights,
             evaluation_mask,
             is_signal=False,
-            epsilon=1e-4
-            )
+            epsilon=1e-4,
+        )
         loss = self.asimov_fn(s=s, b=b, unc_b=0, epsilon=1e-2)
         loss = loss.sum()
         return 1 / loss

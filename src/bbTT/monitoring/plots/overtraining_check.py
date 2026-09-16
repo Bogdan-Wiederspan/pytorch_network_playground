@@ -79,20 +79,25 @@ def plot_overtraining_check(ctx, ctx_val=None, node="hh", bins=30, **kwargs) -> 
 
         train_density = _torch_histogram_density(train_scores, bins)
         val_density = _torch_histogram_density(val_scores, bins)
-        val_counts = torch.histc(val_scores.float(), bins=bins, min=0.0, max=1.0) # only calc counts, not np hist conversion as it would be normally the case
+        val_counts = torch.histc(
+            val_scores.float(), bins=bins, min=0.0, max=1.0
+        )  # only calc counts, not np hist conversion as it would be normally the case
         val_err = val_density / torch.sqrt(val_counts + 1)
-
-
-
 
         # scipy has not torch support, so numpy conversion happens heres
         ks_pvalues[process] = ks_2samp(
             make_plotable(train_scores),
             make_plotable(val_scores),
-            ).pvalue
+        ).pvalue
         ax.step(centers, make_plotable(train_density), where="mid", label=f"{process} (train)")
-        ax.errorbar(centers, make_plotable(val_density), yerr=make_plotable(val_err), fmt="o", markersize=4, label=f"{process} (val)")
-
+        ax.errorbar(
+            centers,
+            make_plotable(val_density),
+            yerr=make_plotable(val_err),
+            fmt="o",
+            markersize=4,
+            label=f"{process} (val)",
+        )
 
         ax.legend(fontsize=8, title="\n".join(f"KS p({p}) = {v:.3g}" for p, v in ks_pvalues.items()))
 

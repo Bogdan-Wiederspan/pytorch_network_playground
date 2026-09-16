@@ -84,7 +84,16 @@ class BaseLoop:
     def cleanup(self, monitor, model_inst, **kwargs):
         pass
 
-    def __call__(self, *args, monitor=None, model_inst=None, kind_of_data=None, scheduler_handler_inst=None, optimizer_inst=None, **kwargs):
+    def __call__(
+        self,
+        *args,
+        monitor=None,
+        model_inst=None,
+        kind_of_data=None,
+        scheduler_handler_inst=None,
+        optimizer_inst=None,
+        **kwargs,
+    ):
         # registered loop is just an unbound function
         # bound by passing self as first argument
         self.setup(monitor=monitor, model_inst=model_inst, kind_of_data=kind_of_data)
@@ -92,7 +101,12 @@ class BaseLoop:
             fn = self.REGISTERED_LOOPS[self.MODE][self.which_fn]
             result = fn(self, *args, monitor=monitor, model_inst=model_inst, optimizer_inst=optimizer_inst, **kwargs)
         finally:
-            self.cleanup(monitor=monitor, model_inst=model_inst, scheduler_handler_inst=scheduler_handler_inst, optimizer_inst = optimizer_inst)
+            self.cleanup(
+                monitor=monitor,
+                model_inst=model_inst,
+                scheduler_handler_inst=scheduler_handler_inst,
+                optimizer_inst=optimizer_inst,
+            )
         return result
 
 

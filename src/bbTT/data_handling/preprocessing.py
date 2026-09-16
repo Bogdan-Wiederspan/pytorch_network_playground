@@ -56,7 +56,7 @@ def get_batch_statistics_from_sampler(sampler=None, padding_values=None, feature
 
     Args:
         sampler (ProcessSampler): Sampler managing the processes to compute statistics over.
-        padding_values (int, optional): List of padding_values per feature, or single value. Padding value are ignored in the calculation of the statitics. Defaults to None, which means no padding.
+        padding_values (int, optional): List of padding_values per feature, or single value. Padding value are ignored in the calculation of the statistics. Defaults to None, which means no padding.
         return_dummy (bool): Return dummy values that describe Identity transformation. This does not compute the statistics, and are a good option when one load pretrained weights anyway.
     """
     if return_dummy:
@@ -133,7 +133,7 @@ def get_batch_statistics_from_sampler_old(sampler=None, padding_values=None, fea
 
     Args:
         sampler (dict): Dictionary over datasets
-        padding_values (int, optional): List of padding_values per feature, or single value. Padding value are ignored in the calculation of the statitics. Defaults to None, which means no padding.
+        padding_values (int, optional): List of padding_values per feature, or single value. Padding value are ignored in the calculation of the statistics. Defaults to None, which means no padding.
         return_dummy (bool): Return dummy values that describe Identity transformation. This does not compute the statistics, and are a good option when one load pretrained weights anyway.
     """
     # when only dummy values for init are necessary return mean = 0 and std as 1
@@ -263,7 +263,7 @@ def get_batch_statistics_per_dataset(events, padding_value=0):
 
     Args:
         events (dict): Dictionary over datasets
-        padding_value (int, optional): Ignored value in the calculation of the statitics. Defaults to 0.
+        padding_value (int, optional): Ignored value in the calculation of the statistics. Defaults to 0.
     """
     logger_inst.info("Start calculation of mean and std over all subphase spaces")
     # filter keys after processes

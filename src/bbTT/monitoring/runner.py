@@ -4,8 +4,8 @@ from bbTT.monitoring.register import BUILDER_REGISTRY, PLOT_REGISTRY
 _PROVIDER_MAP_CACHE = None
 
 
-
 logger_inst = get_logger(__name__)
+
 
 def require_map(registry):
     _map = {}
@@ -19,16 +19,13 @@ def require_map(registry):
             _map[requirement].append(name)
     return _map
 
+
 def build_provider_map(force_refresh=False):
     # static resolution of provider map
     # NO DYNAMIC SUPPORT due to caching
     global _PROVIDER_MAP_CACHE
     if _PROVIDER_MAP_CACHE is None or force_refresh:
-        _PROVIDER_MAP_CACHE = {
-            artifact : name
-            for name, spec in BUILDER_REGISTRY.items()
-            for artifact in spec.provides
-        }
+        _PROVIDER_MAP_CACHE = {artifact: name for name, spec in BUILDER_REGISTRY.items() for artifact in spec.provides}
     return _PROVIDER_MAP_CACHE
 
 
@@ -43,8 +40,7 @@ def ensure(ctx, artifact, providers, _resolving=None, requester=None):
     concrete_keys = ctx.expand(artifact)
 
     if not concrete_keys:
-            raise RequirementNotMet(artifact, requester)
-
+        raise RequirementNotMet(artifact, requester)
 
     # if the pattern expanded to multiple keys, ensure each one
     if len(concrete_keys) > 1 or concrete_keys[0] != artifact:
@@ -63,7 +59,6 @@ def ensure(ctx, artifact, providers, _resolving=None, requester=None):
     builder_name = providers.get(artifact)
 
     if builder_name is None:
-
         # No builder exists AND not in context — this is the "skip" case
         raise RequirementNotMet(artifact, requester)
 
@@ -78,11 +73,11 @@ def ensure(ctx, artifact, providers, _resolving=None, requester=None):
     missing_provides = builder.provides - result.keys()
     if missing_provides:
         raise ValueError(
-            f"Builder {builder_name} should provide {builder.provides}"
-            f"but did not return: {missing_provides}"
+            f"Builder {builder_name} should provide {builder.provides}but did not return: {missing_provides}"
         )
     # save result in cache of context
     ctx.cache.update(result)
+
 
 def run_plot(name, ctx):
     spec = PLOT_REGISTRY[name]
@@ -102,7 +97,6 @@ def run_scalar(name, ctx):
 
 
 class EvaluationRunner:
-
     def __init__(self, tensorboard):
         """
         Actual runner that gets a list of plots, meta data and context object that
@@ -112,8 +106,9 @@ class EvaluationRunner:
             tensorboard (torch.Tensorboard): Tensorboard instance, where everything is logged.
         """
         self.tensorboard = tensorboard
-        self._skipped_plots: set[str, str] = set() # plots skipped due to being optional or not registered, second str is the mode
-
+        self._skipped_plots: set[str, str] = (
+            set()
+        )  # plots skipped due to being optional or not registered, second str is the mode
 
     def run_plots(self, ctx, plots: list[str]):
         for plot_name in plots:
@@ -145,7 +140,6 @@ class EvaluationRunner:
                         f"Mark it optional=True in register_plot if this is expected."
                     ) from e
 
-
     def run_scalars(self, ctx, artifact_names):
 
         for full_name, artifact_name in artifact_names.items():
@@ -158,12 +152,14 @@ class EvaluationRunner:
                 step=ctx.global_step,
             )
 
+
 class RequirementNotMet(Exception):
     """
     Raised by ensure() when a required artifact cannot be provided
     because the underlying data doesn't exist in this context.
     Caught by run_plots to skip optional plots gracefully.
     """
+
     def __init__(self, artifact, requester=None):
         self.artifact = artifact
         self.requester = requester

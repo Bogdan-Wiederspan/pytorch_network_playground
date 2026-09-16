@@ -179,7 +179,7 @@ def stream_events_by_uid(
     num_events_per_dataset = {}
     num_events_per_pid = {}
     for dataset, files in dataset_paths.items():
-        logger_inst.info(f"Start loading and conversion of root files: { dataset }")
+        logger_inst.info(f"Start loading and conversion of root files: {dataset}")
         events_bucket, num_events_of_files = load_root_and_convert_to_numpy(files, branches=columns, cut=cut)
         num_events_per_dataset[dataset] = num_events_of_files
         for events in events_bucket:
@@ -389,6 +389,7 @@ def load_and_merge_eras(config, cache: DataCacher) -> dict[str, torch.Tensor]:
 
     return all_events
 
+
 def get_data(config=None, save_cache=False, ignore_cache=False, _hash=None) -> dict[str, torch.Tensor]:
     """
     Main function to combine all steps from loading root files to filter by
@@ -398,6 +399,7 @@ def get_data(config=None, save_cache=False, ignore_cache=False, _hash=None) -> d
         cache = DataCacher(config=config)
         create_era_caches(config=config, cache=cache, save_cache=save_cache, ignore_cache=ignore_cache)
         return load_and_merge_eras(config=config, cache=cache)
+
 
 def structure_datasets_after_eras(config):
     # {dataset: [paths to all mixed eras]}

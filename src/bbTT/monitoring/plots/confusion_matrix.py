@@ -10,14 +10,8 @@ from bbTT.monitoring.register import register_plot
     "confusion_matrix",
     requires=None,
     optional=False,
-    )
-def plot_confusion_matrix(
-    ctx,
-    sample_weight=None,
-    normalize="true",
-    cmap="Blues",
-    **kwargs
-    ) -> tuple[Figure, Axes]:
+)
+def plot_confusion_matrix(ctx, sample_weight=None, normalize="true", cmap="Blues", **kwargs) -> tuple[Figure, Axes]:
     """
     Plot a confusion matrix comparing true and predicted classes.
 

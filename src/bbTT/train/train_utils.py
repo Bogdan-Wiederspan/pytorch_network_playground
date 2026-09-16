@@ -8,13 +8,15 @@ from bbTT.monitoring.logger.logger import get_logger
 
 logger_inst = get_logger(__name__)
 
+
 def do_scheduler_step(
     loss: torch.tensor,
     logger_inst: logger.logging.Logger,
     scheduler_inst: torch.optim.lr_scheduler,
     model_inst: torch.nn.Module,
     optimizer_inst: torch.optim.Optimizer,
-    checkpoint_inst: dict[torch.tensor]) -> None:
+    checkpoint_inst: dict[torch.tensor],
+) -> None:
     """
     Perform with given *scheduler_inst* a scheduler step, under the conditions of the given *scheduler_inst*.
     If a step is performed be vebose using *logger_inst* and reload the last best state for *model_inst* and *optimizer_inst* from
@@ -28,14 +30,11 @@ def do_scheduler_step(
         optimizer_inst (torch.optim.Optimizer): Instance of an Optimizer
         checkpoint_inst (dict[torch.tensor]): Dictionary containing the learning rate, model state dict and optimizer state dict.
     """
-    previous_lr =  optimizer_inst.param_groups[0]["lr"]
+    previous_lr = optimizer_inst.param_groups[0]["lr"]
     scheduler_inst.step(loss)
     current_lr = optimizer_inst.param_groups[0]["lr"]
     if previous_lr != current_lr:
-        logger_inst.info(
-            f"{previous_lr} -> {current_lr}\n"
-            f"Reload model and optimizer from iteration "
-            )
+        logger_inst.info(f"{previous_lr} -> {current_lr}\nReload model and optimizer from iteration ")
         model_inst.load_state_dict(checkpoint_inst.last_checkpoint["model_state_dict"])
         optimizer_inst.load_state_dict(checkpoint_inst.last_checkpoint["optimizer_state_dict"])
 

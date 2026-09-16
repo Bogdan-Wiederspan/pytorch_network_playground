@@ -38,9 +38,8 @@ class CatEmbeddingLayer(torch.nn.Module):  # noqa: F811
         self.category_dims = category_dims
         if not self.category_dims and all(x is not None for x in (categories, expected_categorical_inputs)):
             self.tokenizer = CategoricalTokenizer(
-                categories=categories,
-                expected_categorical_inputs=expected_categorical_inputs,
-                empty=empty)
+                categories=categories, expected_categorical_inputs=expected_categorical_inputs, empty=empty
+            )
             self.category_dims = self.tokenizer.num_dim
         self.embeddings = torch.nn.Embedding(
             self.category_dims,

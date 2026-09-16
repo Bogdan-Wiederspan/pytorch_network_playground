@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import torch
@@ -11,7 +10,6 @@ class CategoricalInputLayer(torch.nn.Module):
         self,
         embedding_layer: torch.nn.Module,
         padding_categorical_layer: torch.nn.Module | None = None,
-
         *args,
         **kwargs,
     ):

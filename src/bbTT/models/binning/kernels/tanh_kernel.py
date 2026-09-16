@@ -15,9 +15,8 @@ class TanhKernel(BaseKernel):
         absolute_notch=True,
         eps=1e-3,
         full_width=1,
-
         **kwargs,
-        ):
+    ):
         """
         Kernel object that models a bin with smoothed edges.
         """
@@ -28,9 +27,11 @@ class TanhKernel(BaseKernel):
             right_notch=right_notch,
             absolute_notch=absolute_notch,
             **kwargs,
-            )
+        )
         self.eps = torch.tensor(eps)
-        self.full_width_from_eps_to_eps = torch.tensor(full_width) if full_width is not None else self._smoothing_width_for_constant()
+        self.full_width_from_eps_to_eps = (
+            torch.tensor(full_width) if full_width is not None else self._smoothing_width_for_constant()
+        )
         self.tau = self.compute_smoothness(self.full_width_from_eps_to_eps, self.eps, 0)
         self.checks()
 
@@ -56,7 +57,7 @@ class TanhKernel(BaseKernel):
     #     return 0.5 * (1 - torch.tanh((x - anchor) / smoothing))
 
     def compute_width_from_smoothness(self, smoothness, eps):
-        half_width = (smoothness * torch.arctanh(2 * (1 / 2 - eps)))
+        half_width = smoothness * torch.arctanh(2 * (1 / 2 - eps))
         full_width = 2 * half_width
         return full_width
 

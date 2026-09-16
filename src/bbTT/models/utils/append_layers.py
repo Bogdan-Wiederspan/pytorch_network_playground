@@ -4,31 +4,22 @@ import torch
 
 
 class AddBinningLayer(torch.nn.Module):
-    def __init__(
-        self,
-        model,
-        binning_cls,
-        kernel_cls,
-        kernel_cfg,
-        binning_edges,
-        signal_cls=None,
-        *args,
-        **kwargs
-        ):
+    def __init__(self, model, binning_cls, kernel_cls, kernel_cfg, binning_edges, signal_cls=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.unbinned_model = model
         self.binning_layer = binning_cls(
             init_edges=binning_edges,
             kernel_cls=kernel_cls,
             kernel_cfg=kernel_cfg,
-            )
-        self.signal_cls = ... if signal_cls is None else signal_cls # used for class slicing
+        )
+        self.signal_cls = ... if signal_cls is None else signal_cls  # used for class slicing
 
     def forward(self, categorical_inputs, continuous_inputs):
-        x = self.unbinned_model(categorical_inputs, continuous_inputs)[:, self.signal_cls] # normal prediction as probabilities
+        x = self.unbinned_model(categorical_inputs, continuous_inputs)[
+            :, self.signal_cls
+        ]  # normal prediction as probabilities
         x = self.binning_layer(x)
         return x
-
 
 
 class AddActFnToModel(torch.nn.Module):

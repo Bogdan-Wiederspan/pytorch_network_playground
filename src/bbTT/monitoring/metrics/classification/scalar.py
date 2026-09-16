@@ -33,6 +33,7 @@ def binary_rates(target, pred, threshold=0.5):
     fn = binary_false_negative(target, pred, threshold)
     return tp, tn, fp, fn
 
+
 ### Common Metrics, one needs to calculate rates first!
 def accuracy(tp, tn, fp, fn):
     # how many samples were correctly classified (true positive and true negative)
@@ -62,10 +63,10 @@ def matthews_correlation_coefficient_binary(tp, tn, fp, fn):
     return numerator / denominator
 
 
-
 # ------------------
 # MultiClass classification
 # ------------------
+
 
 def multiclass_rates(targets, predictions, weights=None, dtype=torch.int32):
     """
@@ -104,6 +105,7 @@ def multiclass_rates(targets, predictions, weights=None, dtype=torch.int32):
     rates = torch.stack((tp_diag, tn_rest, fp_per_column, fn_per_line), dim=1).to(dtype)
     return rates
 
+
 def _F1_macro_score(precision, recall, weights=None):
     f1 = 2 * (precision * recall) / (precision + recall)
     if weights is None:
@@ -125,6 +127,7 @@ def F1_macro_score(prediction, target, weights=None):
 # --------------
 # Aggregation
 # --------------
+
 
 def calculate_metrics(target, pred, label=None, weights=None, normalize=False):
     metrics = {}

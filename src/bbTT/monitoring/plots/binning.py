@@ -9,7 +9,7 @@ from bbTT.monitoring.utils.tensor import to_numpy
     "bin_edges",
     requires={"active_edges"},
     optional=True,
-    )
+)
 def plot_bin_edges(ctx, **kwargs):
     """
     Visualize the spatial distribution of the model's active bin edges.
@@ -34,7 +34,12 @@ def plot_bin_edges(ctx, **kwargs):
     fig, ax = plt.subplots(figsize=(8, 1.5))
 
     # All points at y=0
-    ax.scatter(binning_edges, np.zeros_like(binning_edges), s=50, marker="|", )
+    ax.scatter(
+        binning_edges,
+        np.zeros_like(binning_edges),
+        s=50,
+        marker="|",
+    )
 
     # Hide y-axis
     ax.set_yticks([])

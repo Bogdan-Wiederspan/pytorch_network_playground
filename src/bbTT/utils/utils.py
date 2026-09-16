@@ -50,6 +50,7 @@ def expand_braces(input: tuple[str]) -> tuple[str]:
     Returns:
         tuple[str]: Tuple of expanded strings.
     """
+
     def brace_expand(s):
         # "a{b,c}d" -> ["abd", "acd"]
         if "{" not in s:
@@ -62,6 +63,7 @@ def expand_braces(input: tuple[str]) -> tuple[str]:
             for rest in brace_expand(post):
                 expanded.append(pre + part + rest)
         return expanded
+
     cols = []
     for _str in input:
         cols.extend(brace_expand(_str))

@@ -36,14 +36,13 @@ def plot_batch_composition_history(ctx, **kwargs) -> tuple[Figure, Axes]:
     fig, ax = plt.subplots(1, 1 + len(axis_map), figsize=(20, 12))
     for parent, values in by_parent.items():
         axis = ax[0]
-        line, = axis.plot(steps, values, label=parent, lw=1)
-
+        (line,) = axis.plot(steps, values, label=parent, lw=1)
 
     for parent, index in axis_map.items():
         for sub_process, values in counts_per_sub_process.items():
             if sub_process[0] == parent:
                 axis = ax[1 + index]
-                line, = axis.plot(steps, values, label=sub_process[1], lw=1)
+                (line,) = axis.plot(steps, values, label=sub_process[1], lw=1)
                 axis.set_title(parent)
 
     for axis in ax:

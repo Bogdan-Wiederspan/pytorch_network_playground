@@ -4,20 +4,18 @@ import os
 import pathlib
 
 import torch
+from bbTT.utils.load_models import rebuild_checkpoint_information
 
 # from models import create_model
 from bbTT.monitoring.logger.logger import get_logger
-from bbTT.utils.load_models import rebuild_checkpoint_information
 from bbTT.utils.parser import ParserBuilder
 
 logger_inst = get_logger(__name__)
 
+
 def torch_export_pt2(
-    model_inst: torch.nn.Module,
-    name: str,
-    fold: str,
-    base_dir: str | None=None,
-    activation_fn_name: str =None) -> pathlib.Path:
+    model_inst: torch.nn.Module, name: str, fold: str, base_dir: str | None = None, activation_fn_name: str = None
+) -> pathlib.Path:
     """
     Takes *model_inst* and export it to pt2 format, with dynamic batch dimension.
     The exported model is stored under a name defined by *name* and *fold* in the directory defined by *base_dir*.
@@ -35,7 +33,7 @@ def torch_export_pt2(
         pathlib.Path: Path to exported pt2 model.
     """
     # by default set CPU device, to enable most compatible export.
-    DEVICE=torch.device("cpu")
+    DEVICE = torch.device("cpu")
     if activation_fn_name is not None:
         model_inst = create_model.utils.AddActFnToModel(model_inst, activation_fn_name)
 
@@ -53,8 +51,8 @@ def torch_export_pt2(
 
     dim = torch.export.Dim("batch")
     dynamic_shapes = {
-        "categorical_inputs": {0:dim, 1:categorical_input.shape[-1]},
-        "continuous_inputs" : {0:dim, 1:continuous_inputs.shape[-1]},
+        "categorical_inputs": {0: dim, 1: categorical_input.shape[-1]},
+        "continuous_inputs": {0: dim, 1: continuous_inputs.shape[-1]},
     }
 
     # do actual export and saving
@@ -72,10 +70,7 @@ def torch_export_pt2(
     return dst
 
 
-def run_pt2_model(
-    pt2_path: str,
-    cat: torch.tensor,
-    cont: torch.tensor) -> torch.tensor:
+def run_pt2_model(pt2_path: str, cat: torch.tensor, cont: torch.tensor) -> torch.tensor:
     """
     Run a given model stored at *pt2_path* with *cat* and *cont* tensors.
     This is a method to check if exporting the model resulted in same results.
@@ -92,18 +87,17 @@ def run_pt2_model(
     scores = exp.module()(cat, cont)
     return scores
 
+
 def compare_pt2_with_original(
-    pt2_path: str,
-    original_model: torch.nn.Module,
-    cat: torch.tensor,
-    cont: torch.tensor,
-    atol: float = 1e-6) -> bool:
+    pt2_path: str, original_model: torch.nn.Module, cat: torch.tensor, cont: torch.tensor, atol: float = 1e-6
+) -> bool:
     """
     Compare the output of a pt2 model with the output of the original model for given *cat* and *cont* tensors. Returns True if outputs are close within given *atol*, False otherwise.
     """
     pt2_output = run_pt2_model(pt2_path, cat, cont)
     original_output = original_model(cat, cont)
     return torch.allclose(pt2_output, original_output, atol=atol)
+
 
 def resolve_models_path(path: pathlib.Path, folds) -> tuple[pathlib.Path, pathlib.Path]:
     """
@@ -120,9 +114,11 @@ def resolve_models_path(path: pathlib.Path, folds) -> tuple[pathlib.Path, pathli
         paths[fold] = models_path
     return paths
 
-if __name__ == "__main__":
 
-    parser = ParserBuilder("load_checkpoint", "activation_fn", description="Export model to torch-export (.pt2) with dynamic batch dim")
+if __name__ == "__main__":
+    parser = ParserBuilder(
+        "load_checkpoint", "activation_fn", description="Export model to torch-export (.pt2) with dynamic batch dim"
+    )
     args = parser.args
 
     paths = resolve_models_path(args.path, args.fold)

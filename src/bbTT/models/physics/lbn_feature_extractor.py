@@ -43,7 +43,7 @@ class LBNFeatureExtractor(torch.nn.Module):
         particles_components = {particle: find_components(particle) for particle in self._particles}
 
         # filter the indices
-        indicies = lambda particle, features : [particles_components[particle][f] for f in features]
+        indicies = lambda particle, features: [particles_components[particle][f] for f in features]
         particles = {}
 
         for f in self._particles[:-3]:
@@ -62,7 +62,7 @@ class LBNFeatureExtractor(torch.nn.Module):
         # met is special, since we need to reconstruct it: (pt, px, py ,0)
         met_kinematics = tensor[:, self.particles["met"]]
 
-        met_pt = torch.sqrt(torch.sum(met_kinematics**2, axis=1)) # TODO float64?
+        met_pt = torch.sqrt(torch.sum(met_kinematics**2, axis=1))  # TODO float64?
         met_pz = torch.zeros_like(met_pt)
         met = torch.stack((met_pt, met_kinematics[:, 0], met_kinematics[:, 1], met_pz), axis=1)
         t.append(met)
@@ -73,7 +73,7 @@ class LBNFeatureExtractor(torch.nn.Module):
             nu = torch.stack((nu_e, nu_kinematics[:, 0], nu_kinematics[:, 1], nu_kinematics[:, 2]), axis=1)
             t.append(nu)
         # combine everything
-        t = torch.stack(t, axis=-1) # B, FEATURES (4), particles (7)
+        t = torch.stack(t, axis=-1)  # B, FEATURES (4), particles (7)
         return t
 
     def forward(self, x):

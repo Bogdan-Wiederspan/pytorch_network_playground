@@ -13,13 +13,8 @@ def build_cross_entropy(ctx, **kwargs):
     y_pred = ctx.predictions
     weights = ctx.event_weights
 
-    cross_entropy = torch.nn.functional.cross_entropy(
-        y_pred,
-        y_true,
-        weight=None,
-        reduction="none"
-        )
+    cross_entropy = torch.nn.functional.cross_entropy(y_pred, y_true, weight=None, reduction="none")
 
     weights = weights.reshape(cross_entropy.shape)
     cross_entropy = torch.mean(cross_entropy * weights)
-    return {"cross_entropy" : cross_entropy}
+    return {"cross_entropy": cross_entropy}

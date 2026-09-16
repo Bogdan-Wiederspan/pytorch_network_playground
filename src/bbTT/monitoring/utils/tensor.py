@@ -5,6 +5,7 @@ import torch
 def prepare_tensor(*tensor, device="cpu"):
     return [t.detach().to(device).numpy() for t in tensor]
 
+
 def find_events_of_node(y_true, y_pred, target_map, node_name="hh"):
     signal_idx = target_map[node_name]
     # identify events uses TRUTH information to create masks
@@ -20,6 +21,7 @@ def to_numpy(values):
     elif isinstance(values, (tuple, list)):
         values = np.array(values)
     return values
+
 
 def make_plotable(tensor):
     return tensor.detach().cpu().numpy()

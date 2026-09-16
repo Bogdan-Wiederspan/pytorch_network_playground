@@ -10,6 +10,7 @@ class WeightStatistics:
     {"normalization_weights": {"whole_sum": ...}, "product_of_weights": {...}} dict.
     Produced by WeightAggregator, consumed by Process / ProcessSampler.
     """
+
     normalization_whole_sum: torch.Tensor
     normalization_training_sum: torch.Tensor
     normalization_validation_sum: torch.Tensor
@@ -26,6 +27,7 @@ class WeightStatistics:
     def per_event_norm(self) -> float:
         """Total normalization weight of the whole process (scalar)."""
         return self.normalization_whole_sum.item()
+
 
 class WeightAggregator:
     """

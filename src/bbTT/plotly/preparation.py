@@ -5,6 +5,7 @@ import pandas as pd
 def to_numpy(x) -> np.ndarray:
     return x.detach().cpu().numpy()
 
+
 def compute_bin_edges(n_intervals: int, use_logit: bool, eps: float = 1e-3) -> np.ndarray:
     if use_logit:
         logit = lambda p: np.log(p / (1 - p))
@@ -15,16 +16,14 @@ def compute_bin_edges(n_intervals: int, use_logit: bool, eps: float = 1e-3) -> n
         edges = np.linspace(0.0, 1.0, n_intervals + 1)
     return edges
 
+
 def percentile_range(values: np.ndarray, low: float = 1.0, high: float = 99.0) -> tuple[float, float]:
     return float(np.percentile(values, low)), float(np.percentile(values, high))
 
 
 def build_feature_frame(
-    data: dict,
-    score_data: dict,
-    continuous_names: list[str],
-    categorical_names: list[str]
-    ) -> pd.DataFrame:
+    data: dict, score_data: dict, continuous_names: list[str], categorical_names: list[str]
+) -> pd.DataFrame:
     """
     Flatten the dict into one Pandas DataFrame with named feature columns + a label column.
     The label columns is taken from names and should represent the order in the tensor.
@@ -60,11 +59,11 @@ def build_feature_frame(
         frames.append(df_fold)
     return pd.concat(frames, ignore_index=True)
 
+
 def build_scores_frame(
     data: dict,
     score_names: list[str],
-
-    ) -> pd.DataFrame:
+) -> pd.DataFrame:
     """
     Flatten the dict into one Pandas DataFrame with named feature columns + a label column.
     The label columns is taken from names and should represent the order in the tensor.

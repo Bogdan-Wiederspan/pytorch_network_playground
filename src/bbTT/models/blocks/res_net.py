@@ -13,7 +13,7 @@ class ResNetBlock(torch.nn.Module):  # noqa: F811
         skip_connection_init: float = 1,
         freeze_skip_connection: float = False,
         eps: float = 1e-5,
-        normalize = True,
+        normalize=True,
         *args,
         **kwargs,
     ):
@@ -45,7 +45,6 @@ class ResNetBlock(torch.nn.Module):  # noqa: F811
         self.bn = torch.nn.BatchNorm1d(self.nodes, eps=eps)
         self.act_fn = self.act_func
 
-
     def _get_attr(self, obj, attr):
         for o in dir(obj):
             if o.lower() == attr.lower():
@@ -60,6 +59,7 @@ class ResNetBlock(torch.nn.Module):  # noqa: F811
         x = self.act_fn(x)
         x = x + skip_connection
         return x
+
 
 class ResNetPreactivationBlock(torch.nn.Module):  # noqa: F811
     def __init__(

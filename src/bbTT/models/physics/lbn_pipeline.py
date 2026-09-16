@@ -22,12 +22,12 @@ class LBNPipeline(torch.nn.Module):
 
         self.lbn = LBN(
             N=self.lbn_feature_extractor.num_particles,
-            M=M, clip_weights=clip_weights,
+            M=M,
+            clip_weights=clip_weights,
             eps=eps,
-            weight_init_scale=weight_init_scale
-            )
+            weight_init_scale=weight_init_scale,
+        )
         self.lbn_batch_norm = torch.nn.BatchNorm1d(self.lbn.ndim)
-
 
     @property
     def ndim(self):

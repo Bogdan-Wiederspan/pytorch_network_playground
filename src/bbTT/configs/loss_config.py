@@ -8,6 +8,7 @@ from bbTT.utils.utils import choice_check
 LOSS_CHOICE = Literal["cross_entropy", "signal_efficiency", "signal_efficiency_binning_aware"]
 SIGNAL_EFFICIENCY_LOSS_MODE = Literal["full", "no_unc", "approximation"]
 
+
 @dataclass
 class SignalEfficiencyLossConfig:
     asimov_mode: SIGNAL_EFFICIENCY_LOSS_MODE = "approximation"
@@ -16,11 +17,13 @@ class SignalEfficiencyLossConfig:
     epsilon_log: float = 1e-9
     background_uncertainty: float = 0.0
 
+
 @dataclass
 class WeightedCrossEntropyConfig:
     weight: float = 1.0
     reduction: str = "mean"
     label_smoothing: float = 0.0
+
 
 @dataclass
 class LossConfig:

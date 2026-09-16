@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from monitoring.training_monitor import TrainingMonitor
 
+
 class HookableMixin:
     """
     Enables a registration mechanism for hooks.
@@ -37,7 +38,7 @@ class HookableMixin:
         """
         return []
 
-    def monitored_tensor_names(self) ->list[str]:
+    def monitored_tensor_names(self) -> list[str]:
         """
         Names of all Tensors that are exposed by the Layer for monitoring.
 
@@ -55,31 +56,21 @@ class HookableMixin:
         """
         # TODO docstring
         for name in self.monitored_gradient_names():
-            self.register_gradient_callback(
-                name=name,
-                callback=monitor.gradient_callback(name)
-                )
+            self.register_gradient_callback(name=name, callback=monitor.gradient_callback(name))
         for name in self.monitored_tensor_names():
-            self.register_tensor_callback(
-                name=name,
-                callback=monitor.tensor_callback(name)
-                )
+            self.register_tensor_callback(name=name, callback=monitor.tensor_callback(name))
 
     # --- registration of callbacks, should be called 1x per setup ---
 
     def register_gradient_callback(self, name, callback):
         if name in self.gradient_callbacks and self.gradient_callbacks[name] is not callback:
-            logger_inst.warning(
-                f"Overwriting gradient callback for '{name}' with a different callback."
-                )
+            logger_inst.warning(f"Overwriting gradient callback for '{name}' with a different callback.")
 
         self.gradient_callbacks[name] = callback
 
     def register_tensor_callback(self, name, callback):
         if name in self.tensor_callbacks and self.tensor_callbacks[name] is not callback:
-            logger_inst.warning(
-                f"Overwriting tensor callback for '{name}' with a different callback."
-                )
+            logger_inst.warning(f"Overwriting tensor callback for '{name}' with a different callback.")
 
         self.tensor_callbacks[name] = callback
 
@@ -144,8 +135,8 @@ class HookableMixin:
                 callback(grad)
             except Exception as e:
                 logger_inst.warning(f"Gradient callback {name} raised {e}")
-        self._gradient_hook_handles[name] = tensor.register_hook(_safe_callback)
 
+        self._gradient_hook_handles[name] = tensor.register_hook(_safe_callback)
 
     def monitor_tensor(self, tensor, name):
         if not self._tensor_hooks_enabled:

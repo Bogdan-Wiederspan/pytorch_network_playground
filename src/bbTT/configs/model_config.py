@@ -7,64 +7,68 @@ from bbTT.utils.utils import EMPTY_FLOAT, choice_check
 
 LAST_ACTIVATION_CHOICE = Literal["Softmax", "Sigmoid", None]
 
+
 @dataclass
 class RotationLayerConfig:
-    ref_phi_columns: Tuple[str, str] = ("vis_tau1", "vis_tau2") # reference column to calculate rotation angle
+    ref_phi_columns: Tuple[str, str] = ("vis_tau1", "vis_tau2")  # reference column to calculate rotation angle
     rotate_columns: Tuple[str, ...] = (
         "bjet1",
         "bjet2",
         "fatjet",
         "vis_tau1",
         "vis_tau2",
-    ) # which columns should be rotated
+    )  # which columns should be rotated
+
 
 @dataclass
 class PaddingConfig:
-    categorical_target_value: Optional[float] = None # which categorical value is targeted by the padding
-    categorical_masking_value: Optional[float] = -1 # value that is used to mask the categorical target value
+    categorical_target_value: Optional[float] = None  # which categorical value is targeted by the padding
+    categorical_masking_value: Optional[float] = -1  # value that is used to mask the categorical target value
 
-    continuous_target_value: Optional[float] = None # which continuous value is targeted by the padding, if None no value is masked
-    continuous_masking_value: Optional[float] = EMPTY_FLOAT # value that is used to mask the continuous target value
+    continuous_target_value: Optional[float] = None  # target value that is padded, None = no mask
+    continuous_masking_value: Optional[float] = EMPTY_FLOAT  # pad value that is used to mask
+
 
 @dataclass
 class EmbeddingConfig:
-    tokenizer_add_unknown_category: Optional[None] = None # value added to categories to symbolize unknown category. If None, no extra category is added
-    embedding_dim: int = 10 # dimension of embedding layer - Marcel 10
+    tokenizer_add_unknown_category: Optional[None] = None  # noqa value added to categories to symbolize unknown category. If None, no extra category is added
+    embedding_dim: int = 10  # dimension of embedding layer - Marcel 10
+
 
 @dataclass
 class DenseNetworkConfig:
-    nodes: int = 128 # base number of nodes of the dense blocks, due to DenseNet connection, increases with more layers
-    activation_functions: str = "elu" # string of the activation function of DenseBlocks - Marcel DNN: elu
-    skip_connection_init: float = 1 # init value of the skip connection, 1 = exact copy
-    freeze_skip_connection: bool = True # True = non-learnable skip connection value
-    batch_norm_eps: float = 0.001 # epsilon denominator of batch norm - increase stability Marcel: 0.001
+    nodes: int = 128  # base number of nodes of the dense blocks, due to DenseNet connection, increases with more layers
+    activation_functions: str = "elu"  # string of the activation function of DenseBlocks - Marcel DNN: elu
+    skip_connection_init: float = 1  # init value of the skip connection, 1 = exact copy
+    freeze_skip_connection: bool = True  # True = non-learnable skip connection value
+    batch_norm_eps: float = 0.001  # epsilon denominator of batch norm - increase stability Marcel: 0.001
 
-    normalize_linear: bool = False # activate weight normalization of linear layer, TODO currently BUGGED, leave at False
+    normalize_linear: bool = False  # noqa activate weight normalization of linear layer, TODO currently BUGGED, leave at False
+
 
 @dataclass
 class StandardizationConfig:
-    mean: Optional[Any] = None # these values are determined by your data
+    mean: Optional[Any] = None  # these values are determined by your data
     std: Optional[Any] = None
+
 
 @dataclass
 class LorentzBoostNetworkConfig:
-    number_of_particles: int = 10 # number of particles of the lbn network Marcel: 10
-    weight_init_scale=1.0
-    clip_weights=False
-    eps=1.0e-5
+    number_of_particles: int = 10  # number of particles of the lbn network Marcel: 10
+    weight_init_scale = 1.0
+    clip_weights = False
+    eps = 1.0e-5
+
 
 @dataclass
 class ModelConfig:
     enable_categorical_padding: bool = False
     enable_continuous_padding: bool = False
-    enable_rotation: bool = False # turn off rotation, currently data is rotated in preprocessing by Marcel
-    enable_binning: bool = True # turn off binning layer, for example when using a model that does not support binning
+    enable_rotation: bool = False  # turn off rotation, currently data is rotated in preprocessing by Marcel
+    enable_binning: bool = True  # turn off binning layer, for example when using a model that does not support binning
 
-
-    last_activation_fn: LAST_ACTIVATION_CHOICE = "Softmax" # add activation function after last layer
-    use_last_activation: bool = True # whether to use the last activation function, can be deactivated if not wanted - for example when using a loss function that already includes an activation like cross entropy, Marcel: False
-
-
+    last_activation_fn: LAST_ACTIVATION_CHOICE = "Softmax"  # add activation function after last layer
+    use_last_activation: bool = True  # noqa use last activation, Losses can have buildin activation function like cross entropy. Marcel: False
 
     rotation: RotationLayerConfig = field(default_factory=RotationLayerConfig)
 
@@ -76,7 +80,6 @@ class ModelConfig:
 
     dense_network: DenseNetworkConfig = field(default_factory=DenseNetworkConfig)
     lbn_network: LorentzBoostNetworkConfig = field(default_factory=LorentzBoostNetworkConfig)
-
 
     def __post_init__(self):
 

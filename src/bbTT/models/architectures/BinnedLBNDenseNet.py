@@ -18,14 +18,15 @@ class BinnedLBNDenseNet(LBNDenseNet):
     The output is now two-headed: One binned and one non-binned network.
     The network is only trained on the binned output.
     """
+
     def __init__(
         self,
         full_config,
         *args,
         **kwargs,
-        ):
+    ):
         super().__init__(full_config, *args, **kwargs)
-        self.freeze_edges() # TODO for now, change when not working with fixed binning
+        self.freeze_edges()  # TODO for now, change when not working with fixed binning
 
     def init_layers(self):
         # create normal LBN DenseNet
@@ -42,12 +43,11 @@ class BinnedLBNDenseNet(LBNDenseNet):
                 binning_cfg=self.binning_config.binning_cfg,
                 kernel_map=KERNEL_MAP[self.binning_config.kernel_cls],
                 kernel_cfg=self.binning_config.kernel_config,
-                )
+            )
 
     def learning_mode_bin_only(self):
         all_layers = dict(self.named_children())
         all_layers["binning_layer"].requires_grad = True
-
 
     def learning_mode_model_only(self):
         all_layers_except_binning = dict(self.named_children())
@@ -90,11 +90,9 @@ class BinnedLBNDenseNet(LBNDenseNet):
         Returns:
             dict[Any]: Dictionary with all snapshots exposed from the internal components.
         """
-        return {
-            "binning": self.binning_layer.create_evaluation_state()
-            }
+        return {"binning": self.binning_layer.create_evaluation_state()}
 
     def forward(self, categorical_inputs, continuous_inputs):
         normal_network_output = super().forward(categorical_inputs, continuous_inputs)
-        binned_output = self.binning_layer(normal_network_output) # increases dimension at axis 0
+        binned_output = self.binning_layer(normal_network_output)  # increases dimension at axis 0
         return normal_network_output, binned_output

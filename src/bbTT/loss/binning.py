@@ -5,6 +5,8 @@ import abc
 import torch
 
 __all__ = ["BinningBase", "EqualDistant"]
+
+
 # TODO understand this function before using better
 class BinningBase(abc.ABC):
     def __call__(self, lower_edge, upper_edge, num_bins, forward=True):
@@ -21,6 +23,7 @@ class BinningBase(abc.ABC):
     def back_transformation_fn(self, y):
         raise NotImplementedError("Implement Inverse Transformation Function")
 
+
 class EqualDistant(BinningBase):
     def __init__(self, *args, **kwargs):
         super().__init__()
@@ -31,6 +34,7 @@ class EqualDistant(BinningBase):
     def back_transformation_fn(self, y):
         return y
 
+
 class Decompress(BinningBase):
     def __init__(self, eps=1e-6, *args, **kwargs):
         super().__init__()
@@ -40,12 +44,13 @@ class Decompress(BinningBase):
         return x / (1 - x + self.eps)
 
     def back_transformation_fn(self, y):
-        return (y + y * self.eps)/ (1 + y)
+        return (y + y * self.eps) / (1 + y)
+
 
 def transformed_edges(transformation_fn, bins, num_bins=25):
-        if len(bins) == 2 and isinstance(num_bins, int):
-            lower, upper = bins
-            bins = torch.linspace(lower, upper, num_bins)
-        else:
-            bins = torch.tensor(bins)
-        return transformation_fn(bins)
+    if len(bins) == 2 and isinstance(num_bins, int):
+        lower, upper = bins
+        bins = torch.linspace(lower, upper, num_bins)
+    else:
+        bins = torch.tensor(bins)
+    return transformation_fn(bins)

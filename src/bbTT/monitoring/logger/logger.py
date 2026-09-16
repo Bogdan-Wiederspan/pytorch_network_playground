@@ -9,6 +9,7 @@ from bbTT.monitoring.logger.log_level import CUSTOM_LEVELS
 
 _custom_levels_registered = False
 
+
 class SameLineStreamHandler(logging.StreamHandler):
     """
     A StreamHandler that understands "same-line" records (tagged via
@@ -48,6 +49,7 @@ class SameLineStreamHandler(logging.StreamHandler):
         except Exception:
             self.handleError(record)
 
+
 # helper function to add log methods for custom levels
 def _make_log_method(level_num):
     def log_method(self, msg, *args, stacklevel=2, **kwargs):
@@ -57,7 +59,9 @@ def _make_log_method(level_num):
             if "stacklevel" not in kwargs:
                 kwargs["stacklevel"] = stacklevel
             self._log(level_num, msg, args, **kwargs)
+
     return log_method
+
 
 def _make_same_line_log_method(level_num: int):
     """
@@ -70,6 +74,7 @@ def _make_same_line_log_method(level_num: int):
     Args:
         level_num (int): Log Level of the method.
     """
+
     def log_method(self, msg, *args, stacklevel=2, **kwargs):
         if self.isEnabledFor(level_num):
             if "stacklevel" not in kwargs:
@@ -77,7 +82,9 @@ def _make_same_line_log_method(level_num: int):
             extra = kwargs.setdefault("extra", {})
             extra["same_line"] = True
             self._log(level_num, msg, args, **kwargs)
+
     return log_method
+
 
 def _register_custom_log_levels():
     global _custom_levels_registered
@@ -93,13 +100,13 @@ def _register_custom_log_levels():
         setattr(logging.Logger, f"{method_name}_progress", _make_same_line_log_method(spec.num))
 
     # each normal logger should
-    setattr(logging.Logger, "debug_progress", _make_same_line_log_method(logging.DEBUG))
-    setattr(logging.Logger, "info_progress", _make_same_line_log_method(logging.INFO))
+    logging.Logger.debug_progress = _make_same_line_log_method(logging.DEBUG)
+    logging.Logger.info_progress = _make_same_line_log_method(logging.INFO)
 
     _custom_levels_registered = True
 
 
-def get_logger(name:str ="root", file_path: str | None=None) -> logging.Logger:
+def get_logger(name: str = "root", file_path: str | None = None) -> logging.Logger:
     """
     Factory to create / get a named logger instance with optional file write out.
 
@@ -147,7 +154,7 @@ def get_logger(name:str ="root", file_path: str | None=None) -> logging.Logger:
         if file_path is not None:
             file_handler = logging.FileHandler(file_path, mode="a", encoding="utf-8")
             file_formatter = logging.Formatter(fmt=formatter_string, datefmt="%Y-%m-%d %H:%M:%S")
-            file_handler.setFormatter(file_formatter) # use different formatter to remove coloring
+            file_handler.setFormatter(file_formatter)  # use different formatter to remove coloring
             file_handler.setLevel(file_log_level)
             logger.addHandler(file_handler)
 

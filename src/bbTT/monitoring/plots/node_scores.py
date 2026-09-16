@@ -154,9 +154,7 @@ def _plot_signal_node_scores(
 
     # panel 0: signal vs combined background
     _ = axes[0].hist(node[signal], label="signal", weights=weights[signal], hatch="/", **hist_cfg)
-    _ = axes[0].hist(
-        node["background"], label="background", weights=weights["background"], hatch="\\", **hist_cfg
-    )
+    _ = axes[0].hist(node["background"], label="background", weights=weights["background"], hatch="\\", **hist_cfg)
 
     # panel 1: signal vs each background process
     hatches = ["/", "\\", "*", "o", "."]

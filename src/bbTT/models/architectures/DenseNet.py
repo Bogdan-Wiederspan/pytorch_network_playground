@@ -16,12 +16,12 @@ class DenseNet(BaseModel):
     def init_layers(self):
         dense_cfg = self.model_config.dense_network
         _dense_config = {
-            "skip_connection_init" : dense_cfg.skip_connection_init,
-            "freeze_skip_connection" : dense_cfg.freeze_skip_connection,
-            "activation_functions" : dense_cfg.activation_functions,
-            "eps": dense_cfg.batch_norm_eps, # increasing eps helps to stabilize training, to counter batch norm and L2 reg counter play when used together
-            "normalize" : dense_cfg.normalize_linear, # activate weight normalization on linear layer weights
-            "output_nodes" : int(dense_cfg.nodes),
+            "skip_connection_init": dense_cfg.skip_connection_init,
+            "freeze_skip_connection": dense_cfg.freeze_skip_connection,
+            "activation_functions": dense_cfg.activation_functions,
+            "eps": dense_cfg.batch_norm_eps,  # increasing eps helps to stabilize training, to counter batch norm and L2 reg counter play when used together
+            "normalize": dense_cfg.normalize_linear,  # activate weight normalization on linear layer weights
+            "output_nodes": int(dense_cfg.nodes),
         }
 
         self.input_layer = self.init_optional_input_layer()
@@ -32,7 +32,7 @@ class DenseNet(BaseModel):
             activation_functions=_dense_config["activation_functions"],
             eps=_dense_config["eps"],
             normalize=_dense_config["normalize"],
-            )
+        )
         self.dense_block_1 = DenseNetBlock(input_nodes=self.transition_dense_1.output_dim, **_dense_config)
         self.dense_block_2 = DenseNetBlock(input_nodes=self.dense_block_1.output_dim, **_dense_config)
         self.dense_block_3 = DenseNetBlock(input_nodes=self.dense_block_2.output_dim, **_dense_config)

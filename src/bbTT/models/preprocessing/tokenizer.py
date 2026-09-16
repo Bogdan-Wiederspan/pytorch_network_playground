@@ -9,10 +9,11 @@ from bbTT.utils import utils
 
 logger_inst = get_logger(__name__)
 
+
 class CategoricalTokenizer(torch.nn.Module):  # noqa: F811
     def __init__(
         self,
-        categories: tuple[str ],
+        categories: tuple[str],
         expected_categorical_inputs: dict[str, list[int]],
         empty: int = None,
     ):
@@ -108,7 +109,7 @@ class CategoricalTokenizer(torch.nn.Module):  # noqa: F811
         _str = []
         _str.append("Translation (input : output):")
         for ind, (category, expected_value) in enumerate(self._expected_inputs.items()):
-            _str.append(f"{category}: {expected_value} -> {output_per_feature[ind][:len(expected_value)].tolist()}")
+            _str.append(f"{category}: {expected_value} -> {output_per_feature[ind][: len(expected_value)].tolist()}")
         return "\n".join(_str)
 
     def check_for_values_outside_range(self, input_tensor: torch.FloatTensor):
@@ -128,17 +129,14 @@ class CategoricalTokenizer(torch.nn.Module):  # noqa: F811
                 logger_inst.critical(
                     f"{category} has values outside the expected range: {difference}.\n"
                     "The tokenizer will return wrong values for these inputs."
-                    )
+                )
 
     def pad_to_longest(self) -> torch.FloatTensor:
         if not self._expected_inputs:
             return None
         # helper function to pad the input tensor to the longest category
         # first value of the category is used as padding value
-        local_max = max([
-            len(input_for_category)
-            for input_for_category in self._expected_inputs.values()
-        ])
+        local_max = max([len(input_for_category) for input_for_category in self._expected_inputs.values()])
         # pad with first value of the category, so we guarantee to not introduce new values
         array = torch.stack(
             [
@@ -198,7 +196,8 @@ class CategoricalTokenizer(torch.nn.Module):  # noqa: F811
         for feature_idx, feature in enumerate(indices_array):
             unique = torch.unique(feature, dim=None)
             mapping_array[feature_idx, unique] = torch.arange(
-                stride, stride + len(unique),
+                stride,
+                stride + len(unique),
                 dtype=torch.int32,
             )
             stride += len(unique)
