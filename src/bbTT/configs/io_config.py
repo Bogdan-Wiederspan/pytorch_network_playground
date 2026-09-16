@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from string import Formatter
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
-from bbTT.data_handling.utils import cached_find_datasets
+from bbTT.data_handling.io.find_datasets import cached_find_datasets
 
 ERAS_CHOICE = Literal["22pre", "22post", "23pre", "23post", "24"]
 
@@ -106,7 +106,7 @@ class DataConfig:
         "hh_ggf_hbb_htt_kl1_kt1*",
     )  # pattern to find datasets
 
-    eras: Tuple[ERAS_CHOICE] = ("22pre",)  # ERAS that are trained on. For each era a separate cache is created
+    eras: Tuple[ERAS_CHOICE] = ("22pre", "22post", "23pre", "23post",)  # ERAS that are trained on. For each era a separate cache is created
 
     flush_threshold: int = 1_000_000  # number of rows before a flush is initiated when creating the cache, reduce when memory issues are a problem
 

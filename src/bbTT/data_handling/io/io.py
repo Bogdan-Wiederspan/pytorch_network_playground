@@ -178,6 +178,7 @@ def stream_events_by_uid(
 
     num_events_per_dataset = {}
     num_events_per_pid = {}
+    from IPython import embed; embed(header="MESSAGE Line 182 | File: /afs/desy.de/user/w/wiedersb/xxl/pytorch_network_playground/src/bbTT/data_handling/io.py")
     for dataset, files in dataset_paths.items():
         logger_inst.info(f"Start loading and conversion of root files: {dataset}")
         events_bucket, num_events_of_files = load_root_and_convert_to_numpy(files, branches=columns, cut=cut)
@@ -308,7 +309,6 @@ def create_era_caches(config, cache: DataCacher, ignore_cache: bool, save_cache:
     where needed. Does not merge or return any data — purely a cache-population step.
     """
     era_datasets = structure_datasets_after_eras(config)
-
     for era in config.eras:
         if not ignore_cache and cache.era_exists(era):
             logger_inst.info(f"Cache already present for era {era}")
@@ -333,7 +333,6 @@ def _load_and_process_era(config, datasets_per_era, era):
     logger_inst.info(f"Start loading and filtering of data for era {era}")
 
     era_datasets = datasets_per_era[era]
-
     era_events, num_events_per_dataset, num_events_per_pid = stream_events_by_uid(
         era_datasets,
         columns=config.uproot_continuous_columns + config.uproot_categorical_columns,
@@ -400,19 +399,28 @@ def get_data(config=None, save_cache=False, ignore_cache=False, _hash=None) -> d
         create_era_caches(config=config, cache=cache, save_cache=save_cache, ignore_cache=ignore_cache)
         return load_and_merge_eras(config=config, cache=cache)
 
+def structure_datasets_after_eras(config) -> dict[dict[str, list[str]]]:
+    """
+    Helper to divide dataset paths from glob to an era like structure:
+        Start: {dataset: [paths to all mixed eras]}
+        End: {era: {dataset: [paths]}}
 
-def structure_datasets_after_eras(config):
-    # {dataset: [paths to all mixed eras]}
-    # final datasets: {era: {dataset: [paths]}}
+    Args:
+        config (DatasetConfig): Excepted to be a DatasetConfig Object
+
+    Returns:
+        dict[dict[str, list[str]]]: Dictionary with where dataset paths are sorted by era.
+    """
     datasets = config.datasets
 
     era_datasets = {era: {} for era in config.eras}
     for dataset, paths in datasets.items():
         for path in paths:
-            # path is ${INPUT_DATA_DIR}/ERA/DATASET/ROOT_FILE
+            # path is ${INPUT_DATA_DIR}/ERA/dataset/path
             parts = path.split("/")
             era = parts[-3]
-            if dataset not in era_datasets:
+
+            if dataset not in era_datasets[era]:
                 era_datasets[era][dataset] = []
 
             era_datasets[era][dataset].append(path)

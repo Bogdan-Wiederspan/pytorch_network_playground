@@ -11,8 +11,9 @@ import bbTT.data_handling.sampling.sampler as sampler
 from bbTT.configs.full_config import FullConfig
 
 # personal imports
-from bbTT.data_handling import io, k_fold
-from bbTT.data_handling.preprocessing import FeatureStatisticCache
+from bbTT.data_handling.io import io
+from bbTT.data_handling.preprocessing.k_fold import FoldAndSplitCoordinator
+from bbTT.data_handling.preprocessing.standardization import FeatureStatisticCache
 from bbTT.data_handling.sampling.weight import WeightAggregator
 from bbTT.data_handling.utils import hash_dictionary
 from bbTT.loss import init_loss
@@ -63,7 +64,7 @@ def main(**kwargs):
             full_config.dataset_config, ignore_cache=kwargs["ignore_cache"], save_cache=kwargs["save_cache"]
         )
         # split data into training and validation according to fold and get collect all weight statistics
-        fold_split_coordinator = k_fold.FoldAndSplitCoordinator(
+        fold_split_coordinator = FoldAndSplitCoordinator(
             events=events,
             c_fold=current_fold,
             k_fold=full_config.training_config.k_fold,
