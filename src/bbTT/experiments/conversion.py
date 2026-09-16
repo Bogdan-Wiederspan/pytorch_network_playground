@@ -1,5 +1,6 @@
 # contains tools to convert old model to new structure
 # this is necessary due to the way pickle stores stuff
+# NOT DONE YET
 import sys
 import types
 
@@ -43,7 +44,6 @@ class ClassMap:
         self.current_version = from_version
         self.destination_version = destination_version
 
-
 def install_fake_modules(class_map: dict[tuple[str, str], tuple[str, str]]) -> None:
     """Create fake modules at the OLD dotted paths, each populated with
     attributes pointing at the real objects from their NEW locations, and
@@ -66,7 +66,6 @@ def install_fake_modules(class_map: dict[tuple[str, str], tuple[str, str]]) -> N
 
 def _import_attr(module_name: str, attr_name: str) -> object:
     import importlib
-
     mod = importlib.import_module(module_name)
     return getattr(mod, attr_name)
 
@@ -84,27 +83,29 @@ def _register_parent_packages(dotted: str) -> None:
             sys.modules[parent] = pkg
 
 
+
+
 map_v1_to_v2 = ClassMap(
     from_version=1,
     destination_version=2,
     map={
-        ("models.create_model", "LBNDenseNet"): ("bbTT.models.architectures.LBNDenseNet", "LBNDenseNet"),
-        ("models.layers", "CatEmbeddingLayer"): ("bbTT.models.preprocessing", "CatEmbeddingLayer"),
-        ("models.layers", "CategoricalInputLayer"): ("bbTT.models.input.categorical", "CategoricalInputLayer"),
-        ("models.layers", "CategoricalTokenizer"): ("bbTT.models.preprocessing.embedding", "CategoricalTokenizer"),
-        ("models.layers", "ContinuousInputLayer"): ("bbTT.models.input.continuous", "ContinuousInputLayer"),
-        ("models.layers", "DenseBlock"): ("bbTT.models.blocks", "DenseBlock"),
-        ("models.layers", "DenseNetBlock"): ("bbTT.models.blocks", "DenseNetBlock"),
-        ("models.layers", "LBN"): ("bbTT.models.physics.lbn", "LBN"),
-        ("models.layers", "LBNFeaturerExtractor"): ("bbTT.models.physics.lbn_feature_extractor", "LBNFeatureExtractor"),
-        ("models.layers", "LBN_DNN"): ("bbTT.models.physics.lbn_pipeline", "LBNPipeline"),
-        ("models.layers", "OptionalInputLayer"): ("bbTT.models.input", "OptionalInputLayer"),
-        ("models.layers", "StandardizeLayer"): ("bbTT.models.preprocessing", "StandardizeLayer"),
-        ("models.layers", "WeightNormalizedLinear"): ("bbTT.models.utils", "WeightNormalizedLinear"),
-        ("train.train_config", "BinningConfig"): ("bbTT.configs.binning_config", "BinningConfig"),
-        ("train.train_config", "DataConfig"): ("bbTT.configs.io_config", "DataConfig"),
+        ("models.create_model", "LBNDenseNet")       : ("bbTT.models.architectures.LBNDenseNet", "LBNDenseNet"),
+        ("models.layers", "CatEmbeddingLayer")       : ("bbTT.models.preprocessing", "CatEmbeddingLayer"),
+        ("models.layers", "CategoricalInputLayer")   : ("bbTT.models.input.categorical", "CategoricalInputLayer"),
+        ("models.layers", "CategoricalTokenizer")    : ("bbTT.models.preprocessing.embedding", "CategoricalTokenizer"),
+        ("models.layers", "ContinuousInputLayer")    : ("bbTT.models.input.continuous", "ContinuousInputLayer"),
+        ("models.layers", "DenseBlock")              : ("bbTT.models.blocks", "DenseBlock"),
+        ("models.layers", "DenseNetBlock")           : ("bbTT.models.blocks", "DenseNetBlock"),
+        ("models.layers", "LBN")                     : ("bbTT.models.physics.lbn", "LBN"),
+        ("models.layers", "LBNFeaturerExtractor")    : ("bbTT.models.physics.lbn_feature_extractor", "LBNFeatureExtractor"),
+        ("models.layers", "LBN_DNN")                 : ("bbTT.models.physics.lbn_pipeline", "LBNPipeline"),
+        ("models.layers", "OptionalInputLayer")      : ("bbTT.models.input", "OptionalInputLayer"),
+        ("models.layers", "StandardizeLayer")        : ("bbTT.models.preprocessing", "StandardizeLayer"),
+        ("models.layers", "WeightNormalizedLinear")  : ("bbTT.models.utils", "WeightNormalizedLinear"),
+        ("train.train_config", "BinningConfig")      : ("bbTT.configs.binning_config", "BinningConfig"),
+        ("train.train_config", "DataConfig")         : ("bbTT.configs.io_config", "DataConfig"),
         ("train.train_config", "ModelBuildingConfig"): ("bbTT.configs.model_config", "ModelConfig"),
-    },
+}
 )
 
 install_fake_modules(map_v1_to_v2.map)
@@ -112,11 +113,7 @@ checkpoint_path = resolve_checkpoint_path(path)
 checkpoint_inst = load_checkpoint(checkpoint_path)
 full_config = rebuild_dataclass_from_dict(checkpoint_inst["full_config"])
 
-from IPython import embed
-
-embed(
-    header="MESSAGE Line 109 | File: /afs/desy.de/user/w/wiedersb/xxl/pytorch_network_playground/src/bbTT/evaluation/conversion.py"
-)
+from IPython import embed; embed(header="MESSAGE Line 109 | File: /afs/desy.de/user/w/wiedersb/xxl/pytorch_network_playground/src/bbTT/evaluation/conversion.py")
 if __name__ == "__main__":
     if len(sys.argv) < 3:
         print(__doc__)

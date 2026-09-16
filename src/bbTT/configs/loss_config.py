@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-from bbTT.utils.utils import choice_check
+from bbTT.configs.utils import choice_check
 
 LOSS_CHOICE = Literal["cross_entropy", "signal_efficiency", "signal_efficiency_binning_aware"]
 SIGNAL_EFFICIENCY_LOSS_MODE = Literal["full", "no_unc", "approximation"]

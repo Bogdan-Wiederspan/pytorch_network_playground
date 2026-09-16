@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal, Optional, Tuple
 
-from bbTT.utils.utils import EMPTY_FLOAT, choice_check
+from bbTT.configs.utils import choice_check
+from bbTT.utils.utils import EMPTY_FLOAT
 
 LAST_ACTIVATION_CHOICE = Literal["Softmax", "Sigmoid", None]
 

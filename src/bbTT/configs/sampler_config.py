@@ -3,9 +3,9 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Dict, Iterable, Literal, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, Literal, Optional, Tuple
 
-from bbTT.utils.utils import choice_check
+from bbTT.configs.utils import choice_check
 
 SAMPLING_STRATEGY = Literal["old_largest_remainder", "largest_remainder", "stochastic"]
 

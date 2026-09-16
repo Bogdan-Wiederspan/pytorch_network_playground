@@ -12,7 +12,7 @@ from bbTT.configs.full_config import FullConfig
 
 # personal imports
 from bbTT.data_handling import io, k_fold
-from bbTT.data_handling.cache_standardization import FeatureStatisticCache
+from bbTT.data_handling.preprocessing import FeatureStatisticCache
 from bbTT.data_handling.sampling.weight import WeightAggregator
 from bbTT.data_handling.utils import hash_dictionary
 from bbTT.loss import init_loss

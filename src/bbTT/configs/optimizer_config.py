@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from bbTT.utils.utils import choice_check
+from bbTT.configs.utils import choice_check
 
 OPTIMIZER_CHOICE = Literal["adamw", "sam"]
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, Tuple
 
-from bbTT.utils.utils import choice_check
+from bbTT.configs.utils import choice_check
 
 MODEL_CHOICE = Literal["residual", "dense", "lbn_dense", "binned_lbn_dense"]
 TRAINING_LOOP_CHOICE = Literal["cross_entropy", "sam", "signal_efficiency"]

@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, Literal, Optional
 
+from bbTT.configs.utils import choice_check
 from bbTT.utils.transformations import cubic, linspace, logit, tangent
-from bbTT.utils.utils import choice_check
 
 BINNING_CHOICE = Literal["logit", "tangent", "linear", "cubic"]
 KERNEL_CHOICE = Literal["GaussianKernelV3", "GaussianKernelFinal", "Tanh"]

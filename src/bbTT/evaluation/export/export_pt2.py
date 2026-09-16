@@ -4,7 +4,8 @@ import os
 import pathlib
 
 import torch
-from bbTT.utils.load_models import rebuild_checkpoint_information
+
+from bbTT.evaluation.evaluate import rebuild_checkpoint_information
 
 # from models import create_model
 from bbTT.monitoring.logger.logger import get_logger

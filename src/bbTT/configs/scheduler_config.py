@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any, Literal, Optional, Tuple
 
-from bbTT.utils.utils import choice_check
+from bbTT.configs.utils import choice_check
 
 SCHEDULER_CHOICE = Literal["linear", "cosine_annealing", "reduce_on_plateau", "step", "exponential"]
 
