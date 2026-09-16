@@ -178,7 +178,6 @@ def stream_events_by_uid(
 
     num_events_per_dataset = {}
     num_events_per_pid = {}
-    from IPython import embed; embed(header="MESSAGE Line 182 | File: /afs/desy.de/user/w/wiedersb/xxl/pytorch_network_playground/src/bbTT/data_handling/io.py")
     for dataset, files in dataset_paths.items():
         logger_inst.info(f"Start loading and conversion of root files: {dataset}")
         events_bucket, num_events_of_files = load_root_and_convert_to_numpy(files, branches=columns, cut=cut)

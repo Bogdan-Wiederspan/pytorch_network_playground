@@ -283,11 +283,12 @@ def main(**kwargs):
                         ctx_train,
                         plots=[
                             "confusion_matrix",
-                            "roc",
+                            # "roc", # roc computation is the long factor (14s)
                             "output_score_hh_node",
                             "output_score_hh_node_untransformed",
-                            "kernels_monitorscore_correlation_matrix",
-                            "precision_recall",
+                            "kernels_monitor",
+                            "score_correlation_matrix",
+                            # "precision_recall", # deactivated takes 40s to use
                         ],
                     )
 
@@ -295,12 +296,12 @@ def main(**kwargs):
                         ctx_validation,
                         plots=[
                             "confusion_matrix",
-                            "roc",
+                            # "roc", # roc computation is the long factor (4s)
                             "output_score_hh_node",
                             "output_score_hh_node_untransformed",
                             "kernels_monitor",
                             "score_correlation_matrix",
-                            "precision_recall",
+                            # "precision_recall", # takes to long
                         ],
                     )
 
@@ -319,7 +320,6 @@ def main(**kwargs):
                             "Loss/Validation VLoss": "loss",
                         },
                     )
-
                 ### checkpoint criteria checks and saving
                 if checkpoint_inst.check_criteria(eval_v_loss):
                     checkpoint_inst.create_checkpoint(
@@ -333,7 +333,6 @@ def main(**kwargs):
                 scheduler_handler_inst.step(model_inst, optimizer_inst, metric=eval_v_loss)
 
         from IPython import embed
-
         embed(header="Training ends: Check if everything is as you thought it would be")
 
 

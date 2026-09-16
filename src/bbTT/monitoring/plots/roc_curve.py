@@ -1,8 +1,9 @@
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
-from sklearn.metrics import RocCurveDisplay
+from sklearn.metrics import RocCurveDisplay, auc, roc_curve
 
 from bbTT.monitoring.register import register_plot
 
@@ -12,7 +13,7 @@ from bbTT.monitoring.register import register_plot
     requires=None,
     optional=False,
 )
-def roc_curve(ctx, sample_weight=None, labels=None, **kwargs) -> tuple[Figure, Axes]:
+def _roc_curve(ctx, sample_weight=None, labels=None, **kwargs) -> tuple[Figure, Axes]:
     """
     Plot one-vs-rest ROC curves for each class.
 
@@ -53,13 +54,23 @@ def roc_curve(ctx, sample_weight=None, labels=None, **kwargs) -> tuple[Figure, A
     for class_index, name in enumerate(labels):
         color = colors[class_index % len(colors)]
 
-        disp = RocCurveDisplay.from_predictions(
+        fpr, tpr, _ = roc_curve(
             target[:, class_index],
             pred[:, class_index],
             sample_weight=sample_weight,
-            ax=ax,
-            name=name,
-            color=color,
         )
+        roc_auc = auc(fpr, tpr)
+
+        # Downsample: curve shape is visually identical with far fewer points
+        n_points = 500
+        if len(fpr) > n_points:
+            idx = np.linspace(0, len(fpr) - 1, n_points).astype(int)
+            fpr, tpr = fpr[idx], tpr[idx]
+
+        disp = RocCurveDisplay(fpr=fpr, tpr=tpr, roc_auc=roc_auc, estimator_name=name)
+
+        disp.plot(ax=ax, color=color)
+        disp.line_.set_rasterized(True) # exist only after plot
+
     _ = ax.set(xlabel="False Positive Rate", ylabel="True Positive Rate")
     return fig, ax
