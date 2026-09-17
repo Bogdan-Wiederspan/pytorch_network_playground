@@ -11,7 +11,7 @@ import bbTT.data_handling.sampling.sampler as sampler
 from bbTT.configs.full_config import FullConfig
 
 # personal imports
-from bbTT.data_handling.io import io
+from bbTT.data_handling.io import get_data
 from bbTT.data_handling.preprocessing.k_fold import FoldAndSplitCoordinator
 from bbTT.data_handling.preprocessing.standardization import FeatureStatisticCache
 from bbTT.data_handling.sampling.weight import WeightAggregator
@@ -20,7 +20,13 @@ from bbTT.loss import init_loss
 from bbTT.models.utils import init_model
 
 # from .train_utils import log_metrics
-from bbTT.monitoring import EvalContext, EvaluationRunner, TrainingMonitor, load_registers, setup_monitoring
+from bbTT.monitoring import (
+    EvalContext,
+    EvaluationRunner,
+    TrainingMonitor,
+    load_registers,
+    setup_monitoring,
+)
 from bbTT.monitoring.context.batch_composition_context import BatchCompositionHistory
 from bbTT.monitoring.logger.logger import get_logger
 from bbTT.monitoring.logger.tensorboard_logger import TensorboardLogger
@@ -28,10 +34,8 @@ from bbTT.optimizer.early_stopping import CheckPoint
 from bbTT.optimizer.scheduler_handler import SchedulerHandler
 from bbTT.optimizer.utils import init_optimizer, init_scheduler
 from bbTT.train.loops import TrainingLoop, ValidationLoop
+from bbTT.utils.utils import DEVICE
 
-CPU = torch.device("cpu")
-CUDA = torch.device("cuda")
-DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 full_config = FullConfig()
 torch.manual_seed(full_config.training_config.seed)
 np.random.seed(full_config.training_config.seed)
@@ -53,16 +57,20 @@ def main(**kwargs):
 
     # load data
     for current_fold in full_config.training_config.train_folds:
-        logger_inst.info(f"Trainings fold: {current_fold}/{full_config.training_config.k_fold - 1}")
+        logger_inst.info(
+            f"Trainings fold: {current_fold}/{full_config.training_config.k_fold - 1}"
+        )
         # -----
         ### data loading and preprocessing
         # -----
         # HINT: order matters, due to memory constraints views are moved in and out of dictionaries
-        # load data from cache is necessary or from root files
         # events is of form : {uid : {"continuous","categorical", "weight": torch tensor}}
-        events = io.get_data(
-            full_config.dataset_config, ignore_cache=kwargs["ignore_cache"], save_cache=kwargs["save_cache"]
+        events = get_data(
+            full_config.dataset_config,
+            ignore_cache=kwargs["ignore_cache"],
+            save_cache=kwargs["save_cache"],
         )
+
         # split data into training and validation according to fold and get collect all weight statistics
         fold_split_coordinator = FoldAndSplitCoordinator(
             events=events,
@@ -112,26 +120,38 @@ def main(**kwargs):
             return_dummy=full_config.debug_config.get_batch_statistic_return_dummy,
             verbose=True,
         )
-        full_config.model_building_config.standardization.mean = feature_statistic_cache.mean
-        full_config.model_building_config.standardization.std = feature_statistic_cache.std
+        full_config.model_building_config.standardization.mean = (
+            feature_statistic_cache.mean
+        )
+        full_config.model_building_config.standardization.std = (
+            feature_statistic_cache.std
+        )
         # ----
         ### model build and configuration, including optimizer, scheduler, early stopping and loss function
         # ----
         model_inst = init_model(full_config=full_config)
         model_inst = model_inst.to(DEVICE).train()
-        training_loop, validation_loop = TrainingLoop(full_config), ValidationLoop(full_config)
+        training_loop, validation_loop = (
+            TrainingLoop(full_config),
+            ValidationLoop(full_config),
+        )
 
         optimizer_inst = init_optimizer(full_config=full_config, model_inst=model_inst)
         training_loss_inst, validation_loss_inst = init_loss(
             full_config=full_config, device=DEVICE, training_sampler=training_sampler
         )
-        scheduler_inst = init_scheduler(full_config=full_config, optimizer_inst=optimizer_inst)
+        scheduler_inst = init_scheduler(
+            full_config=full_config, optimizer_inst=optimizer_inst
+        )
         checkpoint_inst = CheckPoint(
-            checkpoint_name=full_config.training_config.save_model_name, checkpoint_fold=current_fold
+            checkpoint_name=full_config.training_config.save_model_name,
+            checkpoint_fold=current_fold,
         )
         training_monitor_inst = TrainingMonitor(to_cpu=True, non_blocking=True)
         scheduler_handler_inst = SchedulerHandler(
-            scheduler_inst=scheduler_inst, checkpoint_inst=checkpoint_inst, logger_inst=logger_inst
+            scheduler_inst=scheduler_inst,
+            checkpoint_inst=checkpoint_inst,
+            logger_inst=logger_inst,
         )
         mode_batch, mode_eval_training, mode_eval_validation = (
             "training_batch",
@@ -166,7 +186,9 @@ def main(**kwargs):
             )
 
             if full_config.record_config.batch_metrics:
-                batch_composition_history_inst.record(step=current_iteration, cursors=training_sampler.cursors)
+                batch_composition_history_inst.record(
+                    step=current_iteration, cursors=training_sampler.cursors
+                )
 
             # ----
             # Verbose and Metrics that are triggered often
@@ -174,19 +196,25 @@ def main(**kwargs):
             if current_iteration % full_config.record_config.verbose_interval == 0:
                 tensorboard_writer.log_lr(optimizer_inst, current_iteration)
                 batch_loss = batch_result["loss"].item()
-                tensorboard_writer.log_loss({"batch_loss": batch_loss}, step=current_iteration)
+                tensorboard_writer.log_loss(
+                    {"batch_loss": batch_loss}, step=current_iteration
+                )
                 current_lr = optimizer_inst.param_groups[0]["lr"]
-                logger_inst.training(f"T-It: {current_iteration} - LR: {current_lr} - batch loss: {batch_loss:.2E}")
+                logger_inst.training(
+                    f"T-It: {current_iteration} - LR: {current_lr} - batch loss: {batch_loss:.2E}"
+                )
 
             # ----
             #### Evaluation of training and validation data, logging and checkpointing
             # ----
-            evaluation_condition = (current_iteration % full_config.record_config.validation_interval == 0) & (
-                current_iteration >= 0
-            )
+            evaluation_condition = (
+                current_iteration % full_config.record_config.validation_interval == 0
+            ) & (current_iteration >= 0)
             if evaluation_condition:
                 # evaluation of training data
-                logger_inst.info(f"Iteration {current_iteration}. Start evaluation of training data.")
+                logger_inst.info(
+                    f"Iteration {current_iteration}. Start evaluation of training data."
+                )
 
                 evaluation_training_result = validation_loop(
                     model_inst=model_inst,
@@ -198,7 +226,9 @@ def main(**kwargs):
                     device=DEVICE,
                 )
                 # evaluation of validation
-                logger_inst.info(f"Iteration {current_iteration}. Start evaluation of validation data.")
+                logger_inst.info(
+                    f"Iteration {current_iteration}. Start evaluation of validation data."
+                )
 
                 evaluation_validation_result = validation_loop(
                     model_inst=model_inst,
@@ -330,9 +360,12 @@ def main(**kwargs):
                         full_config=full_config,
                     )
 
-                scheduler_handler_inst.step(model_inst, optimizer_inst, metric=eval_v_loss)
+                scheduler_handler_inst.step(
+                    model_inst, optimizer_inst, metric=eval_v_loss
+                )
 
         from IPython import embed
+
         embed(header="Training ends: Check if everything is as you thought it would be")
 
 

@@ -6,8 +6,8 @@ EMPTY_INT = -99999
 EMPTY_FLOAT = -99999.0
 
 CPU_DEVICE = torch.device("cpu")
-CUDA_DEVICE = torch.device("cuda") if torch.cuda.is_available() else CPU_DEVICE
-
+CUDA_DEVICE = torch.device("cuda")
+DEVICE = torch.device("cuda") if torch.cuda.is_available() else CPU_DEVICE
 
 COLOR_CYCLE = [
     #e41a1c,

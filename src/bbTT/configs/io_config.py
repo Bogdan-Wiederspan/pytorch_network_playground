@@ -106,6 +106,7 @@ class DataConfig:
         "hh_ggf_hbb_htt_kl1_kt1*",
     )  # pattern to find datasets
 
+    # eras: Tuple[ERAS_CHOICE] = ("22pre", "22post", "23pre", "23post",)  # ERAS that are trained on. For each era a separate cache is created
     eras: Tuple[ERAS_CHOICE] = ("22pre", "22post", "23pre", "23post",)  # ERAS that are trained on. For each era a separate cache is created
 
     flush_threshold: int = 1_000_000  # number of rows before a flush is initiated when creating the cache, reduce when memory issues are a problem

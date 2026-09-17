@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any, Literal, Optional, Tuple
+from typing import Any, Literal, Optional
 
 from bbTT.configs.utils import choice_check
 
@@ -10,7 +10,7 @@ SCHEDULER_CHOICE = Literal["linear", "cosine_annealing", "reduce_on_plateau", "s
 
 @dataclass
 class StepLRConfig:  # used by marcel
-    step_size: int = 10  # number of iterations between two learning rate reductions
+    step_size: int = 500  # number of iterations between two learning rate reductions
     gamma: float = 0.5  # learning rate reduction factor
 
 
@@ -23,19 +23,19 @@ class CosineAnnealingLRConfig:
 @dataclass
 class ReduceLROnPlateauConfig:
     mode: str = "min"  # min or max. min = lr reduces when the quantity monitored has stopped decreasing
-    patience: int = 0  # wait x number of checks - Marcel: 10
+    patience: int = 10  # wait x number of checks - Marcel: 10
     threshold_mode: str = "abs"  # type of min_delta - Marcel: abs
     factor: float = 0.5  # LR reduce by factor
     cooldown: int = 0  # number of iterations to wait after a learning rate reduction before resuming normal operation
-    min_lr: float = 0  # lower bound on the learning rate
+    min_lr: float = 1e-10  # lower bound on the learning rate
     eps: float = 1e-08  # minimal decay applied to lr, if it is smaller than this value, it is set to this value
 
 
 @dataclass
 class LinearLRConfig:
-    start_factor: float = 0.001  # the initial learning rate will be the start_factor times the base learning rate
+    start_factor: float = 1e-4  # the initial learning rate will be the start_factor times the base learning rate
     end_factor: float = 1.0  # the final learning rate will be the end_factor times the base learning rate
-    total_iters: int = 100  # number of iterations over which the multiplier increases from start_factor to end_factor
+    total_iters: int = 1000  # number of iterations over which the multiplier increases from start_factor to end_factor
 
 
 @dataclass
@@ -55,13 +55,13 @@ SCHEDULER_REGISTRY = {
 
 @dataclass
 class SchedulerConfig:
-    # scheduler_chain: Tuple[SCHEDULER_CHOICE, ...] = ("reduce_on_plateau",) # schedulers used in chain
-    scheduler_chain: Tuple[SCHEDULER_CHOICE, ...] = ("linear", "cosine_annealing")  # schedulers used in chain
-    milestones: Tuple[int, ...] = (500,)  # intervals after which the LR scheduler is swapped
-    config_chain: Optional[Tuple[Any, ...]] = (
+    # scheduler_chain: tuple[SCHEDULER_CHOICE, ...] = ("reduce_on_plateau",) # schedulers used in chain
+    scheduler_chain: tuple[SCHEDULER_CHOICE, ...] = ("linear", "step")  # schedulers used in chain
+    milestones: tuple[int, ...] = (500,)  # intervals after which the LR scheduler is swapped
+    config_chain: Optional[tuple[Any, ...]] = (
         None  # list of configs corresponding to the schedulers in the scheduler chain
     )
-    scheduler_cls_chain: Optional[Tuple[Any, ...]] = None # noqa list of scheduler classes corresponding to the schedulers in the scheduler chain
+    scheduler_cls_chain: Optional[tuple[Any, ...]] = None # noqa list of scheduler classes corresponding to the schedulers in the scheduler chain
 
     def __post_init__(self):
         scheduler_configs = []

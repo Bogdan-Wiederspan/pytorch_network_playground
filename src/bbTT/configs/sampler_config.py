@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Dict, Literal, Optional, Tuple
+from typing import TYPE_CHECKING, Literal, Optional
 
 from bbTT.configs.utils import choice_check
 
@@ -29,10 +29,10 @@ class StochasticRoundingConfig:
 class SamplerConfig:
     sampler_strategy_choice: SAMPLING_STRATEGY = "stochastic"
 
-    sample_ratio: Dict[str, float] = field(
-        default_factory=lambda: {"dy": 1 / 4, "tt": 1 / 4, "hh": 1 / 2}
+    sample_ratio: dict[str, float] = field(
+        default_factory=lambda: {"dy": 1 / 3, "tt": 1 / 3, "hh": 1 / 3}
     )  # decide the ratio of tt, dy and hh within a batch
-    sub_process_ratios: Dict[str, float] = field(
+    sub_process_ratios: dict[str, float] = field(
         default_factory=lambda: {
             "signal": {},  # empty categorizes are set to 1 by default
             "tt": {(1100, 1200): 1, 1300: 1},  # groups are possible, and mixes are allowed
@@ -80,8 +80,8 @@ class SamplerConfig:
         }
     )  # amplify the subprocess xsec for the sampler only
 
-    use_sub_process_ratios: Tuple[str] = ("signal", "tt", "dy")  # which sub_process_ratios are chosen
-    sample_attributes: Tuple[str, ...] = (
+    use_sub_process_ratios: tuple[str] = ("signal", "tt", "dy")  # which sub_process_ratios are chosen
+    sample_attributes: tuple[str, ...] = (
         "continuous",
         "categorical",
         "targets",
@@ -123,7 +123,7 @@ class SamplerConfig:
         """
 
         def validate_exactly_two_levels(d):
-            for _, inner in d.items():
+            for inner in d.values():
                 # only dictionaries on top level are accepted
                 if not isinstance(inner, dict):
                     raise TypeError("Expected dict at top-level key")
