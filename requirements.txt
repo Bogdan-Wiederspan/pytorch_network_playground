@@ -139,9 +139,9 @@ terminado==0.18.1
 threadpoolctl==3.6.0
 tinycss2==1.4.0
 tomli==2.4.1
-torch==2.5.1+cu121
-torchaudio==2.5.1+cu121
-torchvision==0.20.1+cu121
+--extra-index-url https://pytorch.org torch==2.5.1+cu121
+--extra-index-url https://pytorch.org torchaudio==2.5.1+cu121
+--extra-index-url https://pytorch.org torchvision==0.20.1+cu121
 tornado==6.5.8
 tqdm==4.67.1
 traitlets==5.14.3
