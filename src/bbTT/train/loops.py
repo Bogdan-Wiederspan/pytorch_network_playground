@@ -295,6 +295,7 @@ class ValidationLoop(BaseLoop):
             "sample_weights": [],
             "loss_predictions": [],
             "relative_weights": [],
+            "post_relative_weights": [],
             "process_id": [],
         }
 
@@ -323,6 +324,10 @@ class ValidationLoop(BaseLoop):
                 collected_data["relative_weights"].append(
                     torch.full(size=(class_pred.shape[0], 1), fill_value=current_process.relative_weight)
                 )
+                collected_data["post_relative_weights"].append(
+                    torch.full(size=(class_pred.shape[0], 1), fill_value=current_process.post_relative_weight)
+                )
+
                 collected_data["process_id"].append(torch.full((class_pred.shape[0], 1), uid[1]))
 
                 if not model_inst.use_last_activation:
@@ -381,14 +386,14 @@ class ValidationLoop(BaseLoop):
         loss = loss_fn_inst(
             tensors["loss_predictions"],
             tensors["targets"],
-            tensors["sample_weights"],
+            tensors["post_relative_weight"],
         )
 
         return {
             "loss": loss,
             "predictions": tensors["class_predictions"],
             "targets": tensors["targets"],
-            "event_weights": tensors["sample_weights"],
+            "event_weights": tensors["product_of_all_weights"],
         }
 
     @register_loop(name="signal_efficiency")

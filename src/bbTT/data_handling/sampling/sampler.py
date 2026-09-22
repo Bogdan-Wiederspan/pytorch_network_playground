@@ -162,7 +162,7 @@ class ProcessSampler(t_data.Sampler):
         sub_batch_size = int(self.batch_size * self.sample_ratio[process_type])
 
         # allocate describes the actual algorithm, can be swapped out freely.
-        sizes, relative_weights = self.allocator.allocate(
+        sizes, relative_weights, post_relative_weights = self.allocator.allocate(
             weights_by_pid=weights_by_pid,
             sub_sample_ratio=self.sub_sample_ratio,
             sub_batch_size=sub_batch_size,
@@ -173,6 +173,8 @@ class ProcessSampler(t_data.Sampler):
             procs_by_pid[pid].sample_size = size
         for pid, rel_w in relative_weights.items():
             procs_by_pid[pid].relative_weight = rel_w
+        for pid, post_rel_w in post_relative_weights.items():
+            procs_by_pid[pid].post_relative_weight = post_rel_w
 
         logger_inst.debug(f"{process_type}: {sizes}")
 
