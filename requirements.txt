@@ -1,3 +1,4 @@
+--extra-index-url https://download.pytorch.org/whl/cu121
 absl-py==2.3.1
 anyio==4.12.1
 anywidget==0.9.21
@@ -11,7 +12,6 @@ awkward==2.8.8
 awkward_cpp==49
 babel==2.18.0
 -e git+ssh://git@github.com/Bogdan-Wiederspan/pytorch_network_playground.git@ffd519a81cfcd05d9cfb3af6ac8692843f9e40b0#egg=bbTT
--e git+ssh://git@github.com/Bogdan-Wiederspan/pytorch_network_playground.git@ffd519a81cfcd05d9cfb3af6ac8692843f9e40b0#egg=bbttDNN
 beautifulsoup4==4.15.0
 bleach==6.2.0
 certifi==2026.7.22
@@ -139,9 +139,9 @@ terminado==0.18.1
 threadpoolctl==3.6.0
 tinycss2==1.4.0
 tomli==2.4.1
---extra-index-url https://pytorch.org torch==2.5.1+cu121
---extra-index-url https://pytorch.org torchaudio==2.5.1+cu121
---extra-index-url https://pytorch.org torchvision==0.20.1+cu121
+torch==2.5.1+cu121
+torchaudio==2.5.1+cu121
+torchvision==0.20.1+cu121
 tornado==6.5.8
 tqdm==4.67.1
 traitlets==5.14.3
