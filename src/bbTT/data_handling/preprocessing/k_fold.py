@@ -39,7 +39,9 @@ class FoldAndSplitCoordinator:
             raise ValueError("k_fold parameter needs to be > 0")
 
         if (training_percentage > 1) or (training_percentage < 0):
-            raise ValueError("Training percentage needs to be in range of (inclusive) 0 and 1")
+            raise ValueError(
+                "Training percentage needs to be in range of (inclusive) 0 and 1"
+            )
 
         self.current_fold = c_fold
         self.k_fold = k_fold
@@ -56,8 +58,14 @@ class FoldAndSplitCoordinator:
             test_fold, training_fold = self.create_fold_index_map(value["event_id"])
 
             # further split into train and validation
-            training_id, validation_id = self.split_array_to_train_variation_by_ratio(training_fold)
-            indicies[(process_name, pid)] = {"test": test_fold, "training": training_id, "validation": validation_id}
+            training_id, validation_id = self.split_array_to_train_variation_by_ratio(
+                training_fold
+            )
+            indicies[(process_name, pid)] = {
+                "test": test_fold,
+                "training": training_id,
+                "validation": validation_id,
+            }
         return indicies
 
     def seed_per_process(self, uid):
@@ -86,13 +94,21 @@ class FoldAndSplitCoordinator:
         test_id = indices[test_fold_mask]
         training_id = indices[~test_fold_mask]
         if self.randomize:
-            test_id = test_id[torch.randperm(len(test_id), generator=torch.Generator().manual_seed(self.seed))]
+            test_id = test_id[
+                torch.randperm(
+                    len(test_id), generator=torch.Generator().manual_seed(self.seed)
+                )
+            ]
             training_id = training_id[
-                torch.randperm(len(training_id), generator=torch.Generator().manual_seed(self.seed))
+                torch.randperm(
+                    len(training_id), generator=torch.Generator().manual_seed(self.seed)
+                )
             ]
         return test_id, training_id
 
-    def split_array_to_train_variation_by_ratio(self, array: torch.Tensor) -> tuple[torch.Tensor]:
+    def split_array_to_train_variation_by_ratio(
+        self, array: torch.Tensor
+    ) -> tuple[torch.Tensor]:
         """
         Splits given *array* into training and validation parts according to the *percentage_training*.
 
@@ -134,8 +150,7 @@ class FoldAndSplitCoordinator:
         Returns:
             dict[torch.Tensor]: Dictionary of events with applied indices of specific *kind* on specific *columns*.
         """
-        if kind not in ("training", "validation", "test"):
-            raise ValueError(f"which needs to be one of training, validation or test, got {kind}")
+        self.invalid_kinds(kind)
         splitted_events = {}
         for uid, arrays in events.items():
             arrays = events[uid]
@@ -149,13 +164,83 @@ class FoldAndSplitCoordinator:
         # just stop applying indices and remove this process from the splitted_events
         for uid in list(splitted_events.keys()):
             if splitted_events[uid]["continuous"].numel() == 0:
-                logger_inst.warning(f"removed {uid} from splitted events since zero elements left after k-fold split")
+                logger_inst.warning(
+                    f"removed {uid} from splitted events since zero elements left after k-fold split"
+                )
                 splitted_events.pop(uid)
         return splitted_events
 
-    def check_uniformity(self):
-        # simple check if event_id split results in unbiased result (uniform distributed k)
-        pass
+    def invalid_kinds(self, kinds):
+        invalid_kinds = set(kinds) - {"training", "validation", "test"}
+        if invalid_kinds:
+            raise ValueError(
+                f"kinds must be a subset of training, validation, test, got invalid entries: {invalid_kinds}"
+            )
+
+    def split_and_free(
+        self,
+        events: dict[tuple[str, int], dict[str, torch.Tensor]],
+        kinds: tuple[str, ...] = ("training", "validation"),
+        columns: tuple[str, ...] = (
+            "continuous",
+            "categorical",
+            "event_id",
+            "normalization_weights",
+            "product_of_weights",
+            "evaluation_mask",
+        ),
+    ) -> tuple[
+        dict[tuple[str, int], dict[str, torch.Tensor]],
+        dict[tuple[str, int], dict[str, torch.Tensor]],
+    ]:
+        """
+        Splits *events* into *kinds* sets while releasing memory as it goes.
+        This function depopulates inplace events, thus first getting for example training and then validation
+        is not possible, both needs to be getting at the same time.
+
+        Difference to apply_indices: Apply_indices doesn't touch *events* at all.
+
+        Note:
+            Mutates *events* in place (pops each column as it's consumed).
+            Call anything that still needs full *events* (e.g. WeightAggregator)
+
+        Args:
+            events (dict[tuple[str,str]]): Dictionary of processes, each holding a dict of column tensors.
+            kinds (tuple[str, ...]): Which datasets are packed together.
+            columns (tuple[str, ...]) : Column names to split.
+
+        Returns:
+            Tuple of (train_events, validation_events), same nested structure as *events*.
+        """
+        self.invalid_kinds(kinds)
+
+        split_events: dict[str, dict[tuple[str, int], dict[str, torch.Tensor]]] = {
+            kind: {} for kind in kinds
+        }
+
+        for uid, arrays in events.items():
+            for kind in kinds:
+                split_events[kind][uid] = {}
+            for key in columns:
+                array = arrays.pop(
+                    key
+                )  # remove from source now: freed once every requested slice below is made
+                for kind in kinds:
+                    split_events[kind][uid][key] = array[self.indices[uid][kind]]
+                del (
+                    array
+                )  # drop the last reference explicitly before moving to the next column
+
+        # edge case: same zero-event handling as apply_indices, applied independently per kind
+        for kind in kinds:
+            for uid in list(split_events[kind].keys()):
+                if split_events[kind][uid]["continuous"].numel() == 0:
+                    logger_inst.warning(
+                        f"removed {uid} from splitted events since zero elements left after k-fold split"
+                    )
+                    split_events[kind].pop(uid)
+
+        return split_events
 
     def __call__(
         self,

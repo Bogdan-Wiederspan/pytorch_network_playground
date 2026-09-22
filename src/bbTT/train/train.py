@@ -63,15 +63,18 @@ def main(**kwargs):
         # -----
         ### data loading and preprocessing
         # -----
-        # HINT: order matters, due to memory constraints views are moved in and out of dictionaries
-        # events is of form : {uid : {"continuous","categorical", "weight": torch tensor}}
+        # events is of form : {uid : {"COLUMN_NAME": torch.Tensor}}
         events = get_data(
             full_config.dataset_config,
             ignore_cache=kwargs["ignore_cache"],
             save_cache=kwargs["save_cache"],
         )
 
-        # split data into training and validation according to fold and get collect all weight statistics
+        # split data into training, validation or test set - according to fold
+        # HINT: order matters, due to memory constraints, events is changed inplace.
+        #  To get Weight statistics all events need to be present. Thus this needs to run before apply splitting
+
+        # Calculate all Indices for Splitting
         fold_split_coordinator = FoldAndSplitCoordinator(
             events=events,
             c_fold=current_fold,
@@ -89,43 +92,42 @@ def main(**kwargs):
             "product_of_weights",
             "evaluation_mask",
         )
-        train_events, validation_events = (
-            fold_split_coordinator(events, which="training", columns=columns_to_split),
-            fold_split_coordinator(events, which="validation", columns=columns_to_split),
-        )  # noqa
+
+        # calculate weight statistics, NEEDS TO RUN BEFORE APPLY INDICES
         weight_aggregator = WeightAggregator(events, fold_split_coordinator.indices)
+        # actually apply indices, but release on the fly to reduce peak memory
+        split_events = fold_split_coordinator.split_and_free(events, kinds=("training", "validation"), columns=columns_to_split)
+        train_events, validation_events = split_events["training"], split_events["validation"]
+        del events
 
-        # release initial fields
-        for key in list(events.keys()):
-            del events[key]
-
-        logger_inst.info("Start creation of Sampler")
-
+        # create new sampler, splitted dict are released
+        logger_inst.info("Create Sampler")
         training_sampler = sampler.create_sampler(
             train_events,
             train=True,
             weight_aggregator_inst=weight_aggregator,
             full_config=full_config,
         )
+        del train_events
+
         validation_sampler = sampler.create_sampler(
             validation_events,
             train=False,
             weight_aggregator_inst=weight_aggregator,
             full_config=full_config,
         )
+        del validation_events
 
+        # calculate or load statistic of DATA used to for training, this information is necessary for standardization.
         feature_statistic_cache = FeatureStatisticCache(
             dataset_config=full_config.dataset_config,
             sampler=training_sampler,
             return_dummy=full_config.debug_config.get_batch_statistic_return_dummy,
             verbose=True,
         )
-        full_config.model_building_config.standardization.mean = (
-            feature_statistic_cache.mean
-        )
-        full_config.model_building_config.standardization.std = (
-            feature_statistic_cache.std
-        )
+        full_config.model_building_config.standardization.mean = feature_statistic_cache.mean
+        full_config.model_building_config.standardization.std = feature_statistic_cache.std
+
         # ----
         ### model build and configuration, including optimizer, scheduler, early stopping and loss function
         # ----
