@@ -66,6 +66,7 @@ class Process(t_data.Dataset):
         # cross-process bookkeeping set by ProcessSampler.calculate_sample_size;
         # only exist to write into, default is set 0
         self.relative_weight: Optional[float] = 0
+        self.post_relative_weight: Optional[float] = 0
 
     @property
     def uid(self) -> tuple[str, str]:

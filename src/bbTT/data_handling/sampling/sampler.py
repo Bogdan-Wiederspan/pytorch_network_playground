@@ -89,6 +89,11 @@ class ProcessSampler(t_data.Sampler):
         process's total normalization weight (via BatchSizeAllocator).
     """
 
+    shared_attributes = {
+        "relative_weight",
+        "post_relative_weight"
+    }
+
     def __init__(
         self,
         batch_size: int = 1,
@@ -168,7 +173,6 @@ class ProcessSampler(t_data.Sampler):
             sub_batch_size=sub_batch_size,
             sample_ratio_for_type=self.sample_ratio[process_type],
         )
-
         for pid, size in sizes.items():
             procs_by_pid[pid].sample_size = size
         for pid, rel_w in relative_weights.items():
@@ -180,13 +184,16 @@ class ProcessSampler(t_data.Sampler):
 
     def load_process_weights_from(self, other: "ProcessSampler"):
         """
-        Copy relative_weight from every process in *other* into the matching process here
-        (matched by uid). Explicit replacement for the old share_weights_between_sampler,
-        e.g. so a validation sampler can reuse weights computed on the training sampler.
+        Copy attributes from every process in *other* into the matching process here
+        (matched by uid). Other is another ProcessSampler, like Training.
+        To define which attributes are shared, change the class attribute called 'shared_attributes'.
         """
         for uid, proc in self.registry.all().items():
             if uid in other:
-                proc.relative_weight = other.registry[uid].relative_weight
+                for shared_attribute in self.shared_attributes:
+                    other_uid = other.registry[uid]
+                    other_attr_value = getattr(other_uid, shared_attribute)
+                    setattr(proc, shared_attribute, other_attr_value)
 
     # --- Sample Mechanism ---
     def sorted_pid_registry(self) -> Iterable[tuple[int, Process]]:

@@ -118,6 +118,9 @@ def main(**kwargs):
         )
         del validation_events
 
+        # load calculated sampler from training sampler to validation sampler
+        validation_sampler.load_process_weights_from(training_sampler)
+
         # calculate or load statistic of DATA used to for training, this information is necessary for standardization.
         feature_statistic_cache = FeatureStatisticCache(
             dataset_config=full_config.dataset_config,

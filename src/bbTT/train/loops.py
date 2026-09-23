@@ -322,13 +322,15 @@ class ValidationLoop(BaseLoop):
                 collected_data["sample_weights"].append(events.pop("sample_weights"))
 
                 collected_data["relative_weights"].append(
-                    torch.full(size=(class_pred.shape[0], 1), fill_value=current_process.relative_weight)
+                    torch.full(size=(class_pred.shape[0], 1), fill_value=current_process.relative_weight, device=device)
                 )
                 collected_data["post_relative_weights"].append(
-                    torch.full(size=(class_pred.shape[0], 1), fill_value=current_process.post_relative_weight)
+                    torch.full(size=(class_pred.shape[0], 1), fill_value=current_process.post_relative_weight, device=device)
                 )
 
-                collected_data["process_id"].append(torch.full((class_pred.shape[0], 1), uid[1]))
+                collected_data["process_id"].append(
+                    torch.full((class_pred.shape[0], 1), uid[1], device=device)
+                    )
 
                 if not model_inst.use_last_activation:
                     # TODO if sigmoid is necessary add switch case
@@ -381,19 +383,17 @@ class ValidationLoop(BaseLoop):
             skip_concatenate_columns=("",),
             device=device,
         )
-
         # validation needs to be reweightes by sample weights
         loss = loss_fn_inst(
             tensors["loss_predictions"],
             tensors["targets"],
-            tensors["post_relative_weight"],
+            tensors["post_relative_weights"],
         )
-
         return {
             "loss": loss,
             "predictions": tensors["class_predictions"],
             "targets": tensors["targets"],
-            "event_weights": tensors["product_of_all_weights"],
+            "event_weights": tensors["product_of_weights"],
         }
 
     @register_loop(name="signal_efficiency")
