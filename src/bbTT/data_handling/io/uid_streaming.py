@@ -41,7 +41,7 @@ def stream_events_by_uid(
     buffered_rows = {}  # uid -> sum of rows currently buffered (unmerged)
     data = {}  # uid -> merged running array
 
-    def flush(uid, buffers,):
+    def flush(uid, buffers):
         # helper to flush buffer and integrate into data
         fragments = buffers.get(uid)
         if not fragments:
@@ -78,12 +78,12 @@ def stream_events_by_uid(
                 buffers.setdefault(uid, []).append(p_array)
                 buffered_rows[uid] = buffered_rows.get(uid, 0) + len(p_array)
                 if buffered_rows[uid] >= flush_threshold_rows:
-                    flush(uid)
+                    flush(uid=uid, buffers=buffers)
             del events
 
     # final flush for any remaining buffered fragments:
     for uid in list(buffers.keys()):
-        flush(uid)
+        flush(uid=uid, buffers=buffers)
         logger_inst.debug(f"UID: {uid} | NUM: {len(data[uid])}")
 
     return data, num_events_per_dataset, num_events_per_pid
