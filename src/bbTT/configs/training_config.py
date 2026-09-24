@@ -23,8 +23,8 @@ class TrainingConfig:
     k_fold: int = 5
     seed: int = 100  # set torch and numpy seed for reproducibility
     train_ratio: float = 0.75  # split ratio for k-fold data into train and validation
-    t_batch_size: int = 4096 * 2
-    v_batch_size: int = -1  # validation batch size, -1 = full set,
+    training_batch_size: int = int(4096 / 2) # -1 = full set
+    validation_batch_size: int = 4096 * 20  # -1 = full set. -1 is discouraged, due to memory constraints # noqa
 
     # Sampler Settings
 

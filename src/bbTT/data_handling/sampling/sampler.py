@@ -313,7 +313,7 @@ def create_sampler(
     batch_size_allocator = BatchSizeAllocator(rounding=batch_strategy)
 
     process_sampler = ProcessSampler(
-        batch_size=full_config.training_config.t_batch_size,
+        batch_size=full_config.training_config.training_batch_size,
         sample_ratio=(full_config.sampler_config.sample_ratio or {"dy": 0.25, "tt": 0.25, "hh": 0.5}),
         target_map=full_config.dataset_config.target_map,
         weight_aggregator_inst=weight_aggregator_inst,

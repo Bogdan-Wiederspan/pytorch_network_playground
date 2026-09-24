@@ -73,7 +73,7 @@ def main(**kwargs):
             "weight_aggregator_inst": wa_inst,
             "target_map": full_config.dataset_config.target_map,
             "min_size": full_config.training_config.min_events_in_batch,
-            "batch_size": full_config.training_config.t_batch_size,
+            "batch_size": full_config.training_config.training_batch_size,
             "sample_ratio": full_config.training_config.sample_ratio,
             "sub_sample_ratio": full_config.training_config.sub_process_ratios,
         }
@@ -139,7 +139,7 @@ def main(**kwargs):
             "weight_aggregator_inst": weight_aggregator,
             "target_map": full_config.dataset_config.target_map,
             "min_size": full_config.training_config.min_events_in_batch,
-            "batch_size": full_config.training_config.t_batch_size,
+            "batch_size": full_config.training_config.training_batch_size,
             "sample_ratio": full_config.training_config.sample_ratio,
             "sub_sample_ratio": full_config.training_config.sub_process_ratios,
         }

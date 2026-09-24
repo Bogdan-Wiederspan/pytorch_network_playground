@@ -54,9 +54,9 @@ class BaseLoop:
     @property
     def batch_size(self):
         if self.MODE == "training":
-            return self.full_config.training_config.t_batch_size
+            return self.full_config.training_config.training_batch_size
         else:
-            return self.full_config.training_config.v_batch_size
+            return self.full_config.training_config.validation_batch_size
 
     def __init_subclass__(cls):
         for _name, fn in cls.__dict__.items():
