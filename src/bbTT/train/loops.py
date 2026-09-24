@@ -32,18 +32,31 @@ class BaseLoop:
     REGISTERED_LOOPS = {}
     MODE = None  # is overwritten by child class
 
-    def __init__(self, full_config, necessary_columns: set[str] | None = None, *args, **kwargs):
+    def __init__(
+        self,
+        full_config,
+        necessary_columns: set[str] | None = None,
+        *args,
+        **kwargs):
+        self.full_config = full_config
         self.which_fn = (
-            full_config.training_config.training_fn
+            self.full_config.training_config.training_fn
             if self.MODE == "training"
-            else full_config.training_config.validation_fn
+            else self.full_config.training_config.validation_fn
         )
         # these column are always necessary for the loops
         self.necessary_columns = (
             {"continuous", "categorical", "targets"} if necessary_columns is None else necessary_columns
         )
-        self.target_shape = (-1, len(full_config.dataset_config.target_map))
-        self.target_map = full_config.dataset_config.target_map
+        self.target_shape = (-1, len(self.full_config.dataset_config.target_map))
+        self.target_map = self.full_config.dataset_config.target_map
+
+    @property
+    def batch_size(self):
+        if self.MODE == "training":
+            return self.full_config.training_config.t_batch_size
+        else:
+            return self.full_config.training_config.v_batch_size
 
     def __init_subclass__(cls):
         for _name, fn in cls.__dict__.items():
@@ -305,7 +318,7 @@ class ValidationLoop(BaseLoop):
             # sample over all dataset generator and run network
             # store output in lists which are then concatenated in the end
             for uid, events in sampler_inst.full_pass(
-                batch_size=sampler_inst.batch_size, sample_from=sample_columns, device=device
+                batch_size=self.batch_size, sample_from=sample_columns, device=device
             ):
                 # hold data for current dataset, saved in loop to avoid memory issues
                 current_process = sampler_inst.registry[uid]
