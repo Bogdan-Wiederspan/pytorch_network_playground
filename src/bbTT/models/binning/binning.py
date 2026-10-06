@@ -104,8 +104,8 @@ class BinningLayer(HookableMixin, torch.nn.Module):
             kernels.append(cls(edge, **self.kernel_cfg))
 
         # --- configuration of kernels belong here
-        # TODO smoothing width is also a neightbor hood quantity
-        # necessary when training the edges
+        # the notch / flank width at an edge is a neighborhood quantity (and depends on neighbor bins)
+        # this is handled in connect_kernels
         kernels = self.connect_kernels(kernels)
         return kernels
 
@@ -115,16 +115,38 @@ class BinningLayer(HookableMixin, torch.nn.Module):
         raise NotImplementedError("NotImplemented")
 
     def connect_kernels(self, kernels):
+        """
+        Shares information between neighboring kernels that each kernel cannot know alone.
+
+        Has to run after every change of the edges ( in training for example ).
+        Order of the steps matters: Cuts are derive from the notches.
+        """
         n_bins = len(kernels)
 
-        # share information about neighbors
+        # 1) Notches. At a shared edge both bins must use the same notch, otherwise their flanks differ
+        #    in width and do not add up to 1.
+        # The notch of an edge is r * (width of the NARROWER bin at that edge)
+        # this is done so that the flank always fits into the narrower neighbor.
+        if not self.kernel_cfg["absolute_notch"]:
+            r_left, r_right = self.kernel_cfg["left_notch"], self.kernel_cfg["right_notch"]
+            assert r_left == r_right, "edge-shared notches need identical left_notch and right_notch"
+            widths = [kernel.bin_width for kernel in kernels]
+            for bin_idx, kernel in enumerate(kernels):
+                ref_left = torch.minimum(widths[bin_idx], widths[bin_idx - 1]) if bin_idx > 0 else widths[bin_idx]
+                ref_right = torch.minimum(widths[bin_idx], widths[bin_idx + 1]) if bin_idx < n_bins - 1 else widths[bin_idx]
+                # the kernel multiplies its notch with its OWN width -> hand over the notch as fraction of it
+                kernel.set_notches(
+                    left=r_left * ref_left / widths[bin_idx],
+                    right=r_right * ref_right / widths[bin_idx],
+                )
+
+
+        # 2) Cut every kernel where the neighboring plateau begins.
+        # There the flank has already decayed to eps, so the cut only removes the tail and makes the sum over all kernels exactly 1.
         for bin_idx, kernel in enumerate(kernels):
-            # set left cut
-            if bin_idx > 0:
-                kernel.set_cuts(left=kernels[bin_idx - 1].right_transition_coordinate)
-            # set right cut
-            if bin_idx < n_bins - 1:
-                kernel.set_cuts(right=kernels[bin_idx + 1].left_transition_coordinate)
+            left = kernels[bin_idx - 1].right_transition_coordinate if bin_idx > 0 else None
+            right = kernels[bin_idx + 1].left_transition_coordinate if bin_idx < n_bins - 1 else None
+            kernel.set_cuts(left=left, right=right)
         return kernels
 
     # --- Geometry handling ---

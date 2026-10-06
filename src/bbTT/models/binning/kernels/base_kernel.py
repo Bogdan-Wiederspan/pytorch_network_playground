@@ -11,11 +11,23 @@ class BaseKernel(torch.nn.Module, abc.ABC):
     has_right_transition = True
 
     def __init__(self, edges, bin_height=1.0, left_notch=0, right_notch=0, absolute_notch=True, *args, **kwargs):
+        """
+        Base Kernel for inheritance to implement different transition functions as kernel.
+        Classes using this need to implement 'left_transition_fn', 'right_transition_fn' and '_compute_normalization' methods.
+        Each class describes exactly one bin, which is defined by its edges. The transition functions are used to smooth the edges of the bin.
+
+        Args:
+            edges (_type_): Edges of the bin
+            bin_height (float, optional): Maximum value of the bin. Defaults to 1.0.
+            left_notch (int, optional): Carve a certain amount into the lower bin edge. Defaults to 0.
+            right_notch (int, optional): Carve a certain amount into the upper bin edge. Defaults to 0.
+            absolute_notch (bool, optional): If notches should be interpreted as relative values. Defaults to True.
+        """
         super().__init__(*args, **kwargs)
         self.register_buffer("lower_edge", edges[0])
         self.register_buffer("upper_edge", edges[1])
-        self.register_buffer("bin_height", torch.as_tensor(bin_height))
-        self.register_buffer("left_notch", torch.as_tensor(left_notch))
+        self.register_buffer("bin_height", torch.as_tensor(bin_height)) # maximum value of bin, is 1 normally
+        self.register_buffer("left_notch", torch.as_tensor(left_notch)) # describe how much space is added / removed from lower edge
         self.register_buffer("right_notch", torch.as_tensor(right_notch))
         self.right_cut = None
         self.left_cut = None
@@ -27,6 +39,18 @@ class BaseKernel(torch.nn.Module, abc.ABC):
         # only value is copied over
         self.lower_edge.copy_(lower)
         self.upper_edge.copy_(upper)
+
+    def set_notches(self, left: torch.Tensor, right: torch.Tensor) -> None:
+        """
+        Overwrites the notches, e.g. by the synchronization of a binning layer.
+
+        Args:
+            left: New left notch.
+            right: New right notch.
+        """
+        # in place, like set_edges, to keep the buffers registered
+        self.left_notch.copy_(left)
+        self.right_notch.copy_(right)
 
     def set_cuts(self, left=None, right=None):
         self.left_cut = left
