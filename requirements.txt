@@ -11,7 +11,6 @@ attrs==26.1.0
 awkward==2.8.8
 awkward_cpp==49
 babel==2.18.0
--e git+ssh://git@github.com/Bogdan-Wiederspan/pytorch_network_playground.git@ffd519a81cfcd05d9cfb3af6ac8692843f9e40b0#egg=bbTT
 beautifulsoup4==4.15.0
 bleach==6.2.0
 certifi==2026.7.22
