@@ -29,6 +29,16 @@ class RoundingStrategy(ABC):
             exactly to round(exact.sum()).
         """
 
+    def expected_counts(self, exact: torch.Tensor) -> torch.Tensor:
+        """
+        Expected count per pid over many calls of round(), E[round(exact)].
+
+        Used for everything that must not depend on a single draw (e.g. the validation).
+        Default is for deterministic strategies, where the one and only result is the expectation.
+        ...
+        """
+        return self.round(exact).to(exact.dtype)
+
 
 class LargestRemainderRounding(RoundingStrategy):
     """
@@ -111,6 +121,11 @@ class StochasticRounding(RoundingStrategy):
             counts[picks] += 1
 
         return counts
+
+    def expected_counts(self, exact: torch.Tensor) -> torch.Tensor:
+        # unbiased by construction: E[count] == exact for every pid (see round)
+        # for this reason only a pass through is needed, no need to call round() and convert back to float
+        return exact
 
 
 def init_strategy(sampler_config):

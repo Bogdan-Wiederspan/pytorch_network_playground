@@ -1,11 +1,21 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import torch
 
 if TYPE_CHECKING:
     from bbTT.data_handling.sampling.sample_strategy import RoundingStrategy
+
+@dataclass(frozen=True)
+class _TypePlan:
+    """Batch independent part of the allocation of one process_type, fixed once at registration."""
+
+    pids: list[str]
+    exact: torch.Tensor  # ideal (fractional) number of events per pid and batch
+
+
 
 
 class BatchSizeAllocatorOld:
@@ -79,14 +89,16 @@ class BatchSizeAllocator:
 
     def __init__(self, rounding: RoundingStrategy):
         self.rounding = rounding
+        self._plans: dict[str, _TypePlan] = {}
 
-    def allocate(
+    def register_process_type(
         self,
+        process_type,
         weights_by_pid: dict[str, float],
         sub_sample_ratio: dict[str, float],
         sub_batch_size: int,
         sample_ratio_for_type: float,
-    ) -> tuple[dict[str, int], dict[str, float]]:
+        ) -> tuple[dict[str, float], dict[str, float]]:
         """
         Args:
             weights_by_pid (dict[str, float]): Cross-section weight per process id.
@@ -116,15 +128,47 @@ class BatchSizeAllocator:
         # this is only driven by cross section and sample ratio
         relative_weights = {pid: (w / total_weight * sample_ratio_for_type).item() for pid, w in zip(pids, raw_weights)}
 
-        # normalize by total weights ensures consistent process family number
+        # TODO DELETE
+        # # normalize by total weights ensures consistent process family number
+        # exact = sub_batch_size * raw_weights / total_weight
+        # counts = self.rounding.round(exact)
+
+        # sizes = {pid: n.item() for pid, n in zip(pids, counts)}
+
+        # # rebuild "share of the whole batch quantity" - the reason for this is an adaptation by the rounding strategy
+        # # when e.g. flooring happens (and no stochastic strategy is used), then relative_weight does not represent real presence
+        # post_relative_weights = {
+        #     pid: (n / sub_batch_size * sample_ratio_for_type) for pid, n in sizes.items()
+        # }
+        # return sizes, relative_weights, post_relative_weights
+
         exact = sub_batch_size * raw_weights / total_weight
-        counts = self.rounding.round(exact)
 
-        sizes = {pid: n.item() for pid, n in zip(pids, counts)}
+        self._plans[process_type] = _TypePlan(pids, exact)
 
-        # rebuild "share of the whole batch quantity" - the reason for this is an adaptation by the rounding strategy
-        # when e.g. flooring happens (and no stochastic strategy is used), then relative_weight does not represent real presence
-        post_relative_weights = {
-            pid: (n / sub_batch_size * sample_ratio_for_type) for pid, n in sizes.items()
+        # share of the whole batch quantity after rounding. A single draw is noisy (stochastic) or biased
+        # (e.g. flooring), thus the expectation of the strategy is used. Stays constant, no sync necessary.
+        expected = self.rounding.expected_counts(exact)
+        expected_post_relative_weights = {
+            pid: n / sub_batch_size * sample_ratio_for_type for pid, n in zip(pids, expected.tolist())
         }
-        return sizes, relative_weights, post_relative_weights
+        return relative_weights, expected_post_relative_weights
+
+    def draw_sizes(self) -> dict[tuple[str, str], int]:
+        """Draw the number of events per process for ONE batch, with the rounding strategy. ..."""
+        if not self._plans:
+            raise RuntimeError("No process type registered, nothing to draw sizes from. Only training samplers do.")
+        sizes: dict[tuple[str, str], int] = {}
+        for process_type, plan in self._plans.items():
+            counts = self.rounding.round(plan.exact)
+            for pid, n in zip(plan.pids, counts.tolist()):
+                sizes[(process_type, pid)] = n
+        return sizes
+
+    def expected_sizes(self) -> dict[tuple[str, str], float]:
+        """Expected number of events per process and batch (no draw, does not touch the random state)."""
+        return {
+            (process_type, pid): n
+            for process_type, plan in self._plans.items()
+            for pid, n in zip(plan.pids, self.rounding.expected_counts(plan.exact).tolist())
+        }

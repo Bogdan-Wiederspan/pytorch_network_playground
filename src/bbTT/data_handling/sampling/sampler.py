@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import TYPE_CHECKING, Iterable, Optional
+from typing import TYPE_CHECKING, Callable, Iterable, Optional
 
 import torch
 import torch.utils.data as t_data
@@ -124,7 +124,6 @@ class ProcessSampler(t_data.Sampler):
         self.sub_sample_ratio = sub_sample_ratio or {}
         self.target_map = target_map or {"hh": 0, "tt": 1, "dy": 2}
         self.weights_aggregator_inst = weight_aggregator_inst
-        # self.allocator = BatchSizeAllocator(min_size=min_size)
         self.allocator = bs_allocator
         self.kind = kind
 
@@ -154,7 +153,7 @@ class ProcessSampler(t_data.Sampler):
         )
         logger_inst.debug("Sample rates per process (PID | Sample Size)\n" + msg)
 
-    def calculate_sample_size(self, process_type: str):
+    def setup_allocation(self, process_type: str):
         if self.batch_size <= 1:
             raise ValueError("Batch size <= 1 is not supported. Try a number big enough to be representative.")
 
@@ -164,23 +163,24 @@ class ProcessSampler(t_data.Sampler):
         weights_by_pid = {
             pid: proc.weights_statistics.normalization_whole_sum.item() for pid, proc in procs_by_pid.items()
         }
+        # HINT: The sub_batch_size can vary by 1 event per process_type, due to rounding.
+        # for big batch sizes this is negligible, but for small batch sizes it can be significant.
         sub_batch_size = int(self.batch_size * self.sample_ratio[process_type])
 
         # allocate describes the actual algorithm, can be swapped out freely.
-        sizes, relative_weights, post_relative_weights = self.allocator.allocate(
+        relative_weights, expected_post_relative_weights = self.allocator.register_process_type(
+            process_type=process_type,
             weights_by_pid=weights_by_pid,
             sub_sample_ratio=self.sub_sample_ratio,
             sub_batch_size=sub_batch_size,
             sample_ratio_for_type=self.sample_ratio[process_type],
         )
-        for pid, size in sizes.items():
-            procs_by_pid[pid].sample_size = size
         for pid, rel_w in relative_weights.items():
             procs_by_pid[pid].relative_weight = rel_w
-        for pid, post_rel_w in post_relative_weights.items():
+        for pid, post_rel_w in expected_post_relative_weights.items():
             procs_by_pid[pid].post_relative_weight = post_rel_w
 
-        logger_inst.debug(f"{process_type}: {sizes}")
+        # logger_inst.debug(f"{process_type}: {sizes}")
 
     def load_process_weights_from(self, other: "ProcessSampler"):
         """
@@ -204,12 +204,8 @@ class ProcessSampler(t_data.Sampler):
         """
         return sorted(self.registry.all(), key=lambda u: u[1])
 
-    def _aggregate_batch(
-        self,
-        sample_from: list[str],
-        cursor_method: str,
-        device: torch.device = CPU_DEVICE,
-    ) -> dict[str, torch.tensor]:
+
+    def _aggregate_batch(self, fetch: Callable[[tuple[str, str]], dict[str, torch.Tensor]], device=CPU_DEVICE) -> dict[str, torch.tensor]:
         """
         Shared aggregation logic for sample_batch/peek_batch: calls cursor_method
         (either "sample" or "peek") on every registered process's cursor, in pid order,
@@ -224,11 +220,8 @@ class ProcessSampler(t_data.Sampler):
             dict[attribute, Tensor], keys from sample_from, values are concatenated across all processes.
         """
         events: dict[str, list[torch.Tensor]] = defaultdict(list)
-
         for uid in self.sorted_pid_registry():
-            cursor = self.cursors[uid]
-            method = getattr(cursor, cursor_method)
-            for attribute, sampled in method(sample_from, device=device).items():
+            for attribute, sampled in fetch(uid).items():
                 events[attribute].append(sampled)
 
         return {attribute: torch.concatenate(tensors, dim=0).to(device) for attribute, tensors in events.items()}
@@ -237,7 +230,12 @@ class ProcessSampler(t_data.Sampler):
         """
         Sample cursors sample_size events from every registered process and concatenate together.
         """
-        return self._aggregate_batch(cursor_method="sample", sample_from=sample_from, device=device)
+        sizes = self.allocator.draw_sizes()
+
+        def fetch(uid: tuple[str, str]) -> dict[str, torch.Tensor]:
+            return self.cursors[uid].sample(sample_from, number=sizes[uid], device=device)
+
+        return self._aggregate_batch(fetch=fetch, device=device)
 
     def peek_batch(self, sample_from: list[str], device: torch.device = CPU_DEVICE) -> dict[str, torch.Tensor]:
         """
@@ -248,7 +246,10 @@ class ProcessSampler(t_data.Sampler):
             RuntimeError: If sample_batch() hasn't been called yet for some process
                 (propagated from ProcessSampleCursor.peek()).
         """
-        return self._aggregate_batch(cursor_method="peek", sample_from=sample_from, device=device)
+        def fetch(uid: tuple[str, str]) -> dict[str, torch.Tensor]:
+            return self.cursors[uid].peek(sample_from, device=device)
+
+        return self._aggregate_batch(fetch=fetch, device=device)
 
     def full_pass(self, sample_from: list[str], batch_size: int = -1, device: torch.device = CPU_DEVICE):
         """
@@ -311,7 +312,6 @@ def create_sampler(
 
     batch_strategy = init_strategy(sampler_config=full_config.sampler_config)
     batch_size_allocator = BatchSizeAllocator(rounding=batch_strategy)
-
     process_sampler = ProcessSampler(
         batch_size=full_config.training_config.training_batch_size,
         sample_ratio=(full_config.sampler_config.sample_ratio or {"dy": 0.25, "tt": 0.25, "hh": 0.5}),
@@ -352,6 +352,6 @@ def create_sampler(
         process_sampler.missing_processes()
 
         for process_type in process_sampler.registry.process_types:
-            process_sampler.calculate_sample_size(process_type=process_type)
+            process_sampler.setup_allocation(process_type=process_type)
 
     return process_sampler

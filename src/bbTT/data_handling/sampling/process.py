@@ -61,10 +61,10 @@ class Process(t_data.Dataset):
 
         self.process_id = process_id
         self.process_type = process_type
-        self.sample_size = len(self)
 
-        # cross-process bookkeeping set by ProcessSampler.calculate_sample_size;
+        # cross-process bookkeeping set by BatchSizeAllocator;
         # only exist to write into, default is set 0
+        # Both are batch-independent (expected shares), the per-batch sample size lives in the allocator.
         self.relative_weight: Optional[float] = 0
         self.post_relative_weight: Optional[float] = 0
 
@@ -78,14 +78,25 @@ class Process(t_data.Dataset):
     def __getitem__(self, idx):
         return self.continuous[idx], self.categorical[idx], self.targets[idx]
 
-    def per_event_sample_weight(self, n: int) -> torch.Tensor:
-        """Single source of truth for the sample_weights value, used by sample/peek/generator alike."""
-        return torch.full(
-            (n, 1),
-            self.weights_statistics.normalization_whole_sum / self.sample_size,
-        )
+    def per_event_sample_weight(self, n: int, denominator: int) -> torch.Tensor:
+        """
+        Single source of truth for the sample_weights value, used by sample/peek/generator alike.
+        The sample weight describes how much each event contributes to the total yield of the process, given that only a subset of events is sampled.
 
-    def gather(self, idx: torch.Tensor, sample_from: tuple[str, ...], device=CPU_DEVICE) -> dict[str, torch.Tensor]:
+        Args:
+            n: Number of events to create weights for.
+            denominator: Number of events that should represent the whole process yield. For a training
+                batch this is the drawn number of events, for a full pass it is ``len(self)``.
+
+        Returns:
+            Tensor of shape [n, 1].
+        """
+        # n == 0 -> empty batch, nothing to weight (and denominator == 0 would divide by zero)
+        if n == 0:
+            return torch.empty((0, 1))
+        return torch.full((n, 1), self.weights_statistics.normalization_whole_sum / denominator)
+
+    def gather(self, idx: torch.Tensor, sample_from: tuple[str, ...], weight_denominator: int, device=CPU_DEVICE) -> dict[str, torch.Tensor]:
         """
         Pure lookup: given indices + attribute names, return the corresponding batch dict.
         No mutation, no cursor state — sample()/peek()/generator on ProcessSampleCursor all
@@ -94,13 +105,14 @@ class Process(t_data.Dataset):
         Args:
             idx: Indices to gather.
             sample_from: Attribute names to gather (e.g. "continuous", "categorical", "targets").
+            weight_denominator: Passed to per_event_sample_weight.
             device: Device to move tensors to.
 
         Returns:
             Dict of tensors for each requested attribute, plus "sample_weights".
         """
         out = {attribute: getattr(self, attribute)[idx].to(device) for attribute in sample_from}
-        out["sample_weights"] = self.per_event_sample_weight(len(idx)).to(device)
+        out["sample_weights"] = self.per_event_sample_weight(len(idx), weight_denominator).to(device)
         return out
 
 
@@ -126,37 +138,10 @@ class ProcessSampleCursor:
         n = len(self.process)
         self.indices = torch.randperm(n) if self.randomize else torch.arange(n)
 
-    def sample_wrong(
-        self, sample_from: tuple[str, ...], number: int = None, device=CPU_DEVICE
-    ) -> dict[str, torch.Tensor]:
-        """
-        Sample *number* events from the process. Wraps around (reshuffling if randomize=True)
-        once the end is reached. If *number* is None, the process's own sample_size is used.
-
-        Args:
-            sample_from: Attribute names to sample.
-            number: Number of events to sample; defaults to process.sample_size.
-            device: Device to move tensors to.
-
-        Returns:
-            Dict of sampled tensors, keyed by attribute name, plus "sample_weights".
-        """
-        num = len(self.process)
-        if self.current_idx >= num:
-            self.reset()
-
-        number = self.process.sample_size if number is None else min(number, num)
-        next_idx = min(self.current_idx + number, num)
-        idx = self.indices[self.current_idx : next_idx]
-
-        self.last_idx = idx
-        self.current_idx = next_idx
-        return self.process.gather(idx=idx, sample_from=sample_from, device=device)
-
     def sample(
         self,
         sample_from: tuple[str, ...],
-        number: int = None,
+        number: int,
         device=CPU_DEVICE,
     ) -> dict[str, torch.Tensor]:
         """
@@ -171,13 +156,13 @@ class ProcessSampleCursor:
         Args:
 
         sample_from (tuple[str]): Attribute names to sample.
-        number (int, optional): Number of events to sample. Defaults to ``process.sample_size``.
+        number (int): Number of events to sample, decided per batch by the BatchSizeAllocator.
         device (torch.device, optional): Device to move the gathered tensors to.
 
         Returns (dict[str, torch.Tensor]): Sampled tensors keyed by attribute name, plus ``"sample_weights"``.
         """
         max_events = len(self.process)
-        remaining = self.process.sample_size if number is None else number
+        remaining = number
         if remaining < 0:
             raise ValueError(f"Number of events to sample must be positive, got {remaining}.")
 
@@ -192,18 +177,21 @@ class ProcessSampleCursor:
             self.current_idx += take
             remaining -= take
 
-        # number == 0 --> process sample_size == 0, or user requested 0 events. In that case, chunks is empty.
+        # number == 0 --> the allocator gave this process no events in this batch. In that case, chunks is empty
         # In that case, return an empty tensor of the correct shape.
         idx = torch.cat(chunks) if chunks else self.indices[:0]
 
         self.last_idx = idx
-        return self.process.gather(idx=idx, sample_from=sample_from, device=device)
+
+        # The batch-based weight: the drawn events represent the whole process yield, so denominator = len(idx).
+        # peek() relies on this, it can rebuild the identical weights from last_idx alone.
+        return self.process.gather(idx=idx, sample_from=sample_from, weight_denominator=len(idx), device=device)
 
     def peek(self, sample_from: tuple[str, ...], device=CPU_DEVICE) -> dict[str, torch.Tensor]:
         """Return the last sampled batch again, without advancing the cursor."""
         if self.last_idx is None:
             raise RuntimeError("No batch has been sampled yet. Call sample() before peek().")
-        return self.process.gather(idx=self.last_idx, sample_from=sample_from, device=device)
+        return self.process.gather(idx=self.last_idx, sample_from=sample_from, weight_denominator=len(self.last_idx), device=device) #noqa
 
     def generator(self, sample_from: tuple[str, ...], batch_size: int = -1, device=CPU_DEVICE):
         """
@@ -223,4 +211,6 @@ class ProcessSampleCursor:
         bounds = [(s, min(s + batch_size, n)) for s in range(0, n, batch_size)]
 
         for start, end in bounds:
-            yield self.process.gather(torch.arange(start, end), sample_from, device)
+            # chunks of one pass all represent the whole process, so the denominator is the process size,
+            # not the chunk size. Otherwise the weights would depend on the chosen batch_size.
+            yield self.process.gather(torch.arange(start, end), sample_from, weight_denominator=n, device=device)
