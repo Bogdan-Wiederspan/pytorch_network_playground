@@ -17,7 +17,7 @@ class TrainingConfig:
     model_choice: MODEL_CHOICE = "lbn_dense"
     training_fn: TRAINING_LOOP_CHOICE = "cross_entropy"  # name of the training loop
     validation_fn: VALIDATION_LOOP_CHOICE = "cross_entropy"  # name of the validation loop
-    max_train_iteration: int = 500_000  # max number of batches
+    max_train_iteration: int = 50  # 500_000  # max number of batches
     label_smoothing: float = 0.0
     train_folds: tuple[int, ...] = (0,)  # which training folds to use
     k_fold: int = 5
