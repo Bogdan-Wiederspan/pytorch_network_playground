@@ -1,6 +1,6 @@
 # storage directories, all directories are created for your
-export USER=wiedersb
-export DNN_ROOT=/afs/desy.de/user/w/wiedersb/xxl/pytorch_network_playground # location of your DNN dir
+export USER=wolfmor
+export DNN_ROOT=/afs/desy.de/user/w/wolfmor/pytorch_network_playground # location of your DNN dir
 export STORE_DIR=/data/dust/user/${USER}/HH_DNN # ROOT of storage
 export CACHE_DIR=${STORE_DIR}/cache # directory where preprocessed data is stored as well as dataset paths
 export PICTURE_DIR=${STORE_DIR}/pictures
