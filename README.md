@@ -35,9 +35,9 @@ Open `config.sh` and check:
 Execute the shellscript by copy into the terminal
 ```
 # uses python3,
-./install_venv.sh
+bash install_venv.sh
 # OR when a specfic version is used
-./install_venv.sh python3.11
+bash install_venv.sh python3.11
 ```
 
 Creates the virtualenv at `${VENV_ROOT}/${ML_ENV}` from your `config.sh` and installs `requirements.txt`
