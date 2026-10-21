@@ -29,7 +29,11 @@ def main(**kwargs):
 
     data = torch.load("/data/dust/user/wiedersb/HH_DNN/cache/test.pt", map_location="cpu")
     prediction, truth, weights = data["pred"], data["truth"], data["weights"]
-    model_inst(hh["categorical"], hh["continuous"])
+    physics_parameters = None
+    if model_inst.has_physics_parameters:
+        # all events evaluated at kappa lambda = 1
+        physics_parameters = torch.ones(len(hh["continuous"]), model_inst.num_physics_parameters)
+    model_inst(hh["categorical"], hh["continuous"], physics_parameters)
     from IPython import embed; embed(header="MESSAGE Line 30 | File: model_building_test_area.py")
 
 

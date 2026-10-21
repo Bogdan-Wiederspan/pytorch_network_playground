@@ -59,6 +59,14 @@ class BaseModel(HookableModelMixin, torch.nn.Module):
     def num_targets(self):
         return len(self.dataset_config.target_map.keys())
 
+    @property
+    def num_physics_parameters(self) -> int:
+        return self.dataset_config.num_physics_parameters
+
+    @property
+    def has_physics_parameters(self) -> bool:
+        return self.dataset_config.has_physics_parameters
+
     def init_layers(self):
         raise NotImplementedError(
             "init_layers needs to be implemented in child class, where all layers of the model are defined"
@@ -172,6 +180,37 @@ class BaseModel(HookableModelMixin, torch.nn.Module):
         else:
             std_layer = StandardizeLayer(mean=std_cfg.mean, std=std_cfg.std)
         return std_layer
+
+    def init_physics_parameter_layer(self) -> torch.nn.Module | None:
+        """
+        Helper to initialize a Standardization Layer for the physics parameters (e.g. kappa lambda).
+        Mean and STD are fixed values, calculated from the configured physics parameter values.
+        If no physics parameters are configured, None is returned.
+
+        Returns:
+            torch.nn.Module | None: Standardization layer instance for the physics parameters or None.
+        """
+        if not self.has_physics_parameters:
+            return None
+        mean, std = self.dataset_config.physics_parameter_scale()
+        return StandardizeLayer(mean=torch.tensor(mean), std=torch.tensor(std))
+
+    def scale_physics_parameters(self, physics_parameters: torch.Tensor | None) -> torch.Tensor | None:
+        """
+        Standardize the given *physics_parameters*. If the model has no physics parameters, None is returned.
+
+        Raises:
+            ValueError: If the model expects physics parameters but none are given, or vice versa.
+        """
+        if not self.has_physics_parameters:
+            if physics_parameters is not None:
+                raise ValueError("Physics parameters are given, but the model is configured without physics parameters")
+            return None
+        if physics_parameters is None:
+            raise ValueError(
+                f"Model expects physics parameters {self.dataset_config.physics_parameter_names}, but none are given"
+            )
+        return self.physics_parameter_layer(physics_parameters)
 
     def init_padding_layer(self) -> tuple[torch.nn.Module | None, torch.nn.Module | None]:
         """

@@ -211,7 +211,11 @@ class TrainingLoop(BaseLoop):
         categorical, continuous = events.get("categorical"), events.get("continuous")
         targets = events["targets"].reshape(self.target_shape)
 
-        pred = model_inst(categorical_inputs=categorical, continuous_inputs=continuous)
+        pred = model_inst(
+            categorical_inputs=categorical,
+            continuous_inputs=continuous,
+            physics_parameters=events.get("physics_parameters"),
+        )
         # loss gets the raw logits (CE has softmax built in), monitor gets probabilities
         predictions, optimization_predictions = self.separate_prediction(pred, model_inst=model_inst)
 
@@ -246,6 +250,7 @@ class TrainingLoop(BaseLoop):
         pred = model_inst(
             categorical_inputs=categorical,
             continuous_inputs=continuous,
+            physics_parameters=events.get("physics_parameters"),
         )
 
         # loss expect softmax binned output , monitor is unbinnet prediction
@@ -331,8 +336,11 @@ class ValidationLoop(BaseLoop):
             ):
                 # hold data for current dataset, saved in loop to avoid memory issues
                 current_process = sampler_inst.registry[uid]
+                physics_parameters = events.pop("physics_parameters", None)
                 pred = model_inst(
-                    categorical_inputs=events.pop("categorical"), continuous_inputs=events.pop("continuous")
+                    categorical_inputs=events.pop("categorical"),
+                    continuous_inputs=events.pop("continuous"),
+                    physics_parameters=physics_parameters,
                 )
                 # network can output either binned or non binned predictions
                 # depending on model architecture, separate_prediction gives us a uniform interface to handle both cases
@@ -354,6 +362,10 @@ class ValidationLoop(BaseLoop):
                 collected_data["process_id"].append(
                     torch.full((class_pred.shape[0], 1), uid[1], device=device)
                     )
+
+                # physics parameters the events were evaluated with, e.g. for metrics per kappa lambda
+                if physics_parameters is not None:
+                    collected_data.setdefault("physics_parameters", []).append(physics_parameters)
 
                 collected_data["class_predictions"].append(class_pred)
 

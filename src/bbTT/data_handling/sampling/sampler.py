@@ -18,6 +18,9 @@ if TYPE_CHECKING:
 
 logger_inst = get_logger(__name__)
 
+# key in ProcessSampler.state_dict, where the generator state of the physics parameters is stored
+PHYSICS_PARAMETER_RNG_KEY = "physics_parameter_rng"
+
 
 class ProcessRegistry:
     """
@@ -106,6 +109,8 @@ class ProcessSampler(t_data.Sampler):
         weight_aggregator_inst=None,
         kind="training",
         bs_allocator=None,
+        physics_parameter_map: Optional[dict[int, tuple[float, ...]]] = None,
+        physics_parameter_process_type: str = "hh",
     ):
         """
         Args:
@@ -119,6 +124,11 @@ class ProcessSampler(t_data.Sampler):
             weight_aggregator_inst: Reference to the WeightAggregator that computed the
                 weight statistics fed into this sampler's Processes. Not called directly
                 by ProcessSampler — kept as a passive reference for downstream consumers.
+            physics_parameter_map: process_id -> physics parameter values (e.g. kappa lambda) of
+                the processes of *physics_parameter_process_type*. If empty or None, no physics
+                parameters are attached to the batches.
+            physics_parameter_process_type: Process type that carries the true physics parameter
+                values. Processes of all other types get values drawn from its distribution.
         """
         self.registry = ProcessRegistry()
         self.cursors: dict[tuple[str, str], ProcessSampleCursor] = {}
@@ -131,6 +141,18 @@ class ProcessSampler(t_data.Sampler):
         self.allocator = bs_allocator
         self.kind = kind
         self.seed = seed
+
+        self.physics_parameter_map = physics_parameter_map or {}
+        self.physics_parameter_process_type = physics_parameter_process_type
+        # own generator to keep the drawn physics parameters reproducible, see state_dict
+        self.physics_parameter_rng = torch.Generator()
+        self.physics_parameter_rng.manual_seed(self.seed)
+        # physics parameters of the last sampled batch per uid, so peek_batch returns the same values
+        self._last_physics_parameters: dict[tuple[str, str], torch.Tensor] = {}
+
+    @property
+    def has_physics_parameters(self) -> bool:
+        return bool(self.physics_parameter_map)
 
     def cursor_seed(self, uid: tuple[str, str]) -> int:
         """
@@ -154,28 +176,36 @@ class ProcessSampler(t_data.Sampler):
         # each process gets a unique seed by the sampler to decouple their random generators
         self.cursors[process.uid] = ProcessSampleCursor(process, randomize=randomize, seed=self.cursor_seed(process.uid))
 
-    def state_dict(self) -> dict[tuple[str, str], dict]:
+    def state_dict(self) -> dict[tuple[str, str] | str, dict | torch.Tensor]:
         """
         Iteration state of every registered cursor, keyed by uid. Only plain data
         (ints and tensors) ends up in here, so the result can go straight into torch.save.
+        The state of the physics parameter generator is stored under PHYSICS_PARAMETER_RNG_KEY.
 
         Returns:
-            dict[tuple[str, str], dict]: uid -> cursor state, see ProcessSampleCursor.state_dict.
+            dict[tuple[str, str] | str, dict | torch.Tensor]: uid -> cursor state, see ProcessSampleCursor.state_dict.
         """
-        return {uid: cursor.state_dict() for uid, cursor in self.cursors.items()}
+        state = {uid: cursor.state_dict() for uid, cursor in self.cursors.items()}
+        state[PHYSICS_PARAMETER_RNG_KEY] = self.physics_parameter_rng.get_state()
+        return state
 
-    def load_state_dict(self, state: dict[tuple[str, str], dict]) -> None:
+    def load_state_dict(self, state: dict[tuple[str, str] | str, dict | torch.Tensor]) -> None:
         """
         Restore every cursor from a state produced by state_dict. The set of registered
         processes must match exactly: a cursor without state would silently continue at
         its own position and break the "same batches again" guarantee.
 
         Args:
-            state (dict[tuple[str, str], dict]): Output of state_dict of a sampler over the same processes.
+            state (dict[tuple[str, str] | str, dict | torch.Tensor]): Output of state_dict of a sampler over the same processes.
 
         Raises:
             ValueError: If the stored uids and the registered uids differ.
         """
+        state = dict(state)
+        rng_state = state.pop(PHYSICS_PARAMETER_RNG_KEY, None)
+        if rng_state is not None:
+            self.physics_parameter_rng.set_state(rng_state)
+
         stored, registered = set(state), set(self.cursors)
         if stored != registered:
             raise ValueError(
@@ -264,6 +294,77 @@ class ProcessSampler(t_data.Sampler):
                     other_attr_value = getattr(other_uid, shared_attribute)
                     setattr(proc, shared_attribute, other_attr_value)
 
+    # --- Physics Parameters ---
+    def physics_parameter_distribution(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Distribution of the physics parameters within a batch, given by the processes of
+        ``physics_parameter_process_type``. Each process contributes its values with its
+        expected share of the batch (``post_relative_weight``).
+
+        Returns:
+            tuple[torch.Tensor, torch.Tensor]: Values of shape (num_processes, num_parameters)
+                and probabilities of shape (num_processes,).
+
+        Raises:
+            RuntimeError: If the shares are not calculated yet, e.g. a validation sampler before
+                ``load_process_weights_from`` was called.
+        """
+        procs_by_pid = self.registry.by_type(self.physics_parameter_process_type)
+        pids = sorted(procs_by_pid)
+        values = torch.tensor([self.physics_parameter_map[pid] for pid in pids], dtype=torch.float32)
+        probs = torch.tensor([procs_by_pid[pid].post_relative_weight for pid in pids], dtype=torch.float32)
+        if probs.sum() <= 0:
+            raise RuntimeError(
+                f"{self.kind}: batch shares of '{self.physics_parameter_process_type}' processes are not set, "
+                "physics parameters can not be drawn. Calculate sample sizes or load them from the training sampler."
+            )
+        return values, probs / probs.sum()
+
+    def draw_physics_parameters(self, uid: tuple[str, int], n: int, generator: torch.Generator) -> torch.Tensor:
+        """
+        Physics parameters for *n* events of the process *uid*.
+        Processes of ``physics_parameter_process_type`` get their true values, all others get values
+        drawn from ``physics_parameter_distribution``, so the physics parameters carry no class information.
+
+        Args:
+            uid (tuple[str, int]): (process_type, process_id) of the process.
+            n (int): Number of events.
+            generator (torch.Generator): Generator used for the random draw.
+
+        Returns:
+            torch.Tensor: Tensor of shape (n, num_parameters).
+        """
+        process_type, pid = uid
+        if process_type == self.physics_parameter_process_type:
+            values = torch.tensor(self.physics_parameter_map[pid], dtype=torch.float32)
+            return values.expand(n, -1).clone()
+
+        values, probs = self.physics_parameter_distribution()
+        if n == 0:
+            return values[:0]
+        idx = torch.multinomial(probs, n, replacement=True, generator=generator)
+        return values[idx]
+
+    def _batch_physics_parameters(
+        self,
+        uid: tuple[str, int],
+        n: int,
+        cursor_method: str,
+        device: torch.device = CPU_DEVICE,
+    ) -> torch.Tensor:
+        """
+        Physics parameters of a sampled or peeked batch of process *uid*.
+        Sampling draws new values and remembers them, peeking returns the remembered values.
+        """
+        if cursor_method == "peek":
+            if uid not in self._last_physics_parameters:
+                raise RuntimeError("No batch has been sampled yet. Call sample_batch() before peek_batch().")
+            return self._last_physics_parameters[uid].to(device)
+
+        parameters = self.draw_physics_parameters(uid, n, generator=self.physics_parameter_rng)
+        self._last_physics_parameters[uid] = parameters
+        return parameters.to(device)
+
     # --- Sample Mechanism ---
     def sorted_pid_registry(self) -> Iterable[tuple[int, Process]]:
         """Small helper that returns an iterable of all registered processes, sorted by process id.
@@ -291,13 +392,19 @@ class ProcessSampler(t_data.Sampler):
             device: Device to move the final tensors to.
         Returns:
             dict[attribute, Tensor], keys from sample_from, values are concatenated across all processes.
+            If physics parameters are configured, they are added under "physics_parameters".
         """
         events: dict[str, list[torch.Tensor]] = defaultdict(list)
 
         for uid in self.sorted_pid_registry():
             cursor = self.cursors[uid]
             method = getattr(cursor, cursor_method)
-            for attribute, sampled in method(sample_from, device=device).items():
+            batch = method(sample_from, device=device)
+            if self.has_physics_parameters:
+                batch["physics_parameters"] = self._batch_physics_parameters(
+                    uid, n=len(batch["sample_weights"]), cursor_method=cursor_method, device=device,
+                )
+            for attribute, sampled in batch.items():
                 events[attribute].append(sampled)
 
         return {attribute: torch.concatenate(tensors, dim=0).to(device) for attribute, tensors in events.items()}
@@ -335,10 +442,48 @@ class ProcessSampler(t_data.Sampler):
         Yields:
             (uid, batch_dict) tuples — uid tells you which process the batch came from.
         """
+        # fresh generator with fixed seed, so every full pass sees the same physics parameters
+        physics_parameter_rng = torch.Generator()
+        physics_parameter_rng.manual_seed(self.seed)
+
         for uid in self.sorted_pid_registry():
             cursor = self.cursors[uid]
             for batch in cursor.generator(sample_from, batch_size, device):
+                if self.has_physics_parameters:
+                    batch["physics_parameters"] = self.draw_physics_parameters(
+                        uid, n=len(batch["sample_weights"]), generator=physics_parameter_rng,
+                    ).to(device)
                 yield uid, batch
+
+    def balance_physics_parameter_points(self):
+        """
+        Scale the sub sample ratio of every process of ``physics_parameter_process_type``, such that each
+        physics parameter point gets the same share of the batch, independent of its cross section.
+        Already configured sub sample ratios are kept as additional multiplier.
+        """
+        procs_by_pid = self.registry.by_type(self.physics_parameter_process_type)
+        yields = {pid: proc.weights_statistics.normalization_whole_sum.item() for pid, proc in procs_by_pid.items()}
+        mean_yield = sum(yields.values()) / len(yields)
+
+        # copy, the ratios are shared with the config and other samplers
+        self.sub_sample_ratio = dict(self.sub_sample_ratio)
+        for pid, pid_yield in yields.items():
+            self.sub_sample_ratio[pid] = self.sub_sample_ratio.get(pid, 1) * mean_yield / pid_yield
+
+    def check_physics_parameter_map(self):
+        """
+        Every process of ``physics_parameter_process_type`` needs physics parameter values.
+
+        Raises:
+            KeyError: If a registered process has no physics parameter values.
+        """
+        pids = set(self.registry.by_type(self.physics_parameter_process_type))
+        missing = sorted(pids - set(self.physics_parameter_map))
+        if missing:
+            raise KeyError(
+                f"{self.kind}: process ids {missing} of type '{self.physics_parameter_process_type}' "
+                "have no physics parameter values, add them to DataConfig.physics_parameters"
+            )
 
     def missing_processes(self) -> bool:
         """
@@ -385,6 +530,13 @@ def create_sampler(
 
     kind = ("training" if train else "validation")
 
+    dataset_config = full_config.dataset_config
+    # process_id -> values of all physics parameters, e.g. {21101: (1.0,)}
+    physics_parameter_map = {}
+    if dataset_config.has_physics_parameters:
+        pids = set.intersection(*(set(values) for values in dataset_config.physics_parameters.values()))
+        physics_parameter_map = {pid: dataset_config.physics_parameter_values(pid) for pid in pids}
+
     process_sampler = ProcessSampler(
         batch_size=full_config.training_config.training_batch_size,
         sample_ratio=(full_config.sampler_config.sample_ratio or {"dy": 0.25, "tt": 0.25, "hh": 0.5}),
@@ -394,6 +546,8 @@ def create_sampler(
         bs_allocator=batch_size_allocator,
         seed=full_config.training_config.seed,
         kind=kind,
+        physics_parameter_map=physics_parameter_map,
+        physics_parameter_process_type=dataset_config.physics_parameter_process_type,
     )
 
     for uid in list(events.keys()):
@@ -422,6 +576,11 @@ def create_sampler(
             process_type=process_type,
         )
         process_sampler.add_process_instance(process, randomize=True)
+
+    if process_sampler.has_physics_parameters:
+        process_sampler.check_physics_parameter_map()
+        if dataset_config.balance_physics_parameter_points:
+            process_sampler.balance_physics_parameter_points()
 
     if train:
         process_sampler.missing_processes()
