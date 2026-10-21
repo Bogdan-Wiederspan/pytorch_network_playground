@@ -34,16 +34,23 @@ class LBNDenseNet(DenseNet):
         )
         dense_cfg = self.model_config.dense_network
         self.transition_dense_1 = DenseBlock(
-            input_nodes=(self.input_layer.ndim + self.lbn.ndim),
+            input_nodes=(self.input_layer.ndim + self.lbn.ndim + self.num_physics_parameters),
             output_nodes=dense_cfg.nodes,
             activation_functions=dense_cfg.activation_functions,
             eps=dense_cfg.batch_norm_eps,
             normalize=dense_cfg.normalize_linear,
         )
 
-    def forward(self, categorical_inputs: torch.Tensor, continuous_inputs: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        categorical_inputs: torch.Tensor,
+        continuous_inputs: torch.Tensor,
+        physics_parameters: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        physics_parameters = self.scale_physics_parameters(physics_parameters)
         normal_inputs = self.input_layer(categorical_inputs=categorical_inputs, continuous_inputs=continuous_inputs)
         # lbn needs padding sanitized values, but not standardized. Reason for this is that physics has scale dependency
+        # physics parameters do not enter the lbn
         lbn_outputs = self.lbn(continuous_inputs)
 
         x = torch.concatenate(
@@ -51,13 +58,4 @@ class LBNDenseNet(DenseNet):
             axis=1,
         )
         # dnn
-        x = self.transition_dense_1(x)
-        x = self.dense_block_1(x)
-        x = self.dense_block_2(x)
-        x = self.dense_block_3(x)
-        x = self.dense_block_4(x)
-        x = self.dense_block_5(x)
-        x = self.last_linear(x)
-        if self.use_last_activation:
-            x = self.last_activation_fn(x)
-        return x
+        return self.dense_forward(x, physics_parameters)
