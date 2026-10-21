@@ -1,53 +1,114 @@
 # pytorch_network_playground
 
-## Fork repository
+PyTorch training framework for the HH → bbττ DNN. The python package lives in `src/bbTT`.
 
-Login to github and click _Fork_ and then _Create fork._
+## 1. Get the code
 
-Now, you have a personal fork at `github.com/YOUR-USERNAME/pytorch_network_playground`.
+Login to github, click _Fork_ and then _Create fork_. You now have a personal fork at
+`github.com/YOUR-USERNAME/pytorch_network_playground`.
 
-## Clone your fork
-
+In your terminal go to the location where you want the code to live and write:
 ```bash
 git clone git@github.com:YOUR-USERNAME/pytorch_network_playground.git
 cd pytorch_network_playground
-```
-
-## Add original repo as upstream
-
-```bash
 git remote add upstream git@github.com:Bogdan-Wiederspan/pytorch_network_playground.git
 ```
 
-## Adapt config.sh
-
-Change _USER_ and _DNN_ROOT_ variables.
-
-## Install python environment (only once)
-
+## 2. Create your config
+To setup the project run.
 ```bash
-mkdir /data/dust/user/${USER}/pyenv_virtualenvs
-python -m venv /data/dust/user/${USER}/pyenv_virtualenvs/ml_torch
-source /data/dust/user/${USER}/pyenv_virtualenvs/ml_torch/bin/activate
-pip install -r requirements.txt
+source setup.sh
 ```
 
-## Setup training environment (everytime you open a new shell)
+The first run creates `config.sh` from `config.sh.example` and stops.
+
+Open `config.sh` and check:
+
+| Variable | Meaning |
+| --- | --- |
+| `STORE_DIR` | Root for everything the framework writes (cache, models, tensorboard, evaluation, pictures). Default: `/data/dust/user/$USER/HH_DNN` |
+| `CREATE_DIR` | `1` lets `setup.sh` create the directories under `STORE_DIR` (`mkdir -p`, safe to leave on), `0` skips it |
+| `TRAINING_ROOT`, `ERA` | Where the preprocessed input data lives. Ask if you do not have access. |
+| `VENV_ROOT`, `ML_ENV` | Directory containing the virtualenv and its name. Must match step 2 (`/data/dust/user/$USER/pyenv_virtualenvs` and `ml_torch`). |
+
+
+## 3. Install the python environment (once)
+
+`requirements.txt` pins `torch` with CUDA 12.1 wheels and needs python ≥ 3.9 (check with `python3 --version`).
+
+```bash
+mkdir -p /data/dust/user/${USER}/pyenv_virtualenvs
+python3 -m venv /data/dust/user/${USER}/pyenv_virtualenvs/ml_torch
+source /data/dust/user/${USER}/pyenv_virtualenvs/ml_torch/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt   # also installs this package in editable mode
+deactivate
+```
+
+
+## 4. Every new shell
 
 ```bash
 source setup.sh
 ```
 
-## Now you can
+This activates the virtualenv, creates missing storage directories and adds the CUDA libraries shipped with the
+pip packages (cudnn, nccl) to `LD_LIBRARY_PATH`, so training works even if the system CUDA installation does not
+match the torch wheel.
 
-### ...start a training
+## What you can do
+
+All scripts accept `--help`, which lists the available options.
+
+**Train** a model. Hyperparameters live in `src/bbTT/configs/` (`debug_config.py` for quick tests,
+`full_config.py` for the real thing). Models go to `MODELS_DIR`, logs to `TENSORBOARD_DIR`.
 
 ```bash
 cd src/bbTT
-python train/train.py
+python train/train.py --help
 ```
 
-### ...make changes to your own fork
+**Evaluate** a trained checkpoint on the test, training or validation set and save the scores to `EVALUATION_DIR`:
+
+```bash
+python evaluation/evaluate.py --help
+```
+
+**Export** a checkpoint to torch-export (`.pt2`) with a dynamic batch dimension:
+
+```bash
+python evaluation/export/pt2.py --help
+```
+
+**Monitor** the training with tensorboard:
+
+```bash
+tensorboard --logdir "${TENSORBOARD_DIR}"
+```
+
+**Lint** with the settings from `pyproject.toml`:
+
+```bash
+ruff check src && ruff format src
+vulture        # dead code
+```
+
+## Debugging
+
+`setup.sh` provides two shell functions that drop you into a debugger whenever a python script crashes with an
+uncaught exception, at the line where it happened and with all local variables available:
+
+```bash
+pdb_on          # IPython shell (default), alternatives: pdb_on pdb / pdb_on ipdb
+python train/train.py
+pdb_off         # back to normal tracebacks
+```
+
+Nothing in the code needs to change; the hook works through `PYTHONPATH` and `.setup/sitecustomize.py`.
+
+## Working with git
+
+Push your changes to your fork:
 
 ```bash
 git add ...
@@ -55,14 +116,10 @@ git commit ...
 git push
 ```
 
-### ...pull in changes from upstream
+Pull in changes from upstream (then `git push` to update your fork, or "sync" the fork on github.com):
 
 ```bash
 git pull upstream main
 ```
 
-(This changes your local working copy, so you still need to _push_ to update your remote fork. Alternatively, you can also "sync" your fork on github.com and then pull in the changes.)
-
-### ...open a pull request to the original repo
-
-Use the _Contribute_ button on github.com.
+Open a pull request to the original repo with the _Contribute_ button on github.com.

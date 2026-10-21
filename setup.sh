@@ -1,297 +1,135 @@
+# Environment setup for pytorch_network_playground.
+#
+# Usage (must be sourced, not executed):
+#   source setup.sh
+#
+# Steps:
+#   1. load config.sh (created from config.sh.example on first run)
+#   2. create the storage directories if CREATE_DIR=1
+#   3. activate the virtualenv ${VENV_ROOT}/${ML_ENV}
 
-#!/bin/bash
+# this file modifies the calling shell, so it only works when sourced
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    echo "[ERROR] setup.sh must be sourced: 'source setup.sh'" >&2
+    exit 1
+fi
 
-pdb_on() {
-    # -----------------------------------------------------------------------------
-    # Expands PYTHONPATH by PDB_HOOK_DIR to enable automatic debugging when exception happens.
-    # Required variables from config:
-    #   PDB_HOOK_DIR         Dir where customizesite.py lies
-    # -----------------------------------------------------------------------------
 
-    # small recap switch cases:
-    # bash switch statement case VALUE in  PATTERN) commands ;; esac
-    # VALUE is what is checked, pattern what is looked for
-    # ;; ends case block
-    # esac, is case backwards
+load_config() {
+    # Sources config.sh next to this file; creates it from config.sh.example on first run.
+    #
+    # Returns:
+    #   0 on success, 1 if config.sh was just created and still needs editing.
+    local config="${DNN_ROOT}/config.sh"
 
-    # set variable to change mode of debugger
-    local mode="${1:-embed}"
-    if [[ "${mode}" != "ipdb" && "${mode}" != "embed" && "${mode}" != "pdb" ]]; then
-        echo "Usage: pdb_on [ipdb|embed|pdb]"
+    if [[ ! -f "${config}" ]]; then
+        cp "${DNN_ROOT}/config.sh.example" "${config}"
+        echo "[INFO] Created ${config} from template. Adapt it, then run 'source setup.sh' again."
         return 1
     fi
 
-    export PDB_DEBUGGER_MODE="${mode}"
+    source "${config}"
 
-    # first: check if PDB_HOOK_DIR already exist in PYTHONPATH, * is any token, when found break
-    # second: *) match everything (is basically else)
-    case ":$PYTHONPATH:" in
-        *":$PDB_HOOK_DIR:"*)
-            echo "pdb post-mortem hook already enabled"
-            ;;
-        *)
-            export PYTHONPATH="$PDB_HOOK_DIR:$PYTHONPATH"
-            echo "pdb post-mortem hook: ON"
-            ;;
-    esac
-}
-
-pdb_off() {
-    # -----------------------------------------------------------------------------
-    # Removed PDB_HOOK_DIR from current PYTHONPATH to disable automatic debugging when exception happens.
-    # -----------------------------------------------------------------------------
-
-    # sed -e s/PATTERN/REPLACEMENT, using | instead of /, || is replace empty
-    # checking 3 cases: start and middle of path, end of path with :, only thing in path.
-    export PYTHONPATH="$(echo "$PYTHONPATH" | sed -e "s|$PDB_HOOK_DIR:||" -e "s|:$PDB_HOOK_DIR||" -e "s|^$PDB_HOOK_DIR$||")"
-    unset PDB_DEBUGGER_MODE
-    echo "pdb post-mortem hook: OFF"
+    # every variable below is needed by setup.sh or the python code
+    local var
+    for var in STORE_DIR CACHE_DIR PICTURE_DIR MODELS_DIR TENSORBOARD_DIR EVALUATION_DIR; do
+        # ${!var} expands the variable whose name is stored in var
+        if [[ -z "${!var}" ]]; then
+            echo "[ERROR] ${var} is not set in config.sh" >&2
+            return 1
+        fi
+    done
+    return 0
 }
 
 
-create_dirs(){
-    # -----------------------------------------------------------------------------
-    # Create project directory structure if not already initialized.
-    #
-    # Reads:
-    #   CONFIG_FILE=config.sh
-    #
-    # Required variables from config:
-    #   STORE_DIR         Parent directory
-    #   CACHE_DIR         Cache storage directory
-    #   PICTURE_DIR       Image output directory
-    #   MODELS_DIR        Model storage directory
-    #   TENSORBOARD_DIR   Tensorboard log directory
-    #   CREATE_DIR   Setup flag (0/1)
-    #
-    # Side effects:
-    #   - Creates missing directories
-    #   - Updates CREATE_DIR in config.sh
+create_dirs() {
+    # Creates the storage directories when CREATE_DIR=1 in config.sh.
     #
     # Returns:
-    #   0 -> success / already completed
-    #   1 -> directory creation failure
-    # -----------------------------------------------------------------------------
-    local LOCAL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    CONFIG_FILE=${LOCAL_DIR}/config.sh
-    source ${CONFIG_FILE}
-
-    # just creating directories when they don't exist
-    if [ "${CREATE_DIR}" -eq 1 ]; then
-        echo "Skip Directory Setup, since its already done"
+    #   0 on success or when skipped, 1 if a directory could not be created.
+    if [[ "${CREATE_DIR}" != "1" ]]; then
         return 0
     fi
 
-    DIRS=(
-        "${CACHE_DIR}"
-        "${PICTURE_DIR}"
-        "${MODELS_DIR}"
-        "${TENSORBOARD_DIR}"
-        "${EVALUATION_DIR}"
-    )
-
-    if [ ! -d "${STORE_DIR}" ]; then
-        mkdir "${STORE_DIR}" || {
-            echo "[ERROR] Failed to create STORE_DIR"
+    local dir
+    for dir in "${CACHE_DIR}" "${PICTURE_DIR}" "${MODELS_DIR}" "${TENSORBOARD_DIR}" "${EVALUATION_DIR}"; do
+        if ! mkdir -p "${dir}"; then
+            echo "[ERROR] Failed to create ${dir}" >&2
             return 1
-        }
-    fi
-
-    for dir in "${DIRS[@]}"; do
-        if [ ! -d "${dir}" ]; then
-            mkdir "${dir}" || {
-            echo "[ERROR] Failed to create ${dir}"
-                return 1
-            }
         fi
     done
-
-    sed -i 's/^export CREATE_DIR=.*/export CREATE_DIR=1/' "${CONFIG_FILE}"
-    echo "[INFO] Directory setup complete"
-
+    echo "[INFO] Storage directories ready under ${STORE_DIR}"
     return 0
 }
 
-check_required_vars() {
-    # simple function that checks if given variable are set
-    # -n ensures that $1 is seen as arrays reference
-    local -n vars_ref=$1
-    local missing=()
 
-    for var in "${vars_ref[@]}"; do
-        # !VARIABLE indirect expansion
-        # -> treat the content of VARIABLE as another variable and expand that
-        # necessary i loop over multiple variable names, which need to be expanded
-
-        # :-FALLBACK_VALUE if unset use FALLBACK_VALUE
-        if [ -z "${!var:-}" ]; then
-            missing+=("${var}")
-        fi
-    done
-
-
-    # #array = number of elements of array
-    if [ ${#missing[@]} -gt 0 ]; then
-        # $array[*] expand array into string
-        echo "[ERROR] Missing variables: ${missing[*]}"
-        return 1
-    fi
-}
-
-# venv handling
-prepare_venv(){
-    # extend Paths to CUDA enviroment (necessary when not correct installed)
-    export LD_LIBRARY_PATH="${VENV_ROOT}/${ML_ENV}/lib/${VENV_PYTHON}/site-packages/nvidia/cudnn/lib:$LD_LIBRARY_PATH"
-    export LD_LIBRARY_PATH="${VENV_ROOT}/${ML_ENV}/lib/${VENV_PYTHON}/site-packages/nvidia/nccl/lib:$LD_LIBRARY_PATH"
-    # check if venv root exist, return 1 if false
-    _path="${VENV_ROOT}/${ML_ENV}/bin/"
-    if [ ! -n "${_path}" ]; then
-        echo "Venv root does not exist check ${_path}"
+activate_venv() {
+    # Activates a plain 'python -m venv' environment at ${VENV_ROOT}/${ML_ENV}.
+    #
+    # Returns:
+    #   0 if the environment is active, 1 otherwise.
+    if [[ -z "${VENV_ROOT}" || -z "${ML_ENV}" ]]; then
+        echo "[ERROR] VENV_ROOT and ML_ENV must be set in config.sh" >&2
         return 1
     fi
 
-}
-
-activate_venv(){
-
-    _path="${VENV_ROOT}/${ML_ENV}/bin"
-    # activate but without prompt change
-    VIRTUAL_ENV_DISABLE_PROMPT=1 source "${_path}/activate"
-    finish_setup
-}
-
-# pyenv handling
-prepare_pyenv(){
-    if [ -n "${PYENV_ROOT}" ] && [ -n "${ML_ENV}" ]; then
-        # check if pyenv exists as command, if not activate it
-        # command return 0 if exist, else another number
-        # >/dev etc. just silence the output
-        if ! command -v pyenv >/dev/null 2>&1; then
-            echo "Bootstrap Pyenv"
-            export PATH="${PYENV_ROOT}/bin/:${PATH}";
-            eval "$(pyenv init --path)";
-            eval "$(pyenv init -)";
-            eval "$(pyenv virtualenv-init -)"
-        fi
-    else
-        echo "can' activate pyenv due too wrong PYEV_ROOT or not set ML_ENV"
+    local venv_dir="${VENV_ROOT}/${ML_ENV}"
+    if [[ ! -f "${venv_dir}/bin/activate" ]]; then
+        echo "[ERROR] No virtualenv found at ${venv_dir}, see README for installation" >&2
         return 1
     fi
-}
 
-activate_pyenv(){
-    pyenv activate "${ML_ENV}"
-    finish_setup
-    echo "activate virtualenv ${ML_ENV}"
-}
+    # activate without prompt change, the prompt is set in finish_setup
+    VIRTUAL_ENV_DISABLE_PROMPT=1 source "${venv_dir}/bin/activate" || return 1
 
-# columnflow sandbox
-prepare_cf(){
-    required_vars=(
-    CF_ROOT
-    CF_USER_FLAVOR
-    CF_SANDBOX
-    )
-
-    check_required_vars required_vars || exit 1
-    cd "${CF_ROOT}"
-    source setup.sh "${CF_USER_FLAVOR}"
-
-    if [ -n "${CF_SANDBOX}" ]; then
-        if ! command -v cf_sandbox >/dev/null 2>&1; then
-            echo "Source your columnflow setup!"
-            return 2
-        fi
+    # the pip packages ship their own CUDA libraries (cudnn, nccl), make them visible to the loader
+    # (needed when the system CUDA installation does not match the torch wheel)
+    local site_packages
+    site_packages="$(ls -d "${venv_dir}"/lib/python3.*/site-packages 2>/dev/null | head -n 1)"
+    if [[ -n "${site_packages}" ]]; then
+        local cuda_libs="${site_packages}/nvidia/cudnn/lib:${site_packages}/nvidia/nccl/lib"
+        # ${VAR:+:${VAR}} appends ":old value" only if the old value was non-empty,
+        # so no trailing ':' (which would mean "search the current directory") is produced
+        export LD_LIBRARY_PATH="${cuda_libs}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
     fi
     return 0
-    }
-
-activate_cf(){
-    echo "Activate cf sandbox at ${CF_SANDBOX}"
-    finish_setup
-    cf_sandbox "${CF_SANDBOX}"
 }
 
-check_if_inside_venv(){
-    # check if inside virtualenv -> if inside sys prefix changes
-    # Source - https://stackoverflow.com/a/15454916
-    local IN_VENV=$(python -c 'import sys; print("1" if hasattr(sys, "real_prefix") else "0")')
-    # -n is true if NON-ZERO, -z true if EMPTY
-    if [ "${IN_VENV}" = "1" ]; then
-        echo "Already inside virtualenv"
-        return 4
-    fi
-}
 
-setup_env() {
-    # Setup Virtualenv and mount given environment in config
-    check_if_inside_venv
-
-    # prepare different setups
-    if [ "${VENV_MODE}" = "pyenv" ]; then
-        prepare_pyenv
-    # for bachelor and master students that use columnflow sandboxes
-    elif [ "${VENV_MODE}" = "cf" ]; then
-        prepare_cf
-    elif [ "${VENV_MODE}" = "venv" ]; then
-        prepare_venv
-    fi
-}
-
-activate_env(){
-    if [ "${VENV_MODE}" = "pyenv" ]; then
-        activate_pyenv
-    # for bachelor and master students that use columnflow sandboxes
-    elif [ "${VENV_MODE}" = "cf" ]; then
-        activate_cf
-    elif [ "${VENV_MODE}" = "venv" ]; then
-        activate_venv
-    fi
-}
-
-finish_setup(){
-    # set flags and expand paths
-    echo "Ready to go"
+finish_setup() {
+    # Marks the setup as complete and shows the environment name in the prompt.
     export SETUP_COMPLETE=1
-    # extend PS1 if environment is set properly
+    # ${VIRTUAL_ENV##*/} = last path component = name of the venv
+    export PS1="[${VIRTUAL_ENV##*/}] ${PS1}"
+    echo "Ready to go"
+}
 
-    # Show only the last part of the virtualenv path (env name) in the prompt
-    if [[ "${VENV_MODE}" != "cf" ]]; then
-        export PS1="[${VIRTUAL_ENV##*/}] ${PS1}"
-    fi
-    # include source of project as root for python
-    # export PYTHONPATH="${PYTHONPATH}:$(pwd)/src"
-    return 0
-    }
 
 setup() {
-    # Prevent double execution, when SETUP_COMPLETE is set (at end of script) don't run setup twice.
-    if [ -n "$SETUP_COMPLETE" ]; then
+    if [[ -n "${SETUP_COMPLETE}" ]]; then
         echo "Setup already completed. Skipping."
         return 0
     fi
 
-    # create directories, when they do not exist
-    create_dirs
-    CREATE_DIR_COMPLETE=$?
-    if [ "${CREATE_DIR_COMPLETE}" -ne 0 ]; then
-        echo "Don't continue setup - creation of directories failed"
+    # directory of this file = repository root
+    DNN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    export DNN_ROOT
+
+    # config.sh.example derives all personal paths from the system user name
+    if [[ -z "${USER}" ]]; then
+        echo "[ERROR] \$USER is not set, cannot derive paths" >&2
         return 1
     fi
 
-    # Get the directory where this script is located and source config located there
-    # BASH_SOURCE[0] = path of current script, get dir and resolve absolute path
-    local LOCAL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    source "$LOCAL_DIR/config.sh"
+    load_config || return 1
+    create_dirs || return 1
 
-    # run env and check status if run correctly change python path and venv marker
-    setup_env
-    SETUP_ENV_COMPLETE=$?
+    # debugging helpers pdb_on / pdb_off
+    source "${DNN_ROOT}/.setup/pdb.sh"
 
-    if [ "${SETUP_ENV_COMPLETE}" -eq 0 ]; then
-        activate_env
-        return 0
-    fi
-    }
+    activate_venv || return 1
+    finish_setup
+}
 
-setup "$@"
+setup
