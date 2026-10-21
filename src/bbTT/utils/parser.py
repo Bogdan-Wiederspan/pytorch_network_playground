@@ -255,3 +255,19 @@ class ParserBuilder:
         else:
             path = pathlib.Path(os.environ["EVALUATION_DIR"]) / path
         return path.with_suffix(".pt")
+
+    def add_physics_parameter_values(self):
+        self.parser.add_argument(
+            "--kl",
+            dest="physics_parameter_values",
+            type=float,
+            nargs="+",
+            default=None,
+            required=False,
+            help=(
+                """
+            Physics parameter (kappa lambda) hypotheses the network is evaluated at, e.g. --kl -1 0 1 2.45 5.
+            All events get the same value per hypothesis. If not given, the values the network was trained on are used.
+            """
+            ),
+        )

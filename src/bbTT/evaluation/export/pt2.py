@@ -56,11 +56,19 @@ def export_pt2(
         "categorical_inputs": {0: dim, 1: categorical_input.shape[-1]},
         "continuous_inputs": {0: dim, 1: continuous_inputs.shape[-1]},
     }
+    inputs = (categorical_input, continuous_inputs)
+
+    # networks with physics parameters (e.g. kappa lambda) get them as third input
+    num_physics = model_inst.num_physics_parameters
+    if num_physics:
+        physics_parameters = torch.zeros(2, num_physics).to(torch.float32).to(DEVICE)
+        dynamic_shapes["physics_parameters"] = {0: dim, 1: num_physics}
+        inputs = (*inputs, physics_parameters)
 
     # do actual export and saving
     exp = torch.export.export(
         model_inst,
-        args=(categorical_input, continuous_inputs),
+        args=inputs,
         dynamic_shapes=dynamic_shapes,
     )
 
@@ -74,7 +82,7 @@ def export_pt2(
     return dst
 
 
-def run_pt2(pt2_path: str, cat: torch.tensor, cont: torch.tensor) -> torch.tensor:
+def run_pt2(pt2_path: str, cat: torch.tensor, cont: torch.tensor, phys: torch.tensor | None = None) -> torch.tensor:
     """
     Run a given model stored at *pt2_path* with *cat* and *cont* tensors.
     This is a method to check if exporting the model resulted in same results.
@@ -83,23 +91,30 @@ def run_pt2(pt2_path: str, cat: torch.tensor, cont: torch.tensor) -> torch.tenso
         pt2_path (str): Path to Pt2 file.
         cat (torch.tensor): Tensor with categorical features.
         cont (torch.tensor): Tensor with continuous features.
+        phys (torch.tensor, optional): Tensor with physics parameters, only for networks with physics parameters.
 
     Returns:
         torch.tensor: Tensor with model output.
     """
     exp = torch.export.load(pt2_path)
-    scores = exp.module()(cat, cont)
+    inputs = (cat, cont) if phys is None else (cat, cont, phys)
+    scores = exp.module()(*inputs)
     return scores
 
 
 def compare_pt2_with_original(
-    pt2_path: str, original_model: torch.nn.Module, cat: torch.tensor, cont: torch.tensor, atol: float = 1e-6
+    pt2_path: str,
+    original_model: torch.nn.Module,
+    cat: torch.tensor,
+    cont: torch.tensor,
+    phys: torch.tensor | None = None,
+    atol: float = 1e-6,
 ) -> bool:
     """
-    Compare the output of a pt2 model with the output of the original model for given *cat* and *cont* tensors. Returns True if outputs are close within given *atol*, False otherwise.
+    Compare the output of a pt2 model with the output of the original model for given *cat*, *cont* and *phys* tensors. Returns True if outputs are close within given *atol*, False otherwise.
     """
-    pt2_output = run_pt2(pt2_path, cat, cont)
-    original_output = original_model(cat, cont)
+    pt2_output = run_pt2(pt2_path, cat, cont, phys)
+    original_output = original_model(cat, cont, phys)
     return torch.allclose(pt2_output, original_output, atol=atol)
 
 

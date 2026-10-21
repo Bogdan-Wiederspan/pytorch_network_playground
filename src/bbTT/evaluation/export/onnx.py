@@ -15,6 +15,7 @@ def export_ensemble_onnx(
     continuous_tensor: torch.Tensor,
     save_dir: str,
     opset_version: int = None,
+    physics_tensor: torch.Tensor | None = None,
 ) -> str:
     """
     Wrapper to export an ensemble model to onnx format. Does the same as export_onnx, but
@@ -41,6 +42,7 @@ def export_ensemble_onnx(
         continuous_tensor,
         save_dir,
         opset_version=opset_version,
+        physics_tensor=physics_tensor,
     )
 
 
@@ -50,10 +52,12 @@ def export_onnx(
     continuous_tensor: torch.Tensor,
     save_dir: str,
     opset_version: int = None,
+    physics_tensor: torch.Tensor | None = None,
 ) -> str:
     """
     Function to export a loaded pytorch *model* to onnx format saved in *save_dir*.
     To successfully export the model, the input tensors *categorical_tensor* and *continuous_tensor* must be provided.
+    Networks with physics parameters (e.g. kappa lambda) additionally need *physics_tensor*, exported as input "phys".
     For backwards compatibility, an opset_version can be enforced.
     A table about which opsets are available can be found here: https://onnxruntime.ai/docs/reference/compatibility.html
     Some operations are only available in newer opsets, or change behavior inbetween version.
@@ -86,22 +90,28 @@ def export_onnx(
     categorical_tensor = categorical_tensor.numpy().astype(np.float32).reshape(-1, num_cat_features)
     continuous_tensor = continuous_tensor.numpy().astype(np.float32).reshape(-1, num_cont_features)
 
+    inputs = (categorical_tensor, continuous_tensor)
+    input_names = ["cat", "cont"]
+    if physics_tensor is not None:
+        num_physics = physics_tensor.shape[-1]
+        inputs = (*inputs, physics_tensor.numpy().astype(np.float32).reshape(-1, num_physics))
+        input_names.append("phys")
+
     # double bracket is necessary since onnx, and our model unpacks the input tuple
-    input_feed = ((categorical_tensor, continuous_tensor),)
+    input_feed = (inputs,)
 
     torch.onnx.export(
         model,
         input_feed,
         save_path,
-        input_names=["cat", "cont"],
+        input_names=input_names,
         output_names=["output"],
         # if opset is none highest available will be used
         opset_version=opset_version,
         do_constant_folding=True,
         dynamic_axes={
             # enable dynamic batch sizes
-            "cat": {0: "batch_size"},
-            "cont": {0: "batch_size"},
+            **{name: {0: "batch_size"} for name in input_names},
             "output": {0: "batch_size"},
         },
     )
@@ -114,6 +124,7 @@ def test_run_onnx(
     model_path: str,
     categorical_array: np.ndarray,
     continuous_array: np.ndarray,
+    physics_array: np.ndarray | None = None,
 ) -> np.ndarray:
     """
     Function to run a test inference on a given *model_path*.
@@ -123,6 +134,7 @@ def test_run_onnx(
         model_path (str): Model path to onnx model
         categorical_array (np.ndarray): Array of categorical features
         continuous_array (np.ndarray): Array of continuous features
+        physics_array (np.ndarray, optional): Array of physics parameters, only for networks with physics parameters
 
     Returns:
         np.ndarray: Prediction of the model
@@ -136,6 +148,9 @@ def test_run_onnx(
         first_node.name: categorical_array.reshape(-1, first_node.shape).astype(np.float32),
         second_node.name: continuous_array.reshape(-1, second_node.shape).astype(np.float32),
     }
+    if physics_array is not None:
+        third_node = sess.get_inputs()[2]
+        input_feed[third_node.name] = physics_array.reshape(-1, physics_array.shape[-1]).astype(np.float32)
 
     output_name = [output.name for output in sess.get_outputs()]
 
