@@ -15,15 +15,19 @@ class DenseNetBlock(torch.nn.Module):
         activation_functions="PReLu",
         eps=1e-5,
         normalize=False,
+        num_physics_parameters=0,
         *args,
         **kwargs,
     ):
         # TODO Docstring
+        # num_physics_parameters: physics parameters (e.g. kappa lambda) that are concatenated to the
+        # input of the dense layer, but not to the skip connection
         super().__init__(*args, **kwargs)
         self.input_dim = input_nodes
         self.output_dim = output_nodes + input_nodes
+        self.num_physics_parameters = num_physics_parameters
         self.dense_block = DenseBlock(
-            input_nodes=input_nodes,
+            input_nodes=input_nodes + num_physics_parameters,
             output_nodes=output_nodes,
             activation_functions=activation_functions,
             normalize=normalize,
@@ -33,8 +37,10 @@ class DenseNetBlock(torch.nn.Module):
         if freeze_skip_connection:
             self.skip_connection_amplifier.requires_grad = False
 
-    def forward(self, x):
+    def forward(self, x, physics_parameters=None):
         _input = x * self.skip_connection_amplifier
+        if self.num_physics_parameters:
+            x = torch.concatenate((x, physics_parameters), dim=1)
         x = self.dense_block(x)
         x = torch.concatenate((x, _input), dim=1)
         return x

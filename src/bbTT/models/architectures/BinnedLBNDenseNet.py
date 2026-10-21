@@ -94,7 +94,7 @@ class BinnedLBNDenseNet(LBNDenseNet):
         """
         return {"binning": self.binning_layer.create_evaluation_state()}
 
-    def forward(self, categorical_inputs, continuous_inputs):
-        normal_network_output = super().forward(categorical_inputs, continuous_inputs)
+    def forward(self, categorical_inputs, continuous_inputs, physics_parameters=None):
+        normal_network_output = super().forward(categorical_inputs, continuous_inputs, physics_parameters)
         binned_output = self.binning_layer(normal_network_output)  # increases dimension at axis 0
         return normal_network_output, binned_output
