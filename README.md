@@ -28,7 +28,7 @@ Open `config.sh` and check:
 | `STORE_DIR` | Root for everything the framework writes (cache, models, tensorboard, evaluation, pictures). Default: `/data/dust/user/$USER/HH_DNN` |
 | `CREATE_DIR` | `1` lets `setup.sh` create the directories under `STORE_DIR` (`mkdir -p`, safe to leave on), `0` skips it |
 | `TRAINING_ROOT`, `ERA` | Where the preprocessed input data lives. Ask if you do not have access. |
-| `VENV_ROOT`, `ML_ENV` | Directory containing the virtualenv and its name. Must match step 2 (`/data/dust/user/$USER/pyenv_virtualenvs` and `ml_torch`). |
+| `VENV_ROOT`, `ML_ENV` | Directory containing the virtualenv and its name. |
 
 
 ## 3. Install the python environment (once)
@@ -55,49 +55,58 @@ match the torch wheel.
 
 ## What you can do
 
-All scripts accept `--help`, which lists the available options.
+The examples below show the minimal call for each script, `--help` lists all options.
+Run them from `DNN_ROOT`.
 
-**Train** a model. Hyperparameters live in `src/bbTT/configs/` (`debug_config.py` for quick tests,
-`full_config.py` for the real thing). Models go to `MODELS_DIR`, logs to `TENSORBOARD_DIR`.
-
+### Train a model
+Configure the models Hyperparameters in `src/bbTT/configs/`.
+Checkpoints are written to `${MODELS_DIR}/<name>_fold<k>.pt`, logs to `TENSORBOARD_DIR`.
 ```bash
-cd src/bbTT
-python train/train.py --help
+cd ${DNN_ROOT}
+python src/bbTT/train/train.py -tn my_first_run -s -ic
 ```
 
-**Evaluate** a trained checkpoint on the test, training or validation set and save the scores to `EVALUATION_DIR`:
+### Evaluate your model
+A trained model is saved in a checkpoint.
+To evaluate it on either "test", "training" or "validation" set use `evaluate.py`.
+Scores are saved to `${EVALUATION_DIR}/<file_path>.pt`.
 
 ```bash
-python evaluation/evaluate.py --help
+python evaluation/evaluate.py --src "${MODELS_DIR}/my_first_run_fold0.pt" --fold 0 -evaluate_on "test" -bs 4096 -fp my_first_run
 ```
 
-**Export** a checkpoint to torch-export (`.pt2`) with a dynamic batch dimension:
+### Export to .pt2
+
+Export a checkpoint to torch-export (`.pt2`) with a dynamic batch dimension.
+This is necessary when running the model with "Columnflow".
+A bare name is looked up in `MODELS_DIR`, but full path is also supported.
 
 ```bash
-python evaluation/export/pt2.py --help
+python evaluation/export/pt2.py --src my_first_run --fold 0
 ```
 
-**Monitor** the training with tensorboard:
+### Tensorboard
+All plots created in the training can be looked up with "Tensorboard".
+When your setup is on a remote side, you need to setup an ssh connection with the same port as Tensorboard.
 
+So run the following code after being on a machine connected via -L option like:
+```
+ssh -L 18090:localhost:8080 naf-cms17
+```
+This reroutes on the naf the port 8080 to your Local Host port 18090.
+Thus your Tensorboard would be started like this:
 ```bash
-tensorboard --logdir "${TENSORBOARD_DIR}"
+tensorboard --logdir "${TENSORBOARD_DIR}" --port 8080
 ```
 
-**Lint** with the settings from `pyproject.toml`:
-
-```bash
-ruff check src && ruff format src
-vulture        # dead code
-```
+Hint: You can occupy the same port multiple times.
 
 ## Debugging
-
 `setup.sh` provides two shell functions that drop you into a debugger whenever a python script crashes with an
 uncaught exception, at the line where it happened and with all local variables available:
 
 ```bash
 pdb_on          # IPython shell (default), alternatives: pdb_on pdb / pdb_on ipdb
-python train/train.py
 pdb_off         # back to normal tracebacks
 ```
 
