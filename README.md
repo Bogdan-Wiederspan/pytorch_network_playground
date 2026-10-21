@@ -19,7 +19,6 @@ To setup the project run.
 ```bash
 source setup.sh
 ```
-
 The first run creates `config.sh` from `config.sh.example` and stops.
 
 Open `config.sh` and check:
@@ -33,18 +32,16 @@ Open `config.sh` and check:
 
 
 ## 3. Install the python environment (once)
-
-`requirements.txt` pins `torch` with CUDA 12.1 wheels and needs python ≥ 3.9 (check with `python3 --version`).
-
-```bash
-mkdir -p /data/dust/user/${USER}/pyenv_virtualenvs
-python3 -m venv /data/dust/user/${USER}/pyenv_virtualenvs/ml_torch
-source /data/dust/user/${USER}/pyenv_virtualenvs/ml_torch/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt   # also installs this package in editable mode
-deactivate
+Execute the shellscript by copy into the terminal
+```
+# uses python3,
+./install_venv.sh
+# OR when a specfic version is used
+./install_venv.sh python3.11
 ```
 
+Creates the virtualenv at `${VENV_ROOT}/${ML_ENV}` from your `config.sh` and installs `requirements.txt`
+(`torch` with CUDA 12.1 wheels, plus this package in editable mode).
 
 ## 4. Every new shell
 

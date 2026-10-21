@@ -23,7 +23,7 @@ load_config() {
     local config="${DNN_ROOT}/config.sh"
 
     if [[ ! -f "${config}" ]]; then
-        cp "${DNN_ROOT}/config.sh.example" "${config}"
+        cp "${DNN_ROOT}/config.sh.template" "${config}"
         echo "[INFO] Created ${config} from template. Adapt it, then run 'source setup.sh' again."
         return 1
     fi
@@ -76,7 +76,7 @@ activate_venv() {
 
     local venv_dir="${VENV_ROOT}/${ML_ENV}"
     if [[ ! -f "${venv_dir}/bin/activate" ]]; then
-        echo "[ERROR] No virtualenv found at ${venv_dir}, see README for installation" >&2
+        echo "[ERROR] No virtualenv found at ${venv_dir}, create it with ./install_venv.sh" >&2
         return 1
     fi
 
