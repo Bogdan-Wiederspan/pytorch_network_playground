@@ -121,8 +121,12 @@ def resolve_models_path(path: pathlib.Path, folds) -> tuple[pathlib.Path, pathli
 
 if __name__ == "__main__":
     parser = ParserBuilder(
-        "load_checkpoint", "activation_fn", description="Export model to torch-export (.pt2) with dynamic batch dim"
+        "load_checkpoint",
+        "activation_fn",
+        description="Export a model checkpoint to torch-export (.pt2) with a dynamic batch dimension.",
+        epilog="example:\n  python src/bbTT/evaluation/export/pt2.py --checkpoint_src my_first_run --fold 0",
     )
+
     args = parser.args
 
     paths = resolve_models_path(args.path, args.fold)

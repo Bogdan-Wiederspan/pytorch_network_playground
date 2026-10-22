@@ -133,10 +133,17 @@ if __name__ == "__main__":
         "evaluate_choices",
         "batching",
         "num_threading",
-        description="Evaluate Model in Checkpoint on test, training or validation set of the given input data",
+        description="Evaluate a model checkpoint on the test, training or validation set of its input data.",
+        epilog=(
+            "example:\n"
+            '    python src/bbTT/evaluation/evaluate.py --c_src "${MODELS_DIR}/my_first_run_fold0.pt" --fold 0 -bs 4096 -fp my_first_run'
+        ),
     )
     args = parser.args
     model_name = args.path.stem
+
+    if args.num_threads > 0:
+        torch.set_num_threads(args.num_threads)
 
     DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     logger_inst.info(f"DEVICE: {DEVICE}")
@@ -147,7 +154,7 @@ if __name__ == "__main__":
     torch.manual_seed(full_config.training_config.seed)
     np.random.seed(full_config.training_config.seed)
 
-    events = io.get_data(full_config.dataset_config, ignore_cache=False, save_cache=False)
+    events = io.get_data(full_config.dataset_config, rebuild_cache=False, save_cache=False)
     # evaluate data on each part separate and then flush scores
     for evaluate_on in args.evaluate_on:
         stem = args.file_path.stem

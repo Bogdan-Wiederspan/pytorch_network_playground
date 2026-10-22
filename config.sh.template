@@ -1,0 +1,28 @@
+# Template for config.sh. setup.sh copies this file to config.sh on first run,
+# config.sh is ignored by git so your personal paths never conflict with upstream.
+# ${USER} is the system user name, ${USER:0:1} its first letter (AFS layout).
+# DNN_ROOT (the repository root) is set by setup.sh.
+
+# storage directories
+export STORE_DIR="/data/dust/user/${USER}/HH_DNN"      # root of all outputs
+export CACHE_DIR="${STORE_DIR}/cache"                   # preprocessed data and dataset paths
+export PICTURE_DIR="${STORE_DIR}/pictures"
+export MODELS_DIR="${STORE_DIR}/models"                 # saved models
+export TENSORBOARD_DIR="${STORE_DIR}/tensorboard"       # tensorboard logs
+export EVALUATION_DIR="${STORE_DIR}/evaluation"         # evaluation outputs
+
+# set to 1 to let setup.sh create the directories above (mkdir -p, safe to leave on)
+export CREATE_DIR=1
+
+# log levels: DEBUG, INFO, WARNING
+export LOG_LEVEL="DEBUG"
+export FILE_LOG_LEVEL="DEBUG"
+
+# input data
+export ERA="prod28"  # possible eras: prod14, prod20 (only 22pre), prod24, prod28
+export TRAINING_ROOT="/data/dust/user/riegerma/hh2bbtautau/run3_training_data"
+export INPUT_DATA_DIR="${TRAINING_ROOT}/${ERA}"
+
+# virtualenv, see README for installation
+export VENV_ROOT="/data/dust/user/${USER}/pyenv_virtualenvs"  # directory containing the virtualenvs
+export ML_ENV="ml_torch"                                      # name of the virtualenv

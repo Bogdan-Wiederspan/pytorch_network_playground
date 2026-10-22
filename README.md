@@ -1,53 +1,120 @@
 # pytorch_network_playground
 
-## Fork repository
+PyTorch training framework for the HH → bbττ DNN. The python package lives in `src/bbTT`.
 
-Login to github and click _Fork_ and then _Create fork._
+## 1. Get the code
 
-Now, you have a personal fork at `github.com/YOUR-USERNAME/pytorch_network_playground`.
+Login to github, click _Fork_ and then _Create fork_. You now have a personal fork at
+`github.com/YOUR-USERNAME/pytorch_network_playground`.
 
-## Clone your fork
-
+In your terminal go to the location where you want the code to live and write:
 ```bash
 git clone git@github.com:YOUR-USERNAME/pytorch_network_playground.git
 cd pytorch_network_playground
-```
-
-## Add original repo as upstream
-
-```bash
 git remote add upstream git@github.com:Bogdan-Wiederspan/pytorch_network_playground.git
 ```
 
-## Adapt config.sh
-
-Change _USER_ and _DNN_ROOT_ variables.
-
-## Install python environment (only once)
-
+## 2. Create your config
+To setup the project run.
 ```bash
-mkdir /data/dust/user/${USER}/pyenv_virtualenvs
-python -m venv /data/dust/user/${USER}/pyenv_virtualenvs/ml_torch
-source /data/dust/user/${USER}/pyenv_virtualenvs/ml_torch/bin/activate
-pip install -r requirements.txt
+source setup.sh
+```
+The first run creates `config.sh` from `config.sh.example` and stops.
+
+Open `config.sh` and check:
+
+| Variable | Meaning |
+| --- | --- |
+| `STORE_DIR` | Root for everything the framework writes (cache, models, tensorboard, evaluation, pictures). Default: `/data/dust/user/$USER/HH_DNN` |
+| `CREATE_DIR` | `1` lets `setup.sh` create the directories under `STORE_DIR` (`mkdir -p`, safe to leave on), `0` skips it |
+| `TRAINING_ROOT`, `ERA` | Where the preprocessed input data lives. Ask if you do not have access. |
+| `VENV_ROOT`, `ML_ENV` | Directory containing the virtualenv and its name. |
+
+
+## 3. Install the python environment (once)
+Execute the shellscript by copy into the terminal
+```
+# uses python3,
+bash install_venv.sh
+# OR when a specfic version is used
+bash install_venv.sh python3.11
 ```
 
-## Setup training environment (everytime you open a new shell)
+Creates the virtualenv at `${VENV_ROOT}/${ML_ENV}` from your `config.sh` and installs `requirements.txt`
+(`torch` with CUDA 12.1 wheels, plus this package in editable mode).
+
+## 4. Every new shell
 
 ```bash
 source setup.sh
 ```
 
-## Now you can
+This activates the virtualenv, creates missing storage directories and adds the CUDA libraries shipped with the
+pip packages (cudnn, nccl) to `LD_LIBRARY_PATH`, so training works even if the system CUDA installation does not
+match the torch wheel.
 
-### ...start a training
+## What you can do
 
+The examples below show the minimal call for each script, `--help` lists all options.
+Run them from `DNN_ROOT`.
+
+### Train a model
+Configure the models Hyperparameters in `src/bbTT/configs/`.
+Checkpoints are written to `${MODELS_DIR}/<name>_fold<k>.pt`, logs to `TENSORBOARD_DIR`.
 ```bash
-cd src/bbTT
-python train/train.py
+cd ${DNN_ROOT}
+python src/bbTT/train/train.py -tn my_first_run -s -rc
 ```
 
-### ...make changes to your own fork
+### Evaluate your model
+A trained model is saved in a checkpoint.
+To evaluate it on either "test", "training" or "validation" set use `evaluate.py`.
+Scores are saved to `${EVALUATION_DIR}/<file_path>.pt`.
+
+```bash
+python evaluation/evaluate.py --checkpoint_src "${MODELS_DIR}/my_first_run_fold0.pt" --fold 0 --evaluate_on "test" -batch_size 4096 --save_dst my_first_run
+```
+
+### Export to .pt2
+
+Export a checkpoint to torch-export (`.pt2`) with a dynamic batch dimension.
+This is necessary when running the model with "Columnflow".
+A bare name is looked up in `MODELS_DIR`, but full path is also supported.
+
+```bash
+python evaluation/export/pt2.py --checkpoint_src my_first_run --fold 0
+```
+
+### Tensorboard
+All plots created in the training can be looked up with "Tensorboard".
+When your setup is on a remote side, you need to setup an ssh connection with the same port as Tensorboard.
+
+So run the following code after being on a machine connected via -L option like:
+```
+ssh -L 18090:localhost:8080 naf-cms17
+```
+This reroutes on the naf the port 8080 to your Local Host port 18090.
+Thus your Tensorboard would be started like this:
+```bash
+tensorboard --logdir "${TENSORBOARD_DIR}" --port 8080
+```
+
+Hint: You can occupy the same port multiple times.
+
+## Debugging
+`setup.sh` provides two shell functions that drop you into a debugger whenever a python script crashes with an
+uncaught exception, at the line where it happened and with all local variables available:
+
+```bash
+pdb_on          # IPython shell (default), alternatives: pdb_on pdb / pdb_on ipdb
+pdb_off         # back to normal tracebacks
+```
+
+Nothing in the code needs to change; the hook works through `PYTHONPATH` and `.setup/sitecustomize.py`.
+
+## Working with git
+
+Push your changes to your fork:
 
 ```bash
 git add ...
@@ -55,14 +122,10 @@ git commit ...
 git push
 ```
 
-### ...pull in changes from upstream
+Pull in changes from upstream (then `git push` to update your fork, or "sync" the fork on github.com):
 
 ```bash
 git pull upstream main
 ```
 
-(This changes your local working copy, so you still need to _push_ to update your remote fork. Alternatively, you can also "sync" your fork on github.com and then pull in the changes.)
-
-### ...open a pull request to the original repo
-
-Use the _Contribute_ button on github.com.
+Open a pull request to the original repo with the _Contribute_ button on github.com.

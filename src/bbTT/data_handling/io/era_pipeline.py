@@ -10,14 +10,14 @@ from bbTT.monitoring.logger.logger import get_logger
 
 logger_inst = get_logger(__name__)
 
-def create_era_caches(config, cache: DataCacher, ignore_cache: bool, save_cache: bool) -> None:
+def create_era_caches(config, cache: DataCacher, rebuild_cache: bool, save_cache: bool) -> None:
     """
     Ensure every configured era exists in cache, loading + processing from raw files
     where needed. Does not merge or return any data — purely a cache-population step.
     """
     era_datasets = structure_datasets_after_eras(config)
     for era in config.eras:
-        if not ignore_cache and cache.era_exists(era):
+        if not rebuild_cache and cache.era_exists(era):
             logger_inst.info(f"Cache already present for era {era}")
             continue
 
@@ -95,12 +95,12 @@ def load_and_merge_eras(config, cache: DataCacher) -> dict[str, torch.Tensor]:
     return all_events
 
 
-def get_data(config=None, save_cache=False, ignore_cache=False, _hash=None) -> dict[str, torch.Tensor]:
+def get_data(config=None, save_cache=False, rebuild_cache=False, _hash=None) -> dict[str, torch.Tensor]:
     """
     Main function to combine all steps from loading root files to filter by
     process ids and finally convert to torch.
     """
     if config is not None and _hash is None:
         cache = DataCacher(config=config)
-        create_era_caches(config=config, cache=cache, save_cache=save_cache, ignore_cache=ignore_cache)
+        create_era_caches(config=config, cache=cache, save_cache=save_cache, rebuild_cache=rebuild_cache)
         return load_and_merge_eras(config=config, cache=cache)
