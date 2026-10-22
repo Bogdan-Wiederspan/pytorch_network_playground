@@ -18,9 +18,6 @@ if TYPE_CHECKING:
 
 logger_inst = get_logger(__name__)
 
-# key in ProcessSampler.state_dict, where the generator state of the physics parameters is stored
-PHYSICS_PARAMETER_RNG_KEY = "physics_parameter_rng"
-
 
 class ProcessRegistry:
     """
@@ -144,9 +141,6 @@ class ProcessSampler(t_data.Sampler):
 
         self.physics_parameter_map = physics_parameter_map or {}
         self.physics_parameter_process_type = physics_parameter_process_type
-        # own generator to keep the drawn physics parameters reproducible, see state_dict
-        self.physics_parameter_rng = torch.Generator()
-        self.physics_parameter_rng.manual_seed(self.seed)
         # physics parameters of the last sampled batch per uid, so peek_batch returns the same values
         self._last_physics_parameters: dict[tuple[str, str], torch.Tensor] = {}
 
@@ -176,36 +170,28 @@ class ProcessSampler(t_data.Sampler):
         # each process gets a unique seed by the sampler to decouple their random generators
         self.cursors[process.uid] = ProcessSampleCursor(process, randomize=randomize, seed=self.cursor_seed(process.uid))
 
-    def state_dict(self) -> dict[tuple[str, str] | str, dict | torch.Tensor]:
+    def state_dict(self) -> dict[tuple[str, str], dict]:
         """
         Iteration state of every registered cursor, keyed by uid. Only plain data
         (ints and tensors) ends up in here, so the result can go straight into torch.save.
-        The state of the physics parameter generator is stored under PHYSICS_PARAMETER_RNG_KEY.
 
         Returns:
-            dict[tuple[str, str] | str, dict | torch.Tensor]: uid -> cursor state, see ProcessSampleCursor.state_dict.
+            dict[tuple[str, str], dict]: uid -> cursor state, see ProcessSampleCursor.state_dict.
         """
-        state = {uid: cursor.state_dict() for uid, cursor in self.cursors.items()}
-        state[PHYSICS_PARAMETER_RNG_KEY] = self.physics_parameter_rng.get_state()
-        return state
+        return {uid: cursor.state_dict() for uid, cursor in self.cursors.items()}
 
-    def load_state_dict(self, state: dict[tuple[str, str] | str, dict | torch.Tensor]) -> None:
+    def load_state_dict(self, state: dict[tuple[str, str], dict]) -> None:
         """
         Restore every cursor from a state produced by state_dict. The set of registered
         processes must match exactly: a cursor without state would silently continue at
         its own position and break the "same batches again" guarantee.
 
         Args:
-            state (dict[tuple[str, str] | str, dict | torch.Tensor]): Output of state_dict of a sampler over the same processes.
+            state (dict[tuple[str, str], dict]): Output of state_dict of a sampler over the same processes.
 
         Raises:
             ValueError: If the stored uids and the registered uids differ.
         """
-        state = dict(state)
-        rng_state = state.pop(PHYSICS_PARAMETER_RNG_KEY, None)
-        if rng_state is not None:
-            self.physics_parameter_rng.set_state(rng_state)
-
         stored, registered = set(state), set(self.cursors)
         if stored != registered:
             raise ValueError(
@@ -320,7 +306,12 @@ class ProcessSampler(t_data.Sampler):
             )
         return values, probs / probs.sum()
 
-    def draw_physics_parameters(self, uid: tuple[str, int], n: int, generator: torch.Generator) -> torch.Tensor:
+    def draw_physics_parameters(
+        self,
+        uid: tuple[str, int],
+        n: int,
+        generator: torch.Generator | None = None,
+    ) -> torch.Tensor:
         """
         Physics parameters for *n* events of the process *uid*.
         Processes of ``physics_parameter_process_type`` get their true values, all others get values
@@ -329,7 +320,8 @@ class ProcessSampler(t_data.Sampler):
         Args:
             uid (tuple[str, int]): (process_type, process_id) of the process.
             n (int): Number of events.
-            generator (torch.Generator): Generator used for the random draw.
+            generator (torch.Generator, optional): Generator used for the random draw. Defaults to None,
+                which uses the global torch generator.
 
         Returns:
             torch.Tensor: Tensor of shape (n, num_parameters).
@@ -361,7 +353,7 @@ class ProcessSampler(t_data.Sampler):
                 raise RuntimeError("No batch has been sampled yet. Call sample_batch() before peek_batch().")
             return self._last_physics_parameters[uid].to(device)
 
-        parameters = self.draw_physics_parameters(uid, n, generator=self.physics_parameter_rng)
+        parameters = self.draw_physics_parameters(uid, n)
         self._last_physics_parameters[uid] = parameters
         return parameters.to(device)
 
