@@ -381,7 +381,7 @@ if __name__ == "__main__":
         "tensorboard",
         "cache",
         description="Train the HH -> bbtautau DNN with the configuration in bbTT/configs.",
-        epilog="example:\n  python src/bbTT/train/train.py -tn my_first_run -ic",
+        epilog="example:\n  python src/bbTT/train/train.py -tn my_first_run -rc",
     )
 
     main(

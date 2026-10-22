@@ -1,6 +1,7 @@
 import argparse
 import os
 import pathlib
+from typing import Callable
 
 
 class ParserBuilder:
@@ -47,11 +48,11 @@ class ParserBuilder:
             method()
 
     @classmethod
-    def available_groups(cls) -> List[str]:
+    def available_groups(cls) -> list[str]:
         """Lists all argument group names this builder knows.
 
         Returns:
-            List[str]: group names without the "add_" prefix.
+            list[str]: group names without the "add_" prefix.
         """
         return [name[len("add_") :] for name in dir(cls) if name.startswith("add_")]
 
@@ -97,8 +98,7 @@ class ParserBuilder:
             "--fold",
             "-f",
             dest="fold",
-            required=True,
-            default="0",
+            default=0,
             type=self.comma_separated(int),
             help="Comma separated list of folds, e.g. '0' or '0,1,2'. Each fold on its respective test data.",
         )
@@ -122,7 +122,7 @@ class ParserBuilder:
             help=(
             """
             Path to destination of saved scores.
-            A relative path is placed in EVALUATUON_DIR. An absolut path is used as is.
+            A relative path is placed in EVALUATION_DIR. An absolute path is used as is.
             The suffix is replace by .pt.
             """
             ),
@@ -134,7 +134,7 @@ class ParserBuilder:
             "-e",
             dest="evaluate_on",
             default=["test"],
-            type=self.comma_separated("test", "training", "validation"),
+            type=self.comma_separated(str, allowed=("test", "training", "validation")),
             help="Comma separated list of datasets to evaluate on: test, training, validation. (default: test)",
         )
 
@@ -144,7 +144,7 @@ class ParserBuilder:
             "--batch_size",
             "-bs",
             dest="batch_size",
-            type=self.non_negative_int,
+            type=self.positive_int,
             required=True,
             help="Batch Size used for event loop. When memory is a problem reduce batch size first."
         )
@@ -200,11 +200,11 @@ class ParserBuilder:
         """
         try:
             number = int(value)
-        except ValueError:
+        except ValueError
             raise argparse.ArgumentTypeError(f"expected an integer, got '{value}'")
         if number < 0:
             raise argparse.ArgumentTypeError(f"must be >= 0, got {number}")
-        return number    @staticmethod
+        return number
 
     @staticmethod
     def comma_separated(item_type: Callable[[str], object], allowed: tuple = ()) -> Callable[[str], list]:

@@ -136,11 +136,11 @@ if __name__ == "__main__":
         description="Evaluate a model checkpoint on the test, training or validation set of its input data.",
         epilog=(
             "example:\n"
-            '    python src/bbTT/evaluation/evaluate.py --src "${MODELS_DIR}/my_first_run_fold0.pt" --fold 0 -bs 4096 -fp my_first_run'
+            '    python src/bbTT/evaluation/evaluate.py --c_src "${MODELS_DIR}/my_first_run_fold0.pt" --fold 0 -bs 4096 -fp my_first_run'
         ),
     )
-    args = parser.args,
-    model_name = args.path.stem,
+    args = parser.args
+    model_name = args.path.stem
 
     if args.num_threads > 0:
         torch.set_num_threads(args.num_threads)

@@ -178,9 +178,10 @@ if __name__ == "__main__":
     parser = ParserBuilder(
         "tensorboard",
         "cache",
-        description="Train the HH -> bbtautau DNN with the configuration in bbTT/configs.",
-        epilog="example:\n  python src/bbTT/train/train.py -tn my_first_run -ic",
+        description="Compare sampling strategies on the training data.",
+        epilog="example:\n  python src/bbTT/experiments/compare_sampler.py -tn sampler_test",
     )
+
     main(
         rebuild_cache=parser.args.rebuild_cache,
         save_cache=parser.args.save_cache,

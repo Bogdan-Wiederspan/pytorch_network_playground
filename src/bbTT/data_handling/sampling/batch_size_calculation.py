@@ -123,7 +123,7 @@ class BatchSizeAllocator:
         expected_counts = self.rounding.expected(exact)
 
         sizes = {pid: n.item() for pid, n in zip(pids, counts)}
-        expected_sizes = {pid: n.items() for pid, n in zip(pids, expected_counts)}
+        expected_sizes = {pid: n.item() for pid, n in zip(pids, expected_counts)}
 
         # share of the whole batch a process is expected to have. Built from the expected and not the drawn
         # counts, so a stochastic strategy does not freeze one draw into a weight that is used for a whole run
