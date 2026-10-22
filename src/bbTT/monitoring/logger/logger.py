@@ -4,6 +4,8 @@ import logging
 import os
 import sys
 
+import psutil
+
 from bbTT.monitoring.logger.formatter import ColoredFormatter
 from bbTT.monitoring.logger.log_level import CUSTOM_LEVELS
 
@@ -85,6 +87,28 @@ def _make_same_line_log_method(level_num: int):
 
     return log_method
 
+def _memory_log_method(self: logging.Logger, tag: str, *, level: int = logging.DEBUG, stacklevel: int = 2) -> None:
+    """
+    Log the resident set size (RSS) of the current process, tagged with *tag*.
+
+    RSS is the memory the process actually holds in RAM. Page cache of memory-mapped
+    files is not part of it, so for a mmap'ed cache this is the number that matters.
+    Intended for bracketing memory-heavy sections, e.g.::
+
+        logger_inst.memory("before merge")
+        events = merge_era_events(era_events)
+        logger_inst.memory("after merge")
+
+    Args:
+        tag (str): Short description of the current point in the program.
+        level (int, optional): Log level to emit at. Defaults to logging.DEBUG.
+        stacklevel (int, optional): Stack frames to skip so the log line points to the caller. Defaults to 2.
+    """
+    if not self.isEnabledFor(level):
+        return
+    rss_gb = psutil.Process(os.getpid()).memory_info().rss / 1e9
+    # % formatting as in the rest of the logger: evaluated only when the level is enabled
+    self._log(level, "[MEM] %-30s rss=%.2fGB", (tag, rss_gb), stacklevel=stacklevel)
 
 def _register_custom_log_levels():
     global _custom_levels_registered
@@ -102,6 +126,8 @@ def _register_custom_log_levels():
     # each normal logger should
     logging.Logger.debug_progress = _make_same_line_log_method(logging.DEBUG)
     logging.Logger.info_progress = _make_same_line_log_method(logging.INFO)
+
+    logging.Logger.memory = _memory_log_method
 
     _custom_levels_registered = True
 
