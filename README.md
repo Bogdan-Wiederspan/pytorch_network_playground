@@ -63,7 +63,7 @@ Configure the models Hyperparameters in `src/bbTT/configs/`.
 Checkpoints are written to `${MODELS_DIR}/<name>_fold<k>.pt`, logs to `TENSORBOARD_DIR`.
 ```bash
 cd ${DNN_ROOT}
-python src/bbTT/train/train.py -tn my_first_run -s -ic
+python src/bbTT/train/train.py -tn my_first_run -s -rc
 ```
 
 ### Evaluate your model
@@ -72,7 +72,7 @@ To evaluate it on either "test", "training" or "validation" set use `evaluate.py
 Scores are saved to `${EVALUATION_DIR}/<file_path>.pt`.
 
 ```bash
-python evaluation/evaluate.py --src "${MODELS_DIR}/my_first_run_fold0.pt" --fold 0 -evaluate_on "test" -bs 4096 -fp my_first_run
+python evaluation/evaluate.py --checkpoint_src "${MODELS_DIR}/my_first_run_fold0.pt" --fold 0 --evaluate_on "test" -batch_size 4096 --save_dst my_first_run
 ```
 
 ### Export to .pt2
@@ -82,7 +82,7 @@ This is necessary when running the model with "Columnflow".
 A bare name is looked up in `MODELS_DIR`, but full path is also supported.
 
 ```bash
-python evaluation/export/pt2.py --src my_first_run --fold 0
+python evaluation/export/pt2.py --checkpoint_src my_first_run --fold 0
 ```
 
 ### Tensorboard
