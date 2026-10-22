@@ -66,7 +66,7 @@ def main(**kwargs):
         # events is of form : {uid : {"COLUMN_NAME": torch.Tensor}}
         events = get_data(
             full_config.dataset_config,
-            ignore_cache=kwargs["ignore_cache"],
+            rebuild_cache=kwargs["rebuild_cache"],
             save_cache=kwargs["save_cache"],
         )
 
@@ -377,10 +377,15 @@ def main(**kwargs):
 if __name__ == "__main__":
     from bbTT.utils.parser import ParserBuilder
 
-    parser = ParserBuilder("tensorboard", "cache")
+    parser = ParserBuilder(
+        "tensorboard",
+        "cache",
+        description="Train the HH -> bbtautau DNN with the configuration in bbTT/configs.",
+        epilog="example:\n  python src/bbTT/train/train.py -tn my_first_run -ic",
+    )
 
     main(
-        ignore_cache=parser.args.ignore_cache,
+        rebuild_cache=parser.args.rebuild_cache,
         save_cache=parser.args.save_cache,
         tensorboard_name=parser.args.tensorboard_name,
     )
