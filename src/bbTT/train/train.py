@@ -129,7 +129,6 @@ def main(**kwargs):
             return_dummy=full_config.debug_config.get_batch_statistic_return_dummy,
             verbose=True,
         )
-        from IPython import embed; embed(header="MESSAGE Line 124 | File: /afs/desy.de/user/w/wiedersb/xxl/pytorch_network_playground/src/bbTT/train/train.py")
         full_config.model_building_config.standardization.mean = feature_statistic_cache.mean
         full_config.model_building_config.standardization.std = feature_statistic_cache.std
 

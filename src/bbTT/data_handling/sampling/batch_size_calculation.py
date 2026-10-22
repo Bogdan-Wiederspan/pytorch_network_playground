@@ -132,4 +132,4 @@ class BatchSizeAllocator:
             pid: (num_per_pid / sub_batch_size * sample_ratio_for_type) for pid, num_per_pid in expected_sizes.items()
 
         }
-        return sizes, pre_relative_pid_contribution, post_relative_pid_contribution
+        return sizes, expected_sizes, pre_relative_pid_contribution, post_relative_pid_contribution
