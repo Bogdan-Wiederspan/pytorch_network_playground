@@ -1,25 +1,43 @@
 import torch
 
+from bbTT.monitoring.logger.logger import get_logger
 from bbTT.optimizer import weight_decay
 
+logger_inst = get_logger(__name__)
 
-def init_optimizer(full_config, model_inst):
-    # only linear layers contribute to weight decay, prepare config that separates them for the optimizer
-    weight_decay_parameters = weight_decay.normalized_weight_decay(
+def init_optimizer(full_config, model_inst: torch.nn.Module) -> torch.optim.Optimizer:
+    """
+    Build the optimizer chosen in the config with two parameter groups:
+    linear-layer weights with weight decay, all remaining trainable parameters without.
+
+    Args:
+        full_config: Merged config, ``optimizer_config`` is read.
+        model_inst (torch.nn.Module): Model whose parameters are optimized.
+
+    Returns:
+        torch.optim.Optimizer: Optimizer instance covering all trainable parameters.
+    """
+    logger_inst.info("Initialize Optimizer")
+    logger_inst.debug("Optimizer settings:"
+        f"name: {full_config.optimizer_config.optimizer_choice}\n"
+        f"decay-factor: {full_config.optimizer_config.active_config.decay_factor}\n"
+        f"normalize: {full_config.optimizer_config.active_config.normalize,}\n"
+        )
+    no_decay_group, decay_group = weight_decay.normalized_weight_decay(
         model_inst,
         full_config.optimizer_config.active_config.decay_factor,
         full_config.optimizer_config.active_config.normalize,
     )
-    # is a dictionary, expect list of tuples
-    weight_decay_parameters = list(weight_decay_parameters.values())
+    # each group carries its own weight_decay, the optimizer default below is never used
+    parameter_groups = [no_decay_group, decay_group]
     name = full_config.optimizer_config.optimizer_choice
 
-    global_weight_decay_default = 0
+    global_weight_decay_default = 0.0
 
     # pick correct optimizer
     if name == "adamw":
         optimizer_inst = torch.optim.AdamW(
-            weight_decay_parameters,
+            parameter_groups,
             lr=full_config.optimizer_config.active_config.lr,
             weight_decay=global_weight_decay_default,
         )
