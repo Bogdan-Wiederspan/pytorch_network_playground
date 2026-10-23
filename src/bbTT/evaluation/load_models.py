@@ -66,6 +66,10 @@ def rebuild_checkpoint_information(path) -> tuple[torch.nn.Module, Literal["Data
     checkpoint_path = resolve_checkpoint_path(path)
     checkpoint_inst = load_checkpoint(checkpoint_path)
 
+    # checkpoints from before physics parameters (pNN) existed have no such field, these networks were
+    # trained without physics parameters. Not setting it leaves the attribute missing, since from_dict skips it
+    checkpoint_inst["full_config"]["dataset_config"].setdefault("physics_parameters", {})
+
     reconstructed_full_config = from_dict(FullConfig, checkpoint_inst["full_config"])
     model_inst = rebuild_model_from_checkpoint(checkpoint_inst, cfg_dataclass=reconstructed_full_config)
     return model_inst, reconstructed_full_config

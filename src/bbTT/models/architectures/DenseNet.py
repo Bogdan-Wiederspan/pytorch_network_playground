@@ -22,12 +22,15 @@ class DenseNet(BaseModel):
             "eps": dense_cfg.batch_norm_eps,  # increasing eps helps to stabilize training, to counter batch norm and L2 reg counter play when used together
             "normalize": dense_cfg.normalize_linear,  # activate weight normalization on linear layer weights
             "output_nodes": int(dense_cfg.nodes),
+            # physics parameters (e.g. kappa lambda) are fed into every dense block, 0 if none are configured
+            "num_physics_parameters": self.num_physics_parameters,
         }
 
         self.input_layer = self.init_optional_input_layer()
+        self.physics_parameter_layer = self.init_physics_parameter_layer()
 
         self.transition_dense_1 = DenseBlock(
-            input_nodes=self.input_layer.ndim,
+            input_nodes=self.input_layer.ndim + self.num_physics_parameters,
             output_nodes=_dense_config["output_nodes"],
             activation_functions=_dense_config["activation_functions"],
             eps=_dense_config["eps"],
@@ -43,15 +46,25 @@ class DenseNet(BaseModel):
         # can only be sigmoid or softmax, uses only dim as configuration
         self.last_activation_fn = self.init_last_activation_layer()
 
-    def forward(self, categorical_inputs, continuous_inputs):
-        x = self.input_layer(categorical_inputs=categorical_inputs, continuous_inputs=continuous_inputs)
+    def dense_forward(self, x, physics_parameters=None):
+        """
+        Dense part of the network, shared by all DenseNet based models.
+        Scaled *physics_parameters* are concatenated to the input and fed into every dense block.
+        """
+        if physics_parameters is not None:
+            x = torch.concatenate((x, physics_parameters), dim=1)
         x = self.transition_dense_1(x)
-        x = self.dense_block_1(x)
-        x = self.dense_block_2(x)
-        x = self.dense_block_3(x)
-        x = self.dense_block_4(x)
-        x = self.dense_block_5(x)
+        x = self.dense_block_1(x, physics_parameters)
+        x = self.dense_block_2(x, physics_parameters)
+        x = self.dense_block_3(x, physics_parameters)
+        x = self.dense_block_4(x, physics_parameters)
+        x = self.dense_block_5(x, physics_parameters)
         x = self.last_linear(x)
         if self.use_last_activation:
             x = self.last_activation_fn(x)
         return x
+
+    def forward(self, categorical_inputs, continuous_inputs, physics_parameters=None):
+        physics_parameters = self.scale_physics_parameters(physics_parameters)
+        x = self.input_layer(categorical_inputs=categorical_inputs, continuous_inputs=continuous_inputs)
+        return self.dense_forward(x, physics_parameters)

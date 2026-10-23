@@ -14,6 +14,10 @@ class ResidualNet(BaseModel):
         self.init_layers()
 
     def init_layers(self):
+        if self.has_physics_parameters:
+            raise NotImplementedError(
+                "ResidualNet does not support physics parameters yet, set DataConfig.physics_parameters = {}"
+            )
         # increasing eps helps to stabilize training to counter batch norm and L2 reg counterplay when used together.
         # eps = 0.5e-5
 
@@ -44,7 +48,8 @@ class ResidualNet(BaseModel):
         # can only be sigmoid or softmax, uses only dim as configuration
         self.last_activation_fn = self.init_last_activation_layer()
 
-    def forward(self, categorical_inputs, continuous_inputs):
+    def forward(self, categorical_inputs, continuous_inputs, physics_parameters=None):
+        # physics parameters are not supported, see init_layers
         x = self.input_layer(categorical_inputs=categorical_inputs, continuous_inputs=continuous_inputs)
         x = self.transition_dense_1(x)
         x = self.resnet_block_1(x)

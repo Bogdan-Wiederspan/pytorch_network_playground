@@ -29,6 +29,10 @@ class BinnedLBNDenseNet(LBNDenseNet):
         self.freeze_edges()  # TODO for now, change when not working with fixed binning
 
     def init_layers(self):
+        if self.has_physics_parameters:
+            raise NotImplementedError(
+                "BinnedLBNDenseNet does not support physics parameters yet, set DataConfig.physics_parameters = {}"
+            )
         # create normal LBN DenseNet
         super().init_layers()
         # init binning layer, its possible to deactivate the binning layer.
@@ -94,7 +98,8 @@ class BinnedLBNDenseNet(LBNDenseNet):
         """
         return {"binning": self.binning_layer.create_evaluation_state()}
 
-    def forward(self, categorical_inputs, continuous_inputs):
-        normal_network_output = super().forward(categorical_inputs, continuous_inputs)
+    def forward(self, categorical_inputs, continuous_inputs, physics_parameters=None):
+        # physics parameters are not supported, see init_layers
+        normal_network_output = super().forward(categorical_inputs, continuous_inputs, physics_parameters)
         binned_output = self.binning_layer(normal_network_output)  # increases dimension at axis 0
         return normal_network_output, binned_output

@@ -103,8 +103,19 @@ class DataConfig:
     dataset_pattern: Tuple[str] = (
         "dy_*",
         "tt_*",
-        "hh_ggf_hbb_htt_kl1_kt1*",
+        "hh_ggf_hbb_htt_kl*_kt1*",
     )  # pattern to find datasets
+
+    # physics parameters the network is conditioned on (pNN), e.g. kappa lambda
+    # signal events get the value of their process id, all other process types get random values drawn
+    # from the signal value distribution within the batch. Empty dict = network without physics parameters
+    physics_parameters: Dict[str, Dict[int, float]] = field(
+        default_factory=lambda: {
+            "kl": {21114: 0.0, 21101: 1.0, 21120: 2.45, 21121: 5.0},  # name -> {process_id: value}
+        }
+    )
+    physics_parameter_process_type: str = "hh"  # process type that carries the true physics parameter values
+    balance_physics_parameter_points: bool = True  # every physics parameter point gets the same share within a batch
 
     # eras: Tuple[ERAS_CHOICE] = ("22pre", "22post", "23pre", "23post",)  # ERAS that are trained on. For each era a separate cache is created
     eras: Tuple[ERAS_CHOICE] = ("22pre", "22post", "23pre", "23post",)  # ERAS that are trained on. For each era a separate cache is created
@@ -243,6 +254,50 @@ class DataConfig:
         Return the cuts with placeholders resolved to actual array column names.
         """
         return [self.resolve_template(cut) for cut in self.cuts]
+
+    @property
+    def physics_parameter_names(self) -> Tuple[str, ...]:
+        return tuple(self.physics_parameters.keys())
+
+    @property
+    def num_physics_parameters(self) -> int:
+        return len(self.physics_parameters)
+
+    @property
+    def has_physics_parameters(self) -> bool:
+        return self.num_physics_parameters > 0
+
+    def physics_parameter_values(self, process_id: int) -> Tuple[float, ...]:
+        """
+        Return the values of all physics parameters for *process_id*, ordered like ``physics_parameter_names``.
+
+        Raises:
+            KeyError: If *process_id* has no value for one of the physics parameters.
+        """
+        values = []
+        for name, values_by_pid in self.physics_parameters.items():
+            if process_id not in values_by_pid:
+                raise KeyError(f"Process id {process_id} has no value for physics parameter '{name}'")
+            values.append(float(values_by_pid[process_id]))
+        return tuple(values)
+
+    def physics_parameter_scale(self) -> Tuple[List[float], List[float]]:
+        """
+        Fixed mean and std per physics parameter, calculated from the configured values.
+        Used to standardize the physics parameters before they enter the network.
+
+        Returns:
+            Tuple[List[float], List[float]]: Mean and std, ordered like ``physics_parameter_names``.
+        """
+        means, stds = [], []
+        for values_by_pid in self.physics_parameters.values():
+            values = [float(v) for v in values_by_pid.values()]
+            mean = sum(values) / len(values)
+            std = (sum((v - mean) ** 2 for v in values) / len(values)) ** 0.5
+            means.append(mean)
+            # a single value has no spread, avoid division by zero
+            stds.append(std if std > 0 else 1.0)
+        return means, stds
 
     def cache_entries(self):
         """
