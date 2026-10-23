@@ -1,9 +1,12 @@
 
 from bbTT.loss import SignalEfficiency, WeightedCrossEntropy
+from bbTT.monitoring.logger.logger import get_logger
 from bbTT.utils.utils import CPU_DEVICE
 
+logger_inst = get_logger(__name__)
 
 def init_loss(full_config, device=CPU_DEVICE, **kwargs):
+    logger_inst.info("Initialize Loss Function")
     cfg = full_config.loss_config
 
     if cfg.loss_fn == "cross_entropy":
@@ -26,4 +29,7 @@ def init_loss(full_config, device=CPU_DEVICE, **kwargs):
         validation_loss_fn = SignalEfficiency(is_training=False, **loss_cfg)
     else:
         raise ValueError(f"Chosen loss {cfg.loss_fn!r} has no initialization in init_loss")
+
+    logger_inst.debug(f"Training Loss: {train_loss_fn}")
+    logger_inst.debug(f"Validation Loss: {validation_loss_fn}")
     return train_loss_fn, validation_loss_fn
