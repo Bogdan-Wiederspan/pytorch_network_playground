@@ -110,6 +110,7 @@ class DataConfig:
     # eras: tuple[ERAS_CHOICE] = ("22pre",)  # ERAS that are trained on. For each era a separate cache is created
 
     flush_threshold: int = 1_000_000  # number of rows before a flush is initiated when creating the cache, reduce when memory issues are a problem
+    statistics_chunk_rows: int = 1_000_000  # rows per chunk when computing feature mean/std; bounds the transient memory, does not change the result
 
     datasets: Optional[list[str]] = field(init=False)
     cuts: Optional[tuple[str]] = (
