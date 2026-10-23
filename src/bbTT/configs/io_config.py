@@ -118,8 +118,8 @@ class DataConfig:
         # "(({channel_id} == 1) | ({channel_id} == 2) | ({channel_id} == 3) )", # < prod 28
         "({leptons_os} == 1)",
         "(({channel_id} == 1) & ({num_taus_iso} >= 1) | ({channel_id} == 2) &  ({num_taus_iso} >= 1)| ({channel_id} == 3) &  ({num_taus_iso} >= 1))",  # noqa
-        "({vis_tau1_charge} == 1) | ({vis_tau1_charge} == -1)",
-        "({vis_tau2_charge} == 1) | ({vis_tau2_charge} == -1)",
+        "(({vis_tau1_charge} == 1) | ({vis_tau1_charge} == -1))",
+        "(({vis_tau2_charge} == 1) | ({vis_tau2_charge} == -1))",
         "({vbf_dnn_moe_hh_vbf} < 0.5)",
     )  # derived in __post_init__: cuts with placeholders resolved to actual array column names
 
