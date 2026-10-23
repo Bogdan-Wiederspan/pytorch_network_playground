@@ -14,8 +14,7 @@ class LBNPipeline(torch.nn.Module):
         weight_init_scale: float | int = 1.0,
         clip_weights: bool = False,
         eps: float = 1.0e-5,
-        *args,
-        **kwargs,
+        safe_sqrt_eps: float = 1.0e-5,
     ):
         super().__init__()
         self.lbn_feature_extractor = LBNFeatureExtractor(continuous_features=continuous_features)
@@ -26,6 +25,7 @@ class LBNPipeline(torch.nn.Module):
             clip_weights=clip_weights,
             eps=eps,
             weight_init_scale=weight_init_scale,
+            safe_sqrt_eps=safe_sqrt_eps,
         )
         self.lbn_batch_norm = torch.nn.BatchNorm1d(self.lbn.ndim)
 
