@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Iterator
 
 import torch
 
@@ -179,8 +179,8 @@ class FeatureStatisticCache(BaseCacher):
         """
 
         msg = []
-        for f_name, f_mean, f_var in zip(self.features, self.mean, self.std):
-            msg.append(f"{f_name:<30}: mean:{f_mean:>10.4} var:{f_var:>10.4}")
+        for f_name, f_mean, f_std in zip(self.features, self.mean, self.std):
+            msg.append(f"{f_name:<30}: mean:{f_mean:>10.4} std:{f_std:>10.4} var:{f_std**2:>10.4}")
         msg = "\n" + "\n".join(msg)
         logger_inst.debug(msg)
 
@@ -212,7 +212,6 @@ class FeatureStatisticCache(BaseCacher):
             return self.dummy_statistics()
 
         logger_inst.info("Calculate mean and std over all subphase spaces")
-
         # per-process results are collected first and combined at the end,
         # since the between-term needs the total mean, which is only known afterwards
         means, variances, weights = [], [], []
@@ -234,15 +233,12 @@ class FeatureStatisticCache(BaseCacher):
                     f"Padding values need to be of shape [num_features] or single value, got {ignore_tensor.shape}"
                 )
 
-            # masked statistics per process (float64 due to overflow issues with sqrt later)
-            include_mask = ~(array == ignore_tensor)
-            masked_mean = torch.masked.mean(input=array, mask=include_mask, dim=0, dtype=torch.float64)
+            masked_mean, masked_var = self._masked_moments(array, ignore_tensor)
             if torch.any(masked_mean.isnan()):
                 # raise instead of embed(): embed() would hang forever in batch jobs
                 raise ValueError(f"Process {uid} has a NaN mean, check for fully padded features in the sampler.")
 
             # a feature with 1 event returns NaN for its variance -> use variance of 1
-            masked_var = torch.masked.var(input=array, mask=include_mask, dim=0, dtype=torch.float64)
             masked_var = torch.nan_to_num(masked_var, nan=1.0)
 
             means.append(masked_mean)
@@ -261,3 +257,36 @@ class FeatureStatisticCache(BaseCacher):
         between = (w * (means - total_mean) ** 2).sum(dim=0)      # spread of the process means
         total_std = torch.sqrt(within + between)
         return total_mean, total_std
+
+    def _masked_moments(self, array: torch.Tensor, ignore_tensor: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Masked mean and unbiased variance per feature, computed chunk-wise in float64.
+        ... (Docstring siehe Patch)
+        """
+        num_features = array.shape[-1]
+        chunk_rows = self.config.statistics_chunk_rows
+
+        def chunks() -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
+            # yields (float64 chunk, include mask) pairs
+            for start in range(0, array.shape[0], chunk_rows):
+                chunk = array[start:start + chunk_rows]
+                include_mask = chunk != ignore_tensor
+                yield chunk.to(torch.float64), include_mask
+
+        # pass 1: masked sum and count -> mean
+        total = torch.zeros(num_features, dtype=torch.float64)
+        count = torch.zeros(num_features, dtype=torch.float64)
+        for chunk, include_mask in chunks():
+            chunk.masked_fill_(~include_mask, 0.0)
+            total += chunk.sum(dim=0)
+            count += include_mask.sum(dim=0)
+        mean = total / count
+
+        # pass 2: masked sum of squared deviations -> unbiased variance
+        squared_deviation = torch.zeros(num_features, dtype=torch.float64)
+        for chunk, include_mask in chunks():
+            chunk.sub_(mean).square_().masked_fill_(~include_mask, 0.0)
+            squared_deviation += chunk.sum(dim=0)
+        variance = squared_deviation / (count - 1)
+
+        return mean, variance

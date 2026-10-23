@@ -6,7 +6,7 @@ import os
 import pathlib
 from dataclasses import dataclass, field
 from string import Formatter
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Literal, Optional, get_args
 
 from bbTT.data_handling.io.find_datasets import cached_find_datasets
 
@@ -15,9 +15,9 @@ ERAS_CHOICE = Literal["22pre", "22post", "23pre", "23post", "24"]
 
 @dataclass
 class DataConfig:
-    target_map: Dict[str, int] = field(default_factory=lambda: {"hh": 0, "tt": 1, "dy": 2})  # node: index
+    target_map: dict[str, int] = field(default_factory=lambda: {"hh": 0, "tt": 1, "dy": 2})  # node: index
 
-    continuous_features: Tuple[str] = (
+    continuous_features: tuple[str] = (
         "met_px",
         "met_py",
         "met_cov00",
@@ -75,7 +75,7 @@ class DataConfig:
         "nu2_pz",
     )  # features for the standardization layer path
 
-    categorical_features: Tuple[str] = (
+    categorical_features: tuple[str] = (
         "pair_type",
         # "_channel_id",
         "dm1",
@@ -86,7 +86,7 @@ class DataConfig:
         "has_fatjet",
     )  # features for the embedding path
 
-    expected_embedding_inputs: Dict[str, List[Any]] = field(
+    expected_embedding_inputs: dict[str, list[Any]] = field(
         default_factory=lambda: {
             "pair_type": [0, 1, 2],  # see mapping below
             "dm1": [-1, 0, 1, 10, 11],  # -1 for e/mu
@@ -100,19 +100,20 @@ class DataConfig:
         }
     )  # expected inputs for the embedding, raises an error when a wrong input exist
 
-    dataset_pattern: Tuple[str] = (
+    dataset_pattern: tuple[str] = (
         "dy_*",
         "tt_*",
         "hh_ggf_hbb_htt_kl1_kt1*",
     )  # pattern to find datasets
 
-    # eras: Tuple[ERAS_CHOICE] = ("22pre", "22post", "23pre", "23post",)  # ERAS that are trained on. For each era a separate cache is created
-    eras: Tuple[ERAS_CHOICE] = ("22pre", "22post", "23pre", "23post",)  # ERAS that are trained on. For each era a separate cache is created
+    eras: tuple[ERAS_CHOICE] = ("22pre", "22post", "23pre", "23post",)  # ERAS that are trained on. For each era a separate cache is created
+    # eras: tuple[ERAS_CHOICE] = ("22pre",)  # ERAS that are trained on. For each era a separate cache is created
 
     flush_threshold: int = 1_000_000  # number of rows before a flush is initiated when creating the cache, reduce when memory issues are a problem
+    statistics_chunk_rows: int = 1_000_000  # rows per chunk when computing feature mean/std; bounds the transient memory, does not change the result
 
-    datasets: Optional[List[str]] = field(init=False)
-    cuts: Optional[Tuple[str]] = (
+    datasets: Optional[list[str]] = field(init=False)
+    cuts: Optional[tuple[str]] = (
         # "({tau2_isolated} == 1)", # exist only for <prod28
         # "(({channel_id} == 1) | ({channel_id} == 2) | ({channel_id} == 3) )", # < prod 28
         "({leptons_os} == 1)",
@@ -149,7 +150,7 @@ class DataConfig:
         return self.column_map.get(string, string)
 
     @functools.cached_property
-    def column_map(self) -> Dict[str, str]:
+    def column_map(self) -> dict[str, str]:
         """plain name -> actual array column name, for every feature this config knows about."""
         return {
             # scores of normal network
@@ -222,11 +223,11 @@ class DataConfig:
         }
 
     @property
-    def uproot_continuous_columns(self) -> List[str]:
+    def uproot_continuous_columns(self) -> list[str]:
         return [self.column_map[f] for f in self.continuous_features]
 
     @property
-    def uproot_categorical_columns(self) -> List[str]:
+    def uproot_categorical_columns(self) -> list[str]:
         return [self.column_map[f] for f in self.categorical_features]
 
     def resolve_template(self, template: str) -> str:
@@ -278,6 +279,20 @@ class DataConfig:
         if era is None:
             return size
         return size[era]
+
+
+    @property
+    def ordered_eras(self) -> tuple[str, ...]:
+        """
+        The configured eras in chronological order (order of ERAS_CHOICE), independent of
+        how ``eras`` is written. The era caches are merged in this order, which fixes the
+        event order inside each uid and therefore the k-fold split.
+
+        Returns:
+            tuple[str, ...]: Sorted copy of ``eras``.
+        """
+        return tuple(sorted(self.eras, key=get_args(ERAS_CHOICE).index))
+
 
     def __post_init__(self):
         # a dictionary of all files corresponding to a certain dataset

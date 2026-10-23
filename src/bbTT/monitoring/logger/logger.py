@@ -4,6 +4,8 @@ import logging
 import os
 import sys
 
+import psutil
+
 from bbTT.monitoring.logger.formatter import ColoredFormatter
 from bbTT.monitoring.logger.log_level import CUSTOM_LEVELS
 
@@ -50,18 +52,27 @@ class SameLineStreamHandler(logging.StreamHandler):
             self.handleError(record)
 
 
-# helper function to add log methods for custom levels
-def _make_log_method(level_num):
-    def log_method(self, msg, *args, stacklevel=2, **kwargs):
-        if self.isEnabledFor(level_num):
-            # if stacklevel is not provided, default to 2 to point to the caller of the log method
-            # otherwise it would point to the log method itself
-            if "stacklevel" not in kwargs:
-                kwargs["stacklevel"] = stacklevel
-            self._log(level_num, msg, args, **kwargs)
 
+# # helper function to add log methods for custom levels
+# def _make_log_method(level_num):
+#     def log_method(self, msg, *args, stacklevel=2, **kwargs):
+#         if self.isEnabledFor(level_num):
+#             # if stacklevel is not provided, default to 2 to point to the caller of the log method
+#             # otherwise it would point to the log method itself
+#             if "stacklevel" not in kwargs:
+#                 kwargs["stacklevel"] = stacklevel
+#             self._log(level_num, msg, args, **kwargs)
+
+#     return log_method
+
+def _make_log_method(level_num: int):
+    # NOTE on stacklevel: all custom methods go through the public ``Logger.log`` instead of ``_log``.
+    # ``findCaller`` counts stack frames differently before and after python 3.11; with exactly one
+    # ``logging``-internal frame (``Logger.log``) between our method and ``findCaller`` - the same
+    # situation as for ``logger.info`` - ``stacklevel=2`` points to the caller in both schemes.
+    def log_method(self: logging.Logger, msg, *args, stacklevel: int = 2, **kwargs):
+        self.log(level_num, msg, *args, stacklevel=stacklevel, **kwargs)
     return log_method
-
 
 def _make_same_line_log_method(level_num: int):
     """
@@ -75,15 +86,49 @@ def _make_same_line_log_method(level_num: int):
         level_num (int): Log Level of the method.
     """
 
-    def log_method(self, msg, *args, stacklevel=2, **kwargs):
-        if self.isEnabledFor(level_num):
-            if "stacklevel" not in kwargs:
-                kwargs["stacklevel"] = stacklevel
-            extra = kwargs.setdefault("extra", {})
-            extra["same_line"] = True
-            self._log(level_num, msg, args, **kwargs)
+    # def log_method(self, msg, *args, stacklevel=2, **kwargs):
+    #     if self.isEnabledFor(level_num):
+    #         if "stacklevel" not in kwargs:
+    #             kwargs["stacklevel"] = stacklevel
+    #         extra = kwargs.setdefault("extra", {})
+    #         extra["same_line"] = True
+    #         self._log(level_num, msg, args, **kwargs)
+    def log_method(self: logging.Logger, msg, *args, stacklevel: int = 2, **kwargs):
+        extra = kwargs.setdefault("extra", {})
+        extra["same_line"] = True
+        self.log(level_num, msg, *args, stacklevel=stacklevel, **kwargs)
 
     return log_method
+
+def _memory_log_method(self: logging.Logger, tag: str, *, level: int = logging.DEBUG, stacklevel: int = 2) -> None:
+    """
+    Log the resident memory of the current process, split into anonymous and file-backed.
+
+    - ``anon`` is memory the process owns (tensors, python objects) and can only be freed
+    by the process.
+    - ``file`` is resident page cache of memory-mapped files, e.g. the era
+    caches; the kernel drops it under memory pressure, so it is not a cost in the same
+    sense. Total RSS is the sum of both.
+
+        logger_inst.memory("before merge")
+        events = merge_era_events(era_events)
+        logger_inst.memory("after merge")
+
+    Args:
+        tag (str): Short description of the current point in the program.
+        level (int, optional): Log level to emit at. Defaults to logging.DEBUG.
+        stacklevel (int, optional): Stack frames to skip so the log line points to the caller. Defaults to 2.
+    """
+    # check first , so psutil call is skipped when level is disabled
+    if not self.isEnabledFor(level):
+        return
+
+    # read out file and anon information
+    info = psutil.Process(os.getpid()).memory_info()
+    file_gb = info.shared / 1e9
+    anon_gb = (info.rss - info.shared) / 1e9
+    self.log(level, "[MEM] %-30s anon=%.2fGB file=%.2fGB", tag, anon_gb, file_gb, stacklevel=stacklevel)
+
 
 
 def _register_custom_log_levels():
@@ -102,6 +147,8 @@ def _register_custom_log_levels():
     # each normal logger should
     logging.Logger.debug_progress = _make_same_line_log_method(logging.DEBUG)
     logging.Logger.info_progress = _make_same_line_log_method(logging.INFO)
+
+    logging.Logger.memory = _memory_log_method
 
     _custom_levels_registered = True
 
