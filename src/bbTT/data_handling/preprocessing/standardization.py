@@ -179,8 +179,8 @@ class FeatureStatisticCache(BaseCacher):
         """
 
         msg = []
-        for f_name, f_mean, f_var in zip(self.features, self.mean, self.std):
-            msg.append(f"{f_name:<30}: mean:{f_mean:>10.4} var:{f_var:>10.4}")
+        for f_name, f_mean, f_std in zip(self.features, self.mean, self.std):
+            msg.append(f"{f_name:<30}: mean:{f_mean:>10.4} std:{f_std:>10.4} var:{f_std**2:>10.4}")
         msg = "\n" + "\n".join(msg)
         logger_inst.debug(msg)
 
