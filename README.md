@@ -28,31 +28,35 @@ Open `config.sh` and check:
 | `STORE_DIR` | Root for everything the framework writes (cache, models, tensorboard, evaluation, pictures). Default: `/data/dust/user/$USER/HH_DNN` |
 | `CREATE_DIR` | `1` lets `setup.sh` create the directories under `STORE_DIR` (`mkdir -p`, safe to leave on), `0` skips it |
 | `TRAINING_ROOT`, `ERA` | Where the preprocessed input data lives. Ask if you do not have access. |
-| `VENV_ROOT`, `ML_ENV` | Directory containing the virtualenv and its name. |
+| `VENV_ROOT`, `ML_ENV_CHOICE` | Directory containing the virtualenvs and their name. `ML_ENV_CHOICE` contains `${ML_SYSTEM}` (naf or maxwell), so both systems get separate virtualenvs. |
 
+## 3. Install the python environment (once per system)
+NAF and Maxwell have different GPU hardware and thus can run different CUDA builds.
+Each version has its own requirement file (`requirements_naf.txt`, `requirements_maxwell.txt`) and its own virtualenv (`${VENV_ROOT}/{ML_ENV_CHOICE}_<system>`).
+Run the install on each system you use; it detects the system from the hostname:
 
-## 3. Install the python environment (once)
-Execute the shellscript by copy into the terminal
-```
+```bash
 # uses python3,
 bash install_venv.sh
 # OR when a specfic version is used
 bash install_venv.sh python3.11
+# OR with the system given explicitly (naf or maxwell)
+bash install_env.sh python3 maxwell
 ```
-
-Creates the virtualenv at `${VENV_ROOT}/${ML_ENV}` from your `config.sh` and installs `requirements.txt`
-(`torch` with CUDA 12.1 wheels, plus this package in editable mode).
 
 ## 4. Every new shell
 
 ```bash
-source setup.sh
+source setup.sh # automatic system detection
+# OR
+source setup.sh maxwell # explicit system choice
+# OR
+source setup.sh naf
 ```
 
-This activates the virtualenv, creates missing storage directories and adds the CUDA libraries shipped with the
-pip packages (cudnn, nccl) to `LD_LIBRARY_PATH`, so training works even if the system CUDA installation does not
-match the torch wheel.
-
+This activates the virtualenv of the current system, creates missing storage directories and adds the CUDA
+libraries shipped with the pip packages (cudnn, nccl) to `LD_LIBRARY_PATH`, so training works even if the system
+CUDA installation does not match the torch wheel.
 ## What you can do
 
 The examples below show the minimal call for each script, `--help` lists all options.
