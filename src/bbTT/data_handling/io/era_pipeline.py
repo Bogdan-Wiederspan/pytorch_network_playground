@@ -75,23 +75,27 @@ def _cache_era(cache: DataCacher, era, era_events, save_cache: bool) -> None:
 
 def load_and_merge_eras(config, cache: DataCacher) -> dict[str, torch.Tensor]:
     """
-    Load every configured era from cache, smallest first, merging incrementally
-    to minimize peak memory during concatenation. Assumes all eras are already cached.
+    Memory-map every configured era and merge them into one event dict.
+    Eras are merged in chronological order (``config.ordered_eras``), independent of
+    how ``config.eras`` is written. That order fixes the event order inside each uid and
+    therefore the k-fold permutation. Assumes all eras are already cached.
+
+    Args:
+        config (DataConfig): Dataset configuration, provides ``eras``.
+        cache (DataCacher): Cache to map the eras from.
+
+    Returns:
+        dict[tuple[str, int], dict[str, torch.Tensor]]: Merged events, tensors fully in RAM.
     """
-
-    def sort_key(era):
-        total_size = sum(cache.load_era_sizes(era).values())
-        return total_size
-
-    sorted_eras = sorted(config.eras, key=sort_key)
-
     all_events = {}
-    for era in sorted_eras:
-        logger_inst.info(f"Loading cached data for era {era}")
-        era_events = cache.load_era(era)
-        all_events = merge_era_events(all_events, era_events)
-        del era_events
-
+    era_events = {}
+    for era in config.ordered_eras:
+        logger_inst.info(f"Memory-mapping cached data for era {era}")
+        era_events[era] = cache.load_era(era)
+    logger_inst.info("Merging eras")
+    logger_inst.memory("Memory before merge:")
+    all_events = merge_era_events(era_events)
+    logger_inst.memory("Memory after merge:")
     return all_events
 
 

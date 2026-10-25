@@ -56,6 +56,7 @@ class LorentzBoostNetworkConfig:
     weight_init_scale = 1.0
     clip_weights = False
     eps = 1.0e-5
+    safe_sqrt_eps = 1.0e-5
 
 
 @dataclass

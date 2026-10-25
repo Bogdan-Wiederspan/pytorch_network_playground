@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import torch
 
-from ..preprocessing import EmptyLayer
-from ..register import MODEL_REGISTRY
+from bbTT.models.preprocessing import EmptyLayer
+from bbTT.models.register import MODEL_REGISTRY
+from bbTT.monitoring.logger.logger import get_logger
 
+logger_inst = get_logger(__name__)
 
 class WeightNormalizedLinear(torch.nn.Linear):  # noqa: F811
     def __init__(self, *args, normalize=False, **kwargs):
@@ -48,6 +50,8 @@ def init_model(full_config):
         _type_: _description_
     """
     model_choice = full_config.training_config.model_choice
+
+    logger_inst.info(f"Initialize Model {model_choice}")
 
     model_cls = MODEL_REGISTRY[model_choice]
     model_inst = model_cls(full_config)

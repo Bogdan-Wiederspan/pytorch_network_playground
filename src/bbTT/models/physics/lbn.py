@@ -35,6 +35,7 @@ class LBN(torch.nn.Module):
         weight_init_scale: float | int = 1.0,
         clip_weights: bool = False,
         eps: float = 1.0e-5,
+        safe_sqrt_eps: float = 1.0e-5,
     ) -> None:
         super().__init__()
 
@@ -52,6 +53,7 @@ class LBN(torch.nn.Module):
         self.weight_init_scale = weight_init_scale
         self.clip_weights = clip_weights
         self.eps = eps
+        self.safe_sqrt_eps = safe_sqrt_eps
 
         # constants
         self.register_buffer("I4", torch.eye(4, dtype=torch.float32))  # (4, 4)
@@ -98,6 +100,26 @@ class LBN(torch.nn.Module):
     def update_boosted_vectors(self, boosted_vecs: torch.Tensor) -> torch.Tensor:
         return boosted_vecs
 
+    def safe_sqrt(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Square root with a bounded gradient.
+
+
+        The gradient of sqrt(x) diverges for x -> 0, which turns into NaN during backward
+        (inf * 0 in the chain rule) as soon as a momentum, mass or pt is exactly 0. Clamping
+        the argument to eps keeps the forward pass exact for x >= eps and bounds the
+        gradient by 1 / (2 * sqrt(safe_sqrt_eps)); below eps the gradient is zero.
+
+
+        Args:
+            x (torch.Tensor): Non-negative argument of the square root.
+
+
+        Returns:
+            torch.Tensor: sqrt(max(x, eps)), same shape as x.
+        """
+        return torch.sqrt(torch.clamp(x, min=self.safe_sqrt_eps))
+
     def forward(self, input_vecs) -> torch.Tensor:
         # e, px, py, pz: (B, N)
         E, PX, PY, PZ = range(4)
@@ -120,7 +142,7 @@ class LBN(torch.nn.Module):
         restframe_vecs = restframe_vecs.permute(0, 2, 1)
 
         # regularize vectors such that e > p
-        particle_p = torch.sum(particle_vecs[..., PX:] ** 2, dim=-1) ** 0.5  # (B, M)
+        particle_p = self.safe_sqrt(torch.sum(particle_vecs[..., PX:] ** 2, dim=-1))  # (B, M)
         # avoid in-place modifications which break autograd when tensors are used in multiple
         # places; construct a new tensor with the adjusted energy component
         new_particle_E = torch.maximum(particle_vecs[..., E], particle_p + self.eps)
@@ -129,7 +151,7 @@ class LBN(torch.nn.Module):
             dim=-1,
         )
 
-        restframe_p = torch.sum(restframe_vecs[..., PX:] ** 2, dim=-1) ** 0.5  # (B, M)
+        restframe_p = self.safe_sqrt(torch.sum(restframe_vecs[..., PX:] ** 2, dim=-1))  # (B, M)
         new_restframe_E = torch.maximum(restframe_vecs[..., E], restframe_p + self.eps)
         restframe_vecs = torch.stack(
             [new_restframe_E, restframe_vecs[..., PX], restframe_vecs[..., PY], restframe_vecs[..., PZ]],
@@ -137,7 +159,7 @@ class LBN(torch.nn.Module):
         )
 
         # create boost objects
-        restframe_m = (restframe_vecs[..., E] ** 2 - restframe_p**2) ** 0.5  # (B, M)
+        restframe_m = self.safe_sqrt(restframe_vecs[..., E] ** 2 - restframe_p**2)  # (B, M)
         gamma = restframe_vecs[..., E] / (restframe_m + self.eps)  # (B, M)
         beta = restframe_p / restframe_vecs[..., E]  # (B, M)
         beta_vecs = restframe_vecs[..., PX:] / restframe_vecs[..., E, None]  # (B, M, 3)
@@ -177,11 +199,11 @@ class LBN(torch.nn.Module):
             if feature == "pt2":
                 f = get("px") ** 2 + get("py") ** 2
             elif feature == "pt":
-                f = get("pt2") ** 0.5
+                f = self.safe_sqrt(get("pt2"))
             elif feature == "p2":
                 f = get("pt2") + get("pz") ** 2
             elif feature == "p":
-                f = get("p2") ** 0.5
+                f = self.safe_sqrt(get("p2"))
             elif feature == "eta":
                 # clamp when near -1 or 1
                 ratio = torch.clip(get("pz") / get("p"), min=-1 + self.eps, max=1 - self.eps)
@@ -189,7 +211,7 @@ class LBN(torch.nn.Module):
             elif feature == "phi":
                 f = torch.atan2(get("py"), get("px"))
             elif feature == "m":
-                f = (torch.maximum(get("e") ** 2, get("p2")) - get("p2")) ** 0.5 # for mass less particles this will be 0, but for massive particles it will be the mass
+                f = self.safe_sqrt(torch.maximum(get("e") ** 2, get("p2")) - get("p2")) # for mass less particles this will be 0, but for massive particles it will be the mass
             elif feature == "pair_cos":
                 boosted_pvecs = boosted_vecs[..., PX:]  # (B, M, 3)
                 boosted_p = get("p")
@@ -204,7 +226,7 @@ class LBN(torch.nn.Module):
                 boosted_dphi = torch.where(boosted_dphi > torch.pi, 2 * torch.pi - boosted_dphi, boosted_dphi)
                 boosted_deta = boosted_eta[..., None] - boosted_eta[:, None, :]  # (B, M, M)
                 boosted_deta = boosted_deta.flatten(start_dim=1)[..., self.lower_tril_indices]  # (B, (M**2-M)/2)
-                f = (boosted_dphi**2 + boosted_deta**2) ** 0.5
+                f = self.safe_sqrt(boosted_dphi**2 + boosted_deta**2)
             else:
                 raise RuntimeError(f"unknown feature '{feature}'")
             # cache and return

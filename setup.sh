@@ -1,12 +1,15 @@
 # Environment setup for pytorch_network_playground.
 #
 # Usage (must be sourced, not executed):
-#   source setup.sh
+#   source setup.sh         # system automatically detected (naf or maxwell)
+#   source setup.sh maxwell  # or give explicitly
+#   source setup.sh naf  # or give explicitly
 #
 # Steps:
-#   1. load config.sh (created from config.sh.example on first run)
-#   2. create the storage directories if CREATE_DIR=1
-#   3. activate the virtualenv ${VENV_ROOT}/${ML_ENV}
+#   1. detect the system (ML_SYSTEM), it selects the virtualenv and requirements file
+#   2. load config.sh (created from config.sh.template on first run)
+#   3. create the storage directories if CREATE_DIR=1
+#   4. activate the virtualenv ${VENV_ROOT}/${ML_ENV}
 
 # this file modifies the calling shell, so it only works when sourced
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
@@ -16,7 +19,7 @@ fi
 
 
 load_config() {
-    # Sources config.sh next to this file; creates it from config.sh.example on first run.
+    # Sources config.sh next to this file; creates it from config.sh.template on first run.
     #
     # Returns:
     #   0 on success, 1 if config.sh was just created and still needs editing.
@@ -76,7 +79,7 @@ activate_venv() {
 
     local venv_dir="${VENV_ROOT}/${ML_ENV}"
     if [[ ! -f "${venv_dir}/bin/activate" ]]; then
-        echo "[ERROR] No virtualenv found at ${venv_dir}, create it with ./install_venv.sh" >&2
+        echo "[ERROR] No virtualenv found at ${venv_dir}, create it with 'bash install_env.sh'" >&2
         return 1
     fi
 
@@ -102,11 +105,14 @@ finish_setup() {
     export SETUP_COMPLETE=1
     # ${VIRTUAL_ENV##*/} = last path component = name of the venv
     export PS1="[${VIRTUAL_ENV##*/}] ${PS1}"
-    echo "Ready to go"
+    echo "Ready to go on ${ML_SYSTEM}"
 }
 
 
 setup() {
+    # Args:
+    #   $1 (str, optional): system to set up for, naf or maxwell. Defaults to hostname detection.
+
     if [[ -n "${SETUP_COMPLETE}" ]]; then
         echo "Setup already completed. Skipping."
         return 0
@@ -116,11 +122,15 @@ setup() {
     DNN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     export DNN_ROOT
 
-    # config.sh.example derives all personal paths from the system user name
+    # config.sh.template derives all personal paths from the system user name
     if [[ -z "${USER}" ]]; then
         echo "[ERROR] \$USER is not set, cannot derive paths" >&2
         return 1
     fi
+
+    # ML_SYSTEM must be known before config.sh, which uses it for ML_ENV
+    source "${DNN_ROOT}/.setup/host.sh"
+    detect_host "$1" || return 1
 
     load_config || return 1
     create_dirs || return 1
@@ -132,4 +142,4 @@ setup() {
     finish_setup
 }
 
-setup
+setup "$@"

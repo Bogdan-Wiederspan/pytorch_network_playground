@@ -25,6 +25,7 @@ class LBNDenseNet(DenseNet):
             weight_init_scale=lbn_config.weight_init_scale,
             clip_weights=lbn_config.clip_weights,
             eps=lbn_config.eps,
+            safe_sqrt_eps=lbn_config.safe_sqrt_eps,
         )
         dense_cfg = self.model_config.dense_network
         self.transition_dense_1 = DenseBlock(

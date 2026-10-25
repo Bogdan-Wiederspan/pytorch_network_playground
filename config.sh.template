@@ -1,7 +1,8 @@
 # Template for config.sh. setup.sh copies this file to config.sh on first run,
 # config.sh is ignored by git so your personal paths never conflict with upstream.
 # ${USER} is the system user name, ${USER:0:1} its first letter (AFS layout).
-# DNN_ROOT (the repository root) is set by setup.sh.
+# DNN_ROOT (the repository root) and ML_SYSTEM (naf or maxwell) are set by setup.sh.
+
 
 # storage directories
 export STORE_DIR="/data/dust/user/${USER}/HH_DNN"      # root of all outputs
@@ -23,6 +24,11 @@ export ERA="prod28"  # possible eras: prod14, prod20 (only 22pre), prod24, prod2
 export TRAINING_ROOT="/data/dust/user/riegerma/hh2bbtautau/run3_training_data"
 export INPUT_DATA_DIR="${TRAINING_ROOT}/${ERA}"
 
-# virtualenv, see README for installation
+# ML_SYSTEM (naf or maxwell) is detected by setup.sh;
+# NAF and Maxwell need different torch builds
+# (requirements_naf.txt / requirements_maxwell.txt), so each system gets its own virtualenv.
+
+
 export VENV_ROOT="/data/dust/user/${USER}/pyenv_virtualenvs"  # directory containing the virtualenvs
-export ML_ENV="ml_torch"                                      # name of the virtualenv
+export ML_ENV_CHOICE="ml_torch" # name of the virtualenv
+export ML_ENV="${ML_ENV_CHOICE}_${ML_SYSTEM}"
