@@ -8,6 +8,7 @@ import torch
 import torch.utils.data as t_data
 
 from bbTT.data_handling.sampling.batch_size_calculation import BatchSizeAllocator
+from bbTT.data_handling.sampling.epoch import EpochOverview, EpochStatistic
 from bbTT.data_handling.sampling.process import Process, ProcessSampleCursor
 from bbTT.data_handling.sampling.sample_strategy import init_strategy
 from bbTT.monitoring.logger.logger import get_logger
@@ -206,6 +207,69 @@ class ProcessSampler(t_data.Sampler):
             f"{process_type.upper()}:\n\t" + "\n\t".join(entries) for process_type, entries in by_type.items()
         )
         logger_inst.debug("Sample rates per process (PID | Sample Size)\n" + msg)
+
+    def epoch_statistics(self) -> EpochOverview:
+        """
+        Collect how many iterations one epoch takes for every process and process_type.
+
+        Uses the expected (non fluctuating) batch composition written by the
+        BatchSizeAllocator, so the numbers are exact in expectation and independent of
+        the rounding strategy. Requires that ``calculate_sample_size`` ran (training
+        sampler) or that the sizes were copied in via ``load_process_weights_from``
+        (validation sampler).
+
+        Returns:
+            EpochOverview: Per pid and per process_type statistics.
+
+        Raises:
+            RuntimeError: If called on a sampler that is not the training sampler.
+        """
+        unallocated = [uid for uid, proc in self.registry.all().items() if proc.expected_sample_size is None]
+        if unallocated:
+            raise RuntimeError(
+                f"expected_sample_size not allocated for {unallocated}; "
+                "run calculate_sample_size (training) or load_process_weights_from (validation) first"
+            )
+        per_pid: dict[tuple[str, str], EpochStatistic] = {}
+        events_by_type: dict[str, int] = defaultdict(int)
+        expected_by_type: dict[str, float] = defaultdict(float)
+        for uid, proc in self.registry.all().items():
+            per_pid[uid] = EpochStatistic(num_events=len(proc), expected_per_batch=proc.expected_sample_size)
+            events_by_type[uid[0]] += len(proc)
+            expected_by_type[uid[0]] += proc.expected_sample_size
+        per_type = {
+            process_type: EpochStatistic(num_events=events_by_type[process_type], expected_per_batch=expected)
+            for process_type, expected in expected_by_type.items()
+        }
+        return EpochOverview(per_pid=per_pid, per_type=per_type)
+
+    def print_epoch_statistics(self) -> None:
+        """
+        Log the epoch statistics as a table, processes sorted from most to least oversampled
+        within their process_type, followed by the per type aggregation and the limiting pid.
+        """
+        overview = self.epoch_statistics()
+        header = f"{'pid':>12} | {'events':>10} | {'per batch':>10} | {'it/epoch':>10}"
+        lines: list[str] = []
+        for process_type in self.registry.process_types:
+            lines.append(f"{process_type.upper()}:\n\t{header}")
+            pids = [uid for uid in overview.per_pid if uid[0] == process_type]
+            for uid in sorted(pids, key=lambda u: overview.per_pid[u].iterations_per_epoch):
+                stat = overview.per_pid[uid]
+                lines.append(
+                    f"\t{str(uid[1]):>12} | {stat.num_events:>10d} | {stat.expected_per_batch:>10.2f} | "
+                    f"{stat.iterations_per_epoch:>10.1f}"
+                )
+            agg = overview.per_type[process_type]
+            lines.append(
+                f"\t{'total':>12} | {agg.num_events:>10d} | {agg.expected_per_batch:>10.2f} | "
+                f"{agg.iterations_per_epoch:>10.1f}"
+            )
+        limiting = overview.limiting_pid
+        lines.append(
+            f"Limiting pid: {limiting} with {overview.per_pid[limiting].iterations_per_epoch:.1f} iterations per epoch"
+        )
+        logger_inst.info(f"Epoch statistics (batch size {self.batch_size})\n" + "\n".join(lines))
 
     def calculate_sample_size(self, process_type: str):
         """

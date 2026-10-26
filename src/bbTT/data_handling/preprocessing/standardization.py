@@ -261,7 +261,6 @@ class FeatureStatisticCache(BaseCacher):
     def _masked_moments(self, array: torch.Tensor, ignore_tensor: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Masked mean and unbiased variance per feature, computed chunk-wise in float64.
-        ... (Docstring siehe Patch)
         """
         num_features = array.shape[-1]
         chunk_rows = self.config.statistics_chunk_rows
