@@ -37,11 +37,17 @@ class LBNDenseNet(DenseNet):
         )
 
     def forward(self, categorical_inputs, continuous_inputs):
-        # preprocessing with lbn
+        # by passed by lbn
+        normal_inputs = self.input_layer(categorical_inputs=categorical_inputs, continuous_inputs=continuous_inputs),
+
+        # lbn needs padding sanitized values, but not standardized. Reason for this is that physics has scale dependency
+        lbn_inputs = self.input_layer.continuous_layer.padding_continuous_layer(continuous_inputs)
+        lbn_outputs = self.lbn(lbn_inputs)
+
         x = torch.concatenate(
             (
-                self.input_layer(categorical_inputs=categorical_inputs, continuous_inputs=continuous_inputs),
-                self.lbn(continuous_inputs),
+                normal_inputs,
+                lbn_outputs
             ),
             axis=1,
         )
