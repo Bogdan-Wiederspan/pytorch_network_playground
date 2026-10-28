@@ -16,10 +16,8 @@ class RotationLayerConfig:
     )  # which columns should be rotated
 
 
-
-# replacement of a missing continuous value: ("raw", v) is v in units of the raw feature,
-# ("std", k) is mean + k * std of that feature, resolved when the model is built
 REPLACEMENT_TYPE_CHOICE = Tuple[Literal["raw", "std"], float]
+
 
 @dataclass
 class PaddingConfig:
@@ -27,8 +25,37 @@ class PaddingConfig:
     categorical_masking_value: Optional[float] = -1  # value that is used to mask the categorical target value
 
     # the value that marks a missing continuous feature comes from DataConfig.dummy_values
-    continuous_replacement: dict[str, REPLACEMENT_TYPE_CHOICE] = field(default_factory=dict)  # noqa per-feature replacement of the marker with 2 modes: e.g. {"bjet1_e": ("raw", 0.0), "bjet1_tag_b": ("std", -1.0)}
-    continuous_replacement_default: REPLACEMENT_TYPE_CHOICE = ("raw", 0.0)  # replacement for every continuous feature not listed above
+    # 2 Mods exist:
+    # raw: "htt_e": ("raw", 0.0) --> missing values are set to 0.0 GeV, after standardization value is not 0.0
+    # std: "htt_e": ("std", -1.0) --> missing value are set to -1std, thus after standardization value is -1.0
+
+    # my choice:
+    # - physical: kinematics 0 is same as non-existing
+    # - tags: 0 means its not, so something outside of range
+    # - cov: cov00,11 are variance >=0, cov01,10 are mixture 0 is neutral
+    continuous_replacement: dict[str, REPLACEMENT_TYPE_CHOICE] = field(
+        default_factory=lambda: {
+            "met_px": ("raw", 0.0), "met_py": ("raw", 0.0),
+            "met_cov00": ("raw", 0.0), "met_cov01": ("raw", 0.0), "met_cov11": ("raw", 0.0),
+            "vis_tau1_px": ("raw", 0.0),"vis_tau1_py": ("raw", 0.0),"vis_tau1_pz": ("raw", 0.0),"vis_tau1_e": ("raw", 0.0),
+            "vis_tau2_px": ("raw", 0.0), "vis_tau2_py": ("raw", 0.0), "vis_tau2_pz": ("raw", 0.0), "vis_tau2_e": ("raw", 0.0),
+            "bjet1_px": ("raw", 0.0), "bjet1_py": ("raw", 0.0), "bjet1_pz": ("raw", 0.0), "bjet1_e": ("raw", 0.0),
+            "bjet1_tag_b": ("raw", -1.0), "bjet1_tag_cvsb": ("raw", -1.0), "bjet1_tag_cvsl": ("raw", -1.0), "bjet1_hhbtag": ("raw", -1.0),
+            "bjet2_px": ("raw", 0.0), "bjet2_py": ("raw", 0.0), "bjet2_pz": ("raw", 0.0), "bjet2_e": ("raw", 0.0),
+            "bjet2_tag_b": ("raw", -1.0), "bjet2_tag_cvsb": ("raw", -1.0), "bjet2_tag_cvsl": ("raw", -1.0), "bjet2_hhbtag": ("raw", -1.0),
+            "fatjet_px": ("raw", 0.0), "fatjet_py": ("raw", 0.0), "fatjet_pz": ("raw", 0.0), "fatjet_e": ("raw", 0.0),
+            "htt_e": ("raw", 0.0), "htt_px": ("raw", 0.0), "htt_py": ("raw", 0.0), "htt_pz": ("raw", 0.0),
+            "hbb_e": ("raw", 0.0), "hbb_px": ("raw", 0.0), "hbb_py": ("raw", 0.0), "hbb_pz": ("raw", 0.0),
+            "htthbb_e": ("raw", 0.0), "htthbb_px": ("raw", 0.0), "htthbb_py": ("raw", 0.0), "htthbb_pz": ("raw", 0.0),
+            "httfatjet_e": ("raw", 0.0), "httfatjet_px": ("raw", 0.0), "httfatjet_py": ("raw", 0.0), "httfatjet_pz": ("raw", 0.0),
+            "nu1_px": ("raw", 0.0), "nu1_py": ("raw", 0.0), "nu1_pz": ("raw", 0.0),
+            "nu2_px": ("raw", 0.0), "nu2_py": ("raw", 0.0), "nu2_pz": ("raw", 0.0),
+        }
+    )  # noqa per-feature replacement of the marker with 2 modes: e.g. {"bjet1_e": ("raw", 0.0), "bjet1_tag_b": ("std", -1.0)}
+    continuous_replacement_default: REPLACEMENT_TYPE_CHOICE = (
+        "raw",
+        0.0,
+    )  # replacement for every continuous feature not listed above
 
 
 @dataclass
@@ -65,7 +92,7 @@ class LorentzBoostNetworkConfig:
 
 @dataclass
 class ModelConfig:
-    enable_categorical_padding: bool = False # replace PaddingConfig.categorical_target_value in categorical inputs Marcel: False (by default categories are always filled)
+    enable_categorical_padding: bool = False  # replace PaddingConfig.categorical_target_value in categorical inputs Marcel: False (by default categories are always filled)
     enable_continuous_padding: bool = True  # replace DataConfig dummy markers in continuous inputs, see PaddingConfig
 
     enable_rotation: bool = False  # turn off rotation, currently data is rotated in preprocessing by Marcel
