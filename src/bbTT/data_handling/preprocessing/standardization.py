@@ -36,7 +36,7 @@ class FeatureStatisticCache(BaseCacher):
         This ensures that stale statistics are not silently reused when the dataset is changed, and that different splits of the same dataset do not
 
         Args:
-            dataset_config (DataConfig): Config providing ``content_hash()``, ``continuous_features`` and ``dummy_values``.
+            dataset_config (DataConfig): Config providing ``content_hash()``, ``continuous_features`` and ``continuous_dummy_values``.
             sampler (ProcessSampler): Sampler holding the registered processes.
 
             return_dummy (bool): Skip the computation and use an identity transform (mean 0, std 1). Useful when pretrained weights are loaded anyway.
@@ -51,7 +51,7 @@ class FeatureStatisticCache(BaseCacher):
         self.return_dummy = return_dummy
 
         self.features = self.config.continuous_features
-        self.padding_dummy = self.config.dummy_values
+        self.padding_dummy = list(self.config.continuous_dummy_values)  # one marker per feature, JSON-serializable
 
         self.fingerprint = self.build_fingerprint(split_fingerprint)
         self.path = self.cache_root / self.hash / f"training_statistics_{self.fingerprint_hash()}.json"
@@ -205,12 +205,10 @@ class FeatureStatisticCache(BaseCacher):
                 per feature, shape [num_features] each (float64).
 
         Raises:
-            ValueError: If the padding values are neither scalar nor of shape [num_features],
-                or if a feature is fully masked (NaN mean) in a process.
+            ValueError: If the number of padding values does not match the number of features,
         """
         if self.return_dummy:
             return self.dummy_statistics()
-
         logger_inst.info("Calculate mean and std over all subphase spaces")
         # per-process results are collected first and combined at the end,
         # since the between-term needs the total mean, which is only known afterwards
@@ -225,13 +223,11 @@ class FeatureStatisticCache(BaseCacher):
 
             num_f = array.shape[-1]
 
-            ignore_tensor = torch.tensor(self.padding_dummy)
-            if ignore_tensor.shape == torch.Size([]):
-                ignore_tensor = torch.full((1, num_f), fill_value=self.padding_dummy)
-            elif ignore_tensor.shape != torch.Size([num_f]):
-                raise ValueError(
-                    f"Padding values need to be of shape [num_features] or single value, got {ignore_tensor.shape}"
-                )
+            # [num_features], broadcasts against the [rows, num_features] chunks
+            ignore_tensor = torch.tensor(self.padding_dummy, dtype=array.dtype)
+            if ignore_tensor.shape != torch.Size([num_f]):
+                raise ValueError(f"Got {len(self.padding_dummy)} padding values for {num_f} features")
+
 
             masked_mean, masked_var = self._masked_moments(array, ignore_tensor)
             if torch.any(masked_mean.isnan()):
@@ -267,6 +263,7 @@ class FeatureStatisticCache(BaseCacher):
 
         def chunks() -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
             # yields (float64 chunk, include mask) pairs
+            # read data chunk-wise - excluding dummy values specified by ignore_tensor
             for start in range(0, array.shape[0], chunk_rows):
                 chunk = array[start:start + chunk_rows]
                 include_mask = chunk != ignore_tensor

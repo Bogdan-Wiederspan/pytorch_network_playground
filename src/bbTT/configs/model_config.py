@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional, Tuple
-
-from bbTT.utils.utils import EMPTY_FLOAT
+from typing import Any, Literal, Optional, Tuple
 
 
 @dataclass
@@ -18,13 +16,19 @@ class RotationLayerConfig:
     )  # which columns should be rotated
 
 
+
+# replacement of a missing continuous value: ("raw", v) is v in units of the raw feature,
+# ("std", k) is mean + k * std of that feature, resolved when the model is built
+REPLACEMENT_TYPE_CHOICE = Tuple[Literal["raw", "std"], float]
+
 @dataclass
 class PaddingConfig:
     categorical_target_value: Optional[float] = None  # which categorical value is targeted by the padding
     categorical_masking_value: Optional[float] = -1  # value that is used to mask the categorical target value
 
-    continuous_target_value: Optional[float] = None  # target value that is padded, None = no mask
-    continuous_masking_value: Optional[float] = EMPTY_FLOAT  # pad value that is used to mask
+    # the value that marks a missing continuous feature comes from DataConfig.dummy_values
+    continuous_replacement: dict[str, REPLACEMENT_TYPE_CHOICE] = field(default_factory=dict)  # noqa per-feature replacement of the marker with 2 modes: e.g. {"bjet1_e": ("raw", 0.0), "bjet1_tag_b": ("std", -1.0)}
+    continuous_replacement_default: REPLACEMENT_TYPE_CHOICE = ("raw", 0.0)  # replacement for every continuous feature not listed above
 
 
 @dataclass
@@ -61,8 +65,9 @@ class LorentzBoostNetworkConfig:
 
 @dataclass
 class ModelConfig:
-    enable_categorical_padding: bool = False
-    enable_continuous_padding: bool = False
+    enable_categorical_padding: bool = False # replace PaddingConfig.categorical_target_value in categorical inputs Marcel: False (by default categories are always filled)
+    enable_continuous_padding: bool = True  # replace DataConfig dummy markers in continuous inputs, see PaddingConfig
+
     enable_rotation: bool = False  # turn off rotation, currently data is rotated in preprocessing by Marcel
     enable_binning: bool = True  # turn off binning layer, for example when using a model that does not support binning
 

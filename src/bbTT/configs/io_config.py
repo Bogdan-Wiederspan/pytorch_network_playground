@@ -9,9 +9,13 @@ from string import Formatter
 from typing import Any, Literal, Optional, get_args
 
 from bbTT.data_handling.io.find_datasets import cached_find_datasets
+from bbTT.utils.utils import EMPTY_FLOAT
 
 ERAS_CHOICE = Literal["22pre", "22post", "23pre", "23post", "24"]
 
+from bbTT.monitoring.logger.logger import get_logger
+
+logger_inst = get_logger(__name__)
 
 @dataclass
 class DataConfig:
@@ -123,10 +127,27 @@ class DataConfig:
         "({vbf_dnn_moe_hh_vbf} < 0.5)",
     )  # derived in __post_init__: cuts with placeholders resolved to actual array column names
 
-    dummy_values: int = -99999  # value used to fill in missing values
+    dummy_values: dict[str, float] = field(default_factory=dict)  # noqa per-feature marker of a missing value, e.g. {"bjet1_tag_b": -1.0}; keys are continuous feature names
+    dummy_default: float = EMPTY_FLOAT  # marker of a missing value for every continuous feature not listed in dummy_values
     data_prefix: Optional[str] = field(init=False)  # prefix for features, e.g. "res_dnn_pnet" or "reg_dnn_moe"
 
     # --- Helpers ---
+
+    @property
+    def continuous_dummy_values(self) -> tuple[float, ...]:
+        """
+        Marker of a missing value per continuous feature, in the order of ``continuous_features``.
+        Features not listed in ``dummy_values`` fall back to ``dummy_default``.
+
+        Returns:
+            tuple[float, ...]: One marker per continuous feature, JSON-serializable.
+        """
+        return tuple(
+            float(self.dummy_values.get(f, self.dummy_default))
+            for f in self.continuous_features
+            )
+
+
     def _prefix_map(self) -> str:
         """
         Helper to get correct stem for data. Specific productions has sometimes name changes.
@@ -295,6 +316,11 @@ class DataConfig:
 
 
     def __post_init__(self):
+        # dummy value warning in case a feature is written wrong or does not exist
+        unknown = set(self.dummy_values) - set(self.continuous_features)
+        if unknown:
+            raise ValueError(f"dummy_values refer to unknown continuous features: {sorted(unknown)}")
+
         # a dictionary of all files corresponding to a certain dataset
         self.data_prefix = self._prefix_map()
         self.datasets = cached_find_datasets(self.dataset_pattern, self.eras, file_type="root")
