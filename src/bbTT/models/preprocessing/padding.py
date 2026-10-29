@@ -24,8 +24,8 @@ class PaddingLayer(torch.nn.Module):  # noqa: F811
         Resulting masking tensor is stored as buffer, so that they are part of the state dict and exported together with the model.
 
         Args:
-            target_value (ValueLike, optional): Value(s) that mark a missing entry. Defaults to 0.
-            padding_value (ValueLike, optional): Value(s) inserted for a missing entry. Defaults to EMPTY_FLOAT.
+            target_value (ValueLike): Value(s) that mark a missing entry. Defaults to 0.
+            padding_value (ValueLike): Value(s) inserted for a missing entry. Defaults to EMPTY_FLOAT.
             target_dtype (torch.dtype, optional): dtype the input is cast to before the comparison. Defaults to torch.float32.
             active (bool, optional): If False the layer is the identity. Defaults to True.
 

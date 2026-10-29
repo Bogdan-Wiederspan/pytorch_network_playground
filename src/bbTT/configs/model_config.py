@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal, Optional, Tuple
 
+from bbTT.utils.utils import EMPTY_FLOAT
+
 
 @dataclass
 class RotationLayerConfig:
@@ -21,7 +23,7 @@ REPLACEMENT_TYPE_CHOICE = Tuple[Literal["raw", "std"], float]
 
 @dataclass
 class PaddingConfig:
-    categorical_target_value: Optional[float] = None  # which categorical value is targeted by the padding
+    categorical_target_value: Optional[float] = EMPTY_FLOAT  # which categorical value is targeted by the padding
     categorical_masking_value: Optional[float] = -1  # value that is used to mask the categorical target value
 
     # the value that marks a missing continuous feature comes from DataConfig.dummy_values
@@ -99,7 +101,9 @@ class ModelConfig:
     enable_binning: bool = True  # turn off binning layer, for example when using a model that does not support binning
 
     # needs to be false for CrossEntropy and True for SignalEfficiency
-    use_last_activation: bool = False  # use last activation defined inside model. If false logits are returned Marcel: False
+    use_last_activation: bool = (
+        False  # use last activation defined inside model. If false logits are returned Marcel: False
+    )
 
     rotation: RotationLayerConfig = field(default_factory=RotationLayerConfig)
 

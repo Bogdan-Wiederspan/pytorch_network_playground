@@ -13,10 +13,6 @@ from bbTT.utils.utils import EMPTY_FLOAT
 
 ERAS_CHOICE = Literal["22pre", "22post", "23pre", "23post", "24"]
 
-from bbTT.monitoring.logger.logger import get_logger
-
-logger_inst = get_logger(__name__)
-
 @dataclass
 class DataConfig:
     target_map: dict[str, int] = field(default_factory=lambda: {"hh": 0, "tt": 1, "dy": 2})  # node: index
