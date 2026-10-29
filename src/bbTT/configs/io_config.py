@@ -123,7 +123,40 @@ class DataConfig:
         "({vbf_dnn_moe_hh_vbf} < 0.5)",
     )  # derived in __post_init__: cuts with placeholders resolved to actual array column names
 
-    dummy_values: dict[str, float] = field(default_factory=dict)  # noqa per-feature marker of a missing value, e.g. {"bjet1_tag_b": -1.0}; keys are continuous feature names
+    dummy_values: dict[str, float] = field(default_factory = lambda : {
+        "bjet1_px": 0.0,
+        "bjet1_py": 0.0,
+        "bjet1_pz": 0.0,
+        "bjet1_e": 0.0,
+        "bjet2_px": 0.0,
+        "bjet2_py": 0.0,
+        "bjet2_pz": 0.0,
+        "bjet2_e": 0.0,
+        "fatjet_px": 0.0,
+        "fatjet_py": 0.0,
+        "fatjet_pz": 0.0,
+        "fatjet_e": 0.0,
+        "hbb_px": 0.0,
+        "hbb_py": 0.0,
+        "hbb_pz": 0.0,
+        "hbb_e": 0.0,
+        "htthbb_px": 0.0,
+        "htthbb_py": 0.0,
+        "htthbb_pz": 0.0,
+        "htthbb_e": 0.0,
+        "httfatjet_px": 0.0,
+        "httfatjet_py": 0.0,
+        "httfatjet_pz": 0.0,
+        "httfatjet_e": 0.0,
+        "bjet1_tag_b": -1.0,
+        "bjet1_tag_cvsb": -1.0,
+        "bjet1_tag_cvsl": -1.0,
+        "bjet1_hhbtag": -1.0,
+        "bjet2_tag_b": -1.0,
+        "bjet2_tag_cvsb": -1.0,
+        "bjet2_tag_cvsl": -1.0,
+        "bjet2_hhbtag": -1.0
+    }) # noqa per-feature marker of a missing value, e.g. {"bjet1_tag_b": -1.0}; means that the missing value is marked by -1
     dummy_default: float = EMPTY_FLOAT  # marker of a missing value for every continuous feature not listed in dummy_values
     data_prefix: Optional[str] = field(init=False)  # prefix for features, e.g. "res_dnn_pnet" or "reg_dnn_moe"
 
