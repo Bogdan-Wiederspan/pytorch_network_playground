@@ -17,7 +17,7 @@ SAMPLING_STRATEGY = Literal["old_largest_remainder", "largest_remainder", "stoch
 
 @dataclass
 class LargestRemainderRoundingConfig:
-    min_events_in_batch: int = (
+    min_size: int = (
         1  # sampler setting: minimal number of events of a subprocess in a batch, only valid for least_remainder
     )
 
@@ -38,51 +38,16 @@ class SamplerConfig:
         default_factory=lambda: {
             "signal": {},  # empty categorizes are set to 1 by default
             "tt": {(1100, 1200): 1, 1300: 1},  # groups are possible, and mixes are allowed
-            "dy": {
-                51667: 1,
-                51683: 1,
-                51664: 1,
-                51680: 1,
-                51720: 1,
-                51723: 1,
-                51726: 1,  # are wrong replace with new definition
-                51729: 1,
-                51732: 1,
-                51735: 1,
-                51674: 1,
-                51690: 1,
-                51665: 1,
-                51681: 1,
-                51661: 1,
-                51677: 1,
-                51670: 1,
-                51671: 1,
-                51672: 1,
-                51673: 1,
-                51675: 1,
-                51686: 1,
-                51687: 1,
-                51688: 1,
-                51689: 1,
-                51691: 1,
-                51666: 1,
-                51682: 1,
-                51699: 1,
-                51702: 1,
-                51705: 1,
-                51708: 1,
-                51711: 1,
-                51714: 1,
-                51693: 1,
-                51668: 1,
-                51684: 1,
-                51663: 1,
-                51679: 1,
-            },
+            "dy": {},
+
+            "dy2tau":{(51718, 51719, 51694, 51695, 51697, 51698): 5.0},
+            "dy2e":{(51661, 51662, 51669): 1},
+            "dy2mu":{(51685, 51677, 51678): 1},
+
         }
     )  # amplify the subprocess xsec for the sampler only
 
-    use_sub_process_ratios: tuple[str] = ("signal", "tt", "dy")  # which sub_process_ratios are chosen
+    use_sub_process_ratios: tuple[str] = ()  # which sub_process_ratios are chosen
     sample_attributes: tuple[str, ...] = (
         "continuous",
         "categorical",
