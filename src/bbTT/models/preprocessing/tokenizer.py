@@ -46,12 +46,6 @@ class CategoricalTokenizer(torch.nn.Module):  # noqa: F811
         self.min = torch.nn.Buffer(_min, persistent=True)
         self.indices = torch.nn.Buffer(_indices, persistent=True)
 
-    def load_state_dict(self, state_dict: dict, strict: bool, assign: bool):
-        # overload load_state_dict to set buffer sizes to same of state dict
-        for name in self.state_dict().keys():
-            self.__setattr__(name, torch.zeros_like(state_dict[name]))
-        super().load_state_dict(state_dict=state_dict, strict=strict, assign=assign)
-
     def setup(
         self,
         categories: list[str],
