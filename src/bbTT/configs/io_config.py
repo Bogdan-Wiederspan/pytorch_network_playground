@@ -295,12 +295,20 @@ class DataConfig:
         """
         return [self.resolve_template(cut) for cut in self.cuts]
 
+    @property
+    def production(self):
+        """
+        Return the production name, e.g. "prod14" or "prod19", derived from the input data directory.
+        """
+        return os.environ["ERA"]
+
     def cache_entries(self):
         """
         Return a dictionary of the config that defines uniquely the dataset.
         This is relevant for caching algorithms, as changes in this config will create a new hash of the data.
         """
         return {
+            "production": self.production,
             "target_map": self.target_map,
             "continuous_features": self.continuous_features,
             "categorical_features": self.categorical_features,
