@@ -8,7 +8,7 @@ logger_inst = get_logger(__name__)
 
 
 def filter_nan(array, features, uid):
-    event_mask = np.zeros(array.size, dtype=np.bool)
+    event_mask = np.zeros(array.size, dtype=np.bool_)
     for f in features:
         event_mask |= np.isnan(array[f])
     num_filter = np.sum(event_mask)
