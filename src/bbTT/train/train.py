@@ -93,7 +93,6 @@ def main(**kwargs):
             "product_of_weights",
             "evaluation_mask",
         )
-
         # calculate weight statistics, NEEDS TO RUN BEFORE APPLY INDICES
         weight_aggregator = WeightAggregator(events, fold_split_coordinator.indices)
         # actually apply indices, but release on the fly to reduce peak memory
