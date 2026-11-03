@@ -149,4 +149,3 @@ class HookableMixin:
             callback(tensor)
         except Exception as e:
             logger_inst.warning(f"Tensor callback {name} raised {e}")
-        callback(tensor)
