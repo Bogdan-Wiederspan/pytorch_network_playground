@@ -107,10 +107,13 @@ class ParserBuilder:
         self.parser.add_argument(
             "--add_activation",
             required=False,
-            default="None",
-            choices=["sigmoid", "softmax", "None"],
-            help="Activation function appended on the network output. (default: None)",
-        )
+            default="identity",
+            choices=["sigmoid", "softmax", "identity"],
+            help=(
+                "Activation function appended on the network output. Must be 'identity' if "
+                "model already use their last activation (use_last_activation=True). (default: identity)"
+                ),
+            )
 
     def add_save_path(self):
 
