@@ -50,6 +50,10 @@ def resolve_checkpoint_path(model, suffix=None):
 
 
 def load_checkpoint(path):
+    if not path.exists():
+        available_checkpoints = "\n".join(list(sorted([p.stem for p in path.parent.glob("*.pt")])))
+        msg = f"Checkpoint file {path} does not exist.\n Available checkpoints: \n{available_checkpoints}"
+        raise FileNotFoundError(msg)
     return torch.load(path, map_location=CPU_DEVICE, weights_only=False)
 
 

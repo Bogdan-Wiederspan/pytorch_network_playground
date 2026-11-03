@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Callable, Literal
+
 import torch
 
 
@@ -22,23 +24,40 @@ class AddBinningLayer(torch.nn.Module):
         return x
 
 
+ACTIVATION_CHOICE = Literal["sigmoid", "softmax", "identity"]
+
 class AddActFnToModel(torch.nn.Module):
     def __init__(self, model, act_fn, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.model = model
 
-        self.act_func = self._get_attr(torch.nn.modules.activation, act_fn)(dim=1)
+        self.act_func = self.activation_layer(act_fn)
         self.categorical_features = model.categorical_features
         self.continuous_features = model.continuous_features
 
-    def _get_attr(self, obj, attr):
-        for o in dir(obj):
-            if o.lower() == attr.lower():
-                return getattr(obj, o)
-        else:
-            raise AttributeError(f"Object has no attribute '{attr}'")
+    @staticmethod
+    def activation_layer(name: ACTIVATION_CHOICE) -> torch.nn.Module:
+        """
+        Build the activation layer that belongs to *name*.
 
-    def forward(self, categorical_inputs, continuous_inputs):
+        Args:
+            name (ACTIVATION_CHOICE): One of "sigmoid", "softmax" or "identity".
+
+        Returns:
+            torch.nn.Module: Fresh instance of the activation layer, softmax acts on the last dimension.
+
+        Raises:
+            KeyError: If *name* is not a known activation.
+        """
+        choices: dict[str, Callable[[], torch.nn.Module]] = {
+            "sigmoid": torch.nn.Sigmoid,
+            "softmax": lambda: torch.nn.Softmax(dim=-1),
+            "identity": torch.nn.Identity,
+        }
+        return choices[name]()
+
+
+    def forward(self, categorical_inputs: torch.Tensor, continuous_inputs: torch.Tensor) -> torch.Tensor:
         x = self.model(categorical_inputs, continuous_inputs)
         x = self.act_func(x)
         return x
