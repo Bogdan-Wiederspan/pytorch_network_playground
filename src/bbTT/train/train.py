@@ -165,7 +165,10 @@ def main(**kwargs):
             "evaluation_training",
             "evaluation_validation",
         )
-        batch_composition_history_inst = BatchCompositionHistory()
+
+        # debug plot of the batch composition: the history grows with every iteration, so it is
+        # only created when requested. Without it the optional plot is skipped by the runner.
+        batch_composition_history_inst = BatchCompositionHistory() if full_config.record_config.batch_metrics else None
 
         setup_monitoring(
             training_monitor_inst,
@@ -192,7 +195,7 @@ def main(**kwargs):
                 optimizer_inst=optimizer_inst,
             )
 
-            if full_config.record_config.batch_metrics:
+            if batch_composition_history_inst is not None:
                 batch_composition_history_inst.record(
                     step=current_iteration, cursors=training_sampler.cursors
                 )
@@ -261,8 +264,10 @@ def main(**kwargs):
                         "target_map": full_config.dataset_config.target_map,
                         "global_step": current_iteration,
                         "default_n_bins": full_config.binning_config.num_bins,
-                        "batch_composition": batch_composition_history_inst,
                     }
+                    if batch_composition_history_inst is not None:
+                        shared_eval_context_meta_data["batch_composition_history"] = batch_composition_history_inst
+
 
                     ctx_batch = EvalContext(
                         mode="batch",
