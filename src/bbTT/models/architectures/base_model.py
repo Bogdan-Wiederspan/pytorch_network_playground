@@ -173,32 +173,74 @@ class BaseModel(HookableModelMixin, torch.nn.Module):
             std_layer = StandardizeLayer(mean=std_cfg.mean, std=std_cfg.std)
         return std_layer
 
-    def init_padding_layer(self) -> tuple[torch.nn.Module | None, torch.nn.Module | None]:
+    def resolve_continuous_replacement(self) -> torch.Tensor:
         """
-        Helper function to initialize continuous and categorical padding layer.
-        The actual padding value is defined in the model building config, if the value is None, no padding layer is created.
+        Resolves the per-feature replacement of a missing continuous value into raw feature units.
+
+        A ``("raw", v)`` entry is taken as is, a ``("std", k)`` entry becomes ``mean + k * std``
+        of that feature. The resolution happens here, before the model is built, so the
+        padding layer itself only holds raw values and stays independent of the standardization.
 
         Returns:
-            tuple[torch.nn.Module | None, torch.nn.Module | None]: None or tuple of PaddingLayer instances.
+            torch.Tensor: Replacement value per continuous feature, shape [num_continuous_features].
+
+        Raises:
+            ValueError: If a replacement refers to an unknown feature, has an unknown unit,
+                or uses the "std" unit while no standardization statistics are set.
         """
         padding_cfg = self.model_config.padding
+        std_cfg = self.model_config.standardization
+        features = self.continuous_features
 
-        if padding_cfg.continuous_target_value is None:
-            continuous_padding = None
-        else:
+        # check replacement values, if there is a
+        unknown = set(padding_cfg.continuous_replacement) - set(features)
+        if unknown:
+            raise ValueError(f"continuous_replacement refers to unknown continuous features: {sorted(unknown)}")
+
+        # feature wise replacement
+        replacement = torch.empty(len(features), dtype=torch.float32)
+        for idx, feature in enumerate(features):
+            unit, value = padding_cfg.continuous_replacement.get(feature, padding_cfg.continuous_replacement_default)
+            # set value as given
+            if unit == "raw":
+                replacement[idx] = value
+            # set value as given value, but shifted by 1 std, EXPERIMENTAL
+            elif unit == "std":
+                if std_cfg.mean is None or std_cfg.std is None:
+                    raise ValueError(
+                        f"replacement of {feature} is given in units of std, but no standardization statistics are set"
+                    )
+                replacement[idx] = std_cfg.mean[idx] + value * std_cfg.std[idx]
+            else:
+                raise ValueError(f"unknown replacement unit {unit!r} for {feature}, expected 'raw' or 'std'")
+        return replacement
+
+    def init_padding_layer(self) -> tuple[torch.nn.Module | None, torch.nn.Module | None]:
+        """
+        Each layer is only created when the corresponding ``enable_*_padding`` flag of the model config is set.
+        The continuous layer replaces the dummy markers of the dataset config (``continuous_dummy_values``)
+        with the per-feature replacement of the padding config, see ``resolve_continuous_replacement``.
+
+        Returns:
+            tuple[torch.nn.Module | None, torch.nn.Module | None]: Continuous and categorical PaddingLayer, None when disabled.
+        """
+        m_cfg = self.model_config
+        padding_cfg = m_cfg.padding
+
+
+        continuous_padding = None
+        if m_cfg.enable_continuous_padding:
             continuous_padding = PaddingLayer(
-                target_value=padding_cfg.continuous_target_value,
-                padding_value=padding_cfg.continuous_masking_value,
+                target_value=self.dataset_config.continuous_dummy_values,
+                padding_value=self.resolve_continuous_replacement(), # resolve creates a padding tensor that is saved as buffer
             )
 
-        if padding_cfg.categorical_target_value is None:
-            categorical_padding = None
-        else:
+        categorical_padding = None
+        if m_cfg.enable_categorical_padding:
             categorical_padding = PaddingLayer(
                 target_value=padding_cfg.categorical_target_value,
                 padding_value=padding_cfg.categorical_masking_value,
             )
-
         return continuous_padding, categorical_padding
 
     def init_last_activation_layer(self) -> torch.nn.Module:

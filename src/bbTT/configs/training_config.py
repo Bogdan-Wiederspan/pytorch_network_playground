@@ -25,7 +25,7 @@ class TrainingConfig:
     train_ratio: float = 0.75  # split ratio for k-fold data into train and validation
     randomize: bool = True  # randomize the data before splitting into train and validation - this option is important for evaluation, otherwise training and validation data are not independent. # noqa
     training_batch_size: int = int(4096 / 2) # -1 = full set
-    validation_batch_size: int = 4096 * 20  # -1 = full set. -1 is discouraged, due to memory constraints # noqa
+    validation_batch_size: int = 4096 * 30  # -1 = full set. -1 is discouraged, due to memory constraints # noqa
 
     # Sampler Settings
 

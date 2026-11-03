@@ -119,6 +119,8 @@ def main(**kwargs):
         )
         del validation_events
 
+        training_sampler.print_epoch_statistics()
+
         # load calculated sampler from training sampler to validation sampler
         validation_sampler.load_process_weights_from(training_sampler)
         # calculate or load statistic of DATA used to for training, this information is necessary for standardization.

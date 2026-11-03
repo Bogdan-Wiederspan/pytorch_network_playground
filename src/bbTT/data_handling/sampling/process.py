@@ -72,7 +72,7 @@ class Process(t_data.Dataset):
         #    relative_weight: ideal share of the batch before rounding, fixed for a run
         #    post_relative_weight: expected share of the batch under the rounding strategy, fixed for a run
         self.sample_size: int = len(self)
-        self.expected_sample_size: float = float(len(self))
+        self.expected_sample_size: float = None # None = allocator has not yet run
         self.relative_weight: Optional[float] = 0
         self.post_relative_weight: Optional[float] = 0
 
