@@ -257,7 +257,7 @@ class FeatureStatisticCache(BaseCacher):
         within = (w * variances).sum(dim=0)                       # spread inside each process
         between = (w * (means - total_mean) ** 2).sum(dim=0)      # spread of the process means
         total_std = torch.sqrt(within + between)
-        return total_mean, total_std
+        return total_mean.to(torch.float32), total_std.to(torch.float32)
 
     def _masked_moments(
         self,
