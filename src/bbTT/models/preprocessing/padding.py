@@ -7,7 +7,7 @@ import torch
 ValueLike = Union[float, int, Sequence[float], torch.Tensor]
 
 
-class PaddingLayer(torch.nn.Module):  # noqa: F811
+class PaddingLayer(torch.nn.Module):
     def __init__(
         self,
         target_value: ValueLike,
@@ -46,8 +46,44 @@ class PaddingLayer(torch.nn.Module):  # noqa: F811
         self.target_dtype = target_dtype
         self.active = active
 
+    def mask(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Locate the entries that carry the missing-value marker.
+
+        Args:
+            x (torch.Tensor): Input of shape [batch, num_features].
+
+        Returns:
+            torch.Tensor: Boolean mask of the same shape, True where *x* equals *target_value*. All False if inactive.
+        """
+        if not self.active:
+            return torch.zeros_like(x, dtype=torch.bool)
+
+        # broadcast over the batch dimension: scalar or [num_features] against [batch, num_features]
+        return x.to(self.target_dtype) == self.target_value
+
+    def replace(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        """
+        Insert the replacement values at the masked positions. Separating this from ``mask`` lets a pipeline
+        re-apply the replacement after transformations (e.g. a rotation) that would otherwise alter it.
+
+        Args:
+            x (torch.Tensor): Input of shape [batch, num_features].
+            mask (torch.Tensor): Boolean mask as returned by ``mask``.
+
+        Returns:
+            torch.Tensor: Copy of *x* in *target_dtype* with the masked entries set to *padding_value*.
+        """
+        if not self.active:
+            return x
+
+        x = x.to(self.target_dtype)
+        return torch.where(mask, self.padding_value.to(self.target_dtype), x)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
+        Shortcut for ``replace(x, mask(x))``.
+
         Args:
             x (torch.Tensor): Input of shape [batch, num_features].
 
@@ -56,9 +92,4 @@ class PaddingLayer(torch.nn.Module):  # noqa: F811
         """
         if not self.active:
             return x
-
-        x = x.to(self.target_dtype)
-        # broadcast over the batch dimension: scalar or [num_features] against [batch, num_features]
-
-        mask = (x == self.target_value)
-        return torch.where(mask, self.padding_value.to(self.target_dtype), x)
+        return self.replace(x, self.mask(x))

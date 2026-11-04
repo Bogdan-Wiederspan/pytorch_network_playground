@@ -19,8 +19,13 @@ class LBNDenseNet(DenseNet):
         super().init_layers()
         # dense net uses output of preprocessing layers and lbn, thus concat both features
         lbn_config = self.model_config.lbn_network
+
+        # the lbn manages its own preprocessing (padding and rotation, see ``sanitize`` in the pipeline),
+        # own layer instances built from the same config as the dense branch
         self.lbn = LBNPipeline(
             self.continuous_features,  # number of input parameters
+            padding_layer_inst=self.init_continuous_padding_layer(),
+            rotation_layer_inst=self.init_rotation_layer(),
             M=lbn_config.number_of_particles,
             weight_init_scale=lbn_config.weight_init_scale,
             clip_weights=lbn_config.clip_weights,
@@ -36,19 +41,13 @@ class LBNDenseNet(DenseNet):
             normalize=dense_cfg.normalize_linear,
         )
 
-    def forward(self, categorical_inputs, continuous_inputs):
-        # by passed by lbn
+    def forward(self, categorical_inputs: torch.Tensor, continuous_inputs: torch.Tensor) -> torch.Tensor:
         normal_inputs = self.input_layer(categorical_inputs=categorical_inputs, continuous_inputs=continuous_inputs)
-
         # lbn needs padding sanitized values, but not standardized. Reason for this is that physics has scale dependency
-        lbn_inputs = self.input_layer.continuous_layer.padding_continuous_layer(continuous_inputs)
-        lbn_outputs = self.lbn(lbn_inputs)
+        lbn_outputs = self.lbn(continuous_inputs)
 
         x = torch.concatenate(
-            (
-                normal_inputs,
-                lbn_outputs
-            ),
+            (normal_inputs, lbn_outputs),
             axis=1,
         )
         # dnn

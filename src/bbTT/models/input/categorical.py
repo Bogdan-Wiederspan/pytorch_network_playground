@@ -10,8 +10,6 @@ class CategoricalInputLayer(torch.nn.Module):
         self,
         embedding_layer: torch.nn.Module,
         padding_categorical_layer: torch.nn.Module | None = None,
-        *args,
-        **kwargs,
     ):
         """
         Preprocessing branch for categorical features:
@@ -25,7 +23,7 @@ class CategoricalInputLayer(torch.nn.Module):
         Args:
             embedding_layer (torch.nn.Module): Tokenizer plus embedding, needs an ``ndim`` attribute.
             padding_categorical_layer (torch.nn.Module | None, optional): Padding layer for dummy values. Defaults to None.
-         """
+        """
 
         super().__init__()
         self.embedding_layer = embedding_layer
