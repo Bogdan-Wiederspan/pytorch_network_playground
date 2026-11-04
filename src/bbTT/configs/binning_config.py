@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, Literal
 
 from bbTT.configs.utils import choice_check
 from bbTT.utils.transformations import cubic, linspace, logit, tangent
@@ -51,8 +51,6 @@ class BinningConfig:
     bounds: tuple[int] = (0, 1)
     # binning_fn: Any = torch.linspace  # keep as a callable, if needed
     binning_choice: BINNING_CHOICE = "logit"
-    binning_cfg: Optional[None] = field(init=False)
-    binning_fn: Optional[None] = field(init=False)
 
     # --- Determine the Kernel Configuration that is used for the ove
     kernel_cls: KERNEL_CHOICE = "Tanh"
@@ -71,6 +69,23 @@ class BinningConfig:
         }
     )
 
+    @property
+    def binning_fn(self):
+        """
+        Returns:
+            Any: Transformation class (forward/inverse) registered for ``binning_choice``.
+        """
+        return BINNING_REGISTRY[self.binning_choice][1]
+
+    @property
+    def binning_cfg(self) -> dict[str, Any]:
+        """
+        Returns:
+            dict[str, Any]: Default keyword arguments of the transformation registered for ``binning_choice``.
+        """
+        binning_cfg_cls = BINNING_REGISTRY[self.binning_choice][0]
+        return asdict(binning_cfg_cls())
+
     def __post_init__(self):
         choice_check(self.kernel_cls, KERNEL_CHOICE)
         # extract configs and combine kernel configs and populate corresponding fields
@@ -79,9 +94,3 @@ class BinningConfig:
         kernel_choice_config = self.kernel_config[self.kernel_cls].copy()
         kernel_choice_config.update(kernel_general_config)
         self.kernel_config = kernel_choice_config
-
-        # binning cfg
-        binning_cfg, binning_fn = BINNING_REGISTRY[self.binning_choice]
-        binning_cfg = asdict(binning_cfg()).copy()
-        self.binning_fn = binning_fn
-        self.binning_cfg = binning_cfg

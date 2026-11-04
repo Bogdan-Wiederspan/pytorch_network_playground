@@ -54,7 +54,7 @@ def load_checkpoint(path):
         available_checkpoints = "\n".join(list(sorted([p.stem for p in path.parent.glob("*.pt")])))
         msg = f"Checkpoint file {path} does not exist.\n Available checkpoints: \n{available_checkpoints}"
         raise FileNotFoundError(msg)
-    return torch.load(path, map_location=CPU_DEVICE, weights_only=False)
+    return torch.load(path, map_location=CPU_DEVICE, weights_only=True)
 
 
 def rebuild_checkpoint_information(path) -> tuple[torch.nn.Module, Literal["DataClass"]]:
