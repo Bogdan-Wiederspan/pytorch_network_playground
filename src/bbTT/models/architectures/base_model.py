@@ -5,7 +5,13 @@ from typing import Any
 import torch
 
 from bbTT.models.input import CategoricalInputLayer, ContinuousInputLayer, InputLayer
-from bbTT.models.preprocessing import CatEmbeddingLayer, PaddingLayer, RotatePhiLayer, StandardizeLayer
+from bbTT.models.preprocessing import (
+    CategoricalPaddingLayer,
+    CatEmbeddingLayer,
+    ContinuousPaddingLayer,
+    RotatePhiLayer,
+    StandardizeLayer,
+)
 from bbTT.monitoring.monitoring_hooks.hookable_model import HookableModelMixin
 
 
@@ -226,7 +232,7 @@ class BaseModel(HookableModelMixin, torch.nn.Module):
         """
         m_cfg = self.model_config
         if m_cfg.enable_categorical_padding:
-            cat_pad_layer = PaddingLayer(
+            cat_pad_layer = CategoricalPaddingLayer(
                 target_value=m_cfg.padding.categorical_target_value,
                 padding_value=m_cfg.padding.categorical_masking_value,
             )
@@ -244,7 +250,7 @@ class BaseModel(HookableModelMixin, torch.nn.Module):
         """
         m_cfg = self.model_config
         if m_cfg.enable_continuous_padding:
-            cont_pad_layer = PaddingLayer(
+            cont_pad_layer = ContinuousPaddingLayer(
                 target_value=self.dataset_config.continuous_dummy_values,
                 padding_value=self.resolve_continuous_replacement(), # resolve creates a padding tensor that is saved as buffer
             )

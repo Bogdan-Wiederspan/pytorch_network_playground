@@ -8,11 +8,13 @@ ValueLike = Union[float, int, Sequence[float], torch.Tensor]
 
 
 class PaddingLayer(torch.nn.Module):
+    # dtype the input is cast to before comparison and replacement, fixed per subclass
+    target_dtype: torch.dtype = torch.float32
+
     def __init__(
         self,
         target_value: ValueLike,
         padding_value: ValueLike,
-        target_dtype: torch.dtype = torch.float32,
         active: bool = True,
     ):
         """
@@ -36,15 +38,31 @@ class PaddingLayer(torch.nn.Module):
         super().__init__()
         target = torch.as_tensor(target_value, dtype=torch.float32)
         padding = torch.as_tensor(padding_value, dtype=torch.float32)
-        if target.ndim > 1 or padding.ndim > 1:
-            raise ValueError(f"target and padding values need to be scalar or 1D, got {target.shape} and {padding.shape}")
-        if target.ndim == 1 and padding.ndim == 1 and target.shape != padding.shape:
-            raise ValueError(f"per-feature target and padding values differ in length: {target.shape} vs {padding.shape}")
+        self.validate(target, padding)
 
         self.target_value = torch.nn.Buffer(target, persistent=True)
         self.padding_value = torch.nn.Buffer(padding, persistent=True)
-        self.target_dtype = target_dtype
         self.active = active
+
+    def validate(self, target: torch.Tensor, padding: torch.Tensor) -> None:
+        """
+        Check target and padding values at construction. Subclasses extend this with their own constraints.
+
+        Args:
+            target (torch.Tensor): Marker value(s), scalar or [num_features].
+            padding (torch.Tensor): Replacement value(s), scalar or [num_features].
+
+        Raises:
+            ValueError: If a value is not scalar or 1D, or both are per-feature with different lengths.
+        """
+        if target.ndim > 1 or padding.ndim > 1:
+            raise ValueError(
+                f"target and padding values need to be scalar or 1D, got {target.shape} and {padding.shape}"
+            )
+        if target.ndim == 1 and padding.ndim == 1 and target.shape != padding.shape:
+            raise ValueError(
+                f"per-feature target and padding values differ in length: {target.shape} vs {padding.shape}"
+            )
 
     def mask(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -70,7 +88,6 @@ class PaddingLayer(torch.nn.Module):
         Args:
             x (torch.Tensor): Input of shape [batch, num_features].
             mask (torch.Tensor): Boolean mask as returned by ``mask``.
-
         Returns:
             torch.Tensor: Copy of *x* in *target_dtype* with the masked entries set to *padding_value*.
         """
@@ -93,3 +110,36 @@ class PaddingLayer(torch.nn.Module):
         if not self.active:
             return x
         return self.replace(x, self.mask(x))
+
+
+class ContinuousPaddingLayer(PaddingLayer):
+    """
+    Padding for continuous features: float32 in and out, typically one marker and one replacement per feature,
+    resolved from ``DataConfig.continuous_dummy_values`` and ``PaddingConfig.continuous_replacement``.
+    """
+
+    target_dtype = torch.float32
+
+
+class CategoricalPaddingLayer(PaddingLayer):
+    """
+    Padding for categorical features: the categories are integers used as tokenizer indices, so the layer keeps
+    int32 and requires integer marker and replacement values.
+    """
+
+    target_dtype = torch.int32
+
+    def validate(self, target: torch.Tensor, padding: torch.Tensor) -> None:
+        """
+        Args:
+            target (torch.Tensor): Marker value(s).
+            padding (torch.Tensor): Replacement value(s).
+
+        Raises:
+            ValueError: If a marker or replacement value is not an integer.
+        """
+        super().validate(target, padding)
+        if not (torch.all(target == target.round()) and torch.all(padding == padding.round())):
+            raise ValueError(
+                f"categorical padding needs integer target and padding values, got {target.tolist()} and {padding.tolist()}"
+            )
