@@ -14,23 +14,32 @@ class CategoricalInputLayer(torch.nn.Module):
         **kwargs,
     ):
         """
-        Input Layer for categorical features.
-        Convert the categorical feature into tokens, via Tokenizer and result are Embedding vectors
+        Preprocessing branch for categorical features:
+            padding → embedding.
 
-        embedding_dim (int): Number of dimensions for the embedding layer.
-        categories (tuple[str]): Names of the categories as strings.
-        expected_categorical_inputs (dict[list[int]]): Dictionary where keys are category
-            names and values are lists of integers representing the expected values for
-            each category.
-        empty (int, optional): Value used to represent missing values in the input tensor.
-        """
+        The embedding layer tokenizes the categories and maps them to a combined embedding vectors space.
+        Its ``ndim`` defines the output dimension of this branch.
+
+        A padding layer passed as None is replaced by an identity.
+
+        Args:
+            embedding_layer (torch.nn.Module): Tokenizer plus embedding, needs an ``ndim`` attribute.
+            padding_categorical_layer (torch.nn.Module | None, optional): Padding layer for dummy values. Defaults to None.
+         """
 
         super().__init__()
         self.embedding_layer = embedding_layer
         self.ndim = self.embedding_layer.ndim
         self.padding_categorical_layer = optional_layer(padding_categorical_layer)
 
-    def forward(self, x: torch.FloatTensor) -> torch.FloatTensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x (torch.Tensor): Categorical features of shape (batch, n_categories), integer-valued.
+
+        Returns:
+            torch.Tensor: Concatenated embedding vectors of shape (batch, ndim).
+        """
         x = self.padding_categorical_layer(x)
         x = self.embedding_layer(x)
         return x
