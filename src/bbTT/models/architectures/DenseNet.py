@@ -24,7 +24,7 @@ class DenseNet(BaseModel):
             "output_nodes": int(dense_cfg.nodes),
         }
 
-        self.input_layer = self.init_optional_input_layer()
+        self.input_layer = self.init_input_layer()
 
         self.transition_dense_1 = DenseBlock(
             input_nodes=self.input_layer.ndim,
