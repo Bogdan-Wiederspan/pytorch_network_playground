@@ -71,7 +71,7 @@ class FoldAndSplitCoordinator:
 
     def split_index_to_sets(self, events):
         # TODO Docstring
-        indicies = {}
+        indices = {}
         for (process_name, pid), value in events.items():
             test_fold, training_fold = self.create_fold_index_map(value["event_id"])
 
@@ -79,19 +79,12 @@ class FoldAndSplitCoordinator:
             training_id, validation_id = self.split_array_to_train_variation_by_ratio(
                 training_fold
             )
-            indicies[(process_name, pid)] = {
+            indices[(process_name, pid)] = {
                 "test": test_fold,
                 "training": training_id,
                 "validation": validation_id,
             }
-        return indicies
-
-    def seed_per_process(self, uid):
-        # returns a seed that is unique per uid.
-        # only interesting for permutation related random generators
-        # reason is that permutation with same generator and same length ,results in same permutation.
-        # thus can correlated these process.... is very likely a small effect.
-        return self.seed + hash(uid) % (2**31 - 1)
+        return indices
 
     def create_fold_index_map(self, event_id: torch.Tensor) -> tuple[torch.Tensor]:
         """
