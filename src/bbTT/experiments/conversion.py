@@ -99,7 +99,7 @@ map_v1_to_v2 = ClassMap(
         ("models.layers", "LBN")                     : ("bbTT.models.physics.lbn", "LBN"),
         ("models.layers", "LBNFeaturerExtractor")    : ("bbTT.models.physics.lbn_feature_extractor", "LBNFeatureExtractor"),
         ("models.layers", "LBN_DNN")                 : ("bbTT.models.physics.lbn_pipeline", "LBNPipeline"),
-        ("models.layers", "OptionalInputLayer")      : ("bbTT.models.input", "OptionalInputLayer"),
+        ("models.layers", "OptionalInputLayer")      : ("bbTT.models.input", "InputLayer"),
         ("models.layers", "StandardizeLayer")        : ("bbTT.models.preprocessing", "StandardizeLayer"),
         ("models.layers", "WeightNormalizedLinear")  : ("bbTT.models.utils", "WeightNormalizedLinear"),
         ("train.train_config", "BinningConfig")      : ("bbTT.configs.binning_config", "BinningConfig"),

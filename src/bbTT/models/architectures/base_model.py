@@ -4,7 +4,7 @@ from typing import Any
 
 import torch
 
-from bbTT.models.input import CategoricalInputLayer, ContinuousInputLayer, InputLayer, OptionalInputLayer
+from bbTT.models.input import CategoricalInputLayer, ContinuousInputLayer, InputLayer
 from bbTT.models.preprocessing import CatEmbeddingLayer, EmptyLayer, PaddingLayer, RotatePhiLayer, StandardizeLayer
 from bbTT.monitoring.monitoring_hooks.hookable_model import HookableModelMixin
 
@@ -267,32 +267,6 @@ class BaseModel(HookableModelMixin, torch.nn.Module):
         Returns:
             torch.nn.Module: input layer instance with preprocessing pipeline
         """
-        m_cfg = self.model_config
-
-        std_layer = self.init_standardization_layer()
-        rot_layer = self.init_rotation_layer()
-        cont_pad_layer, cat_pad_layer = self.init_padding_layer()
-        input_layer = InputLayer(
-            continuous_inputs=self.continuous_features,
-            categorical_inputs=self.categorical_features,
-            embedding_dim=m_cfg.embedding.embedding_dim,
-            expected_categorical_inputs=self.dataset_config.expected_embedding_inputs,
-            empty=m_cfg.embedding.categorical_masking_value,
-            std_layer=std_layer,
-            rotation_layer=rot_layer,
-            padding_categorical_layer=cat_pad_layer,
-            padding_continuous_layer=cont_pad_layer,
-        )
-        return input_layer
-
-    def init_optional_input_layer(self) -> torch.nn.Module:
-        """
-        Helper function to initialize the input layer, which consist of a preprocessing pipeline.
-        This preprocessing pipeline consist of standardization, rotation and padding layer, which are initialized with the corresponding helper functions.
-
-        Returns:
-            torch.nn.Module: input layer instance with preprocessing pipeline
-        """
         d_cfg = self.dataset_config
         # m_cfg = self.model_building_config
 
@@ -319,7 +293,7 @@ class BaseModel(HookableModelMixin, torch.nn.Module):
         else:
             cat_input_layer = EmptyLayer()
 
-        input_layer = OptionalInputLayer(
+        input_layer = InputLayer(
             continuous_layer_inst=cont_input_layer,
             categorical_layer_inst=cat_input_layer,
         )
