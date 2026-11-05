@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import dataclasses
 import pathlib
 from typing import Any
 
@@ -84,32 +83,3 @@ def rebuild_model_from_checkpoint(checkpoint: dict[str, Any], cfg_dataclass: Ful
     model_inst.load_state_dict(checkpoint["model_state_dict"])
     model_inst.eval()
     return model_inst
-
-def rebuild_dataclass_from_dict(full_cfg: dict[dict]) -> dataclasses.dataclass:
-    """
-    Pickle of dataclasses relies on the dataclass being available. To prevent conversion to dict is used.
-    This comes with a lost of information (like post_inits being not serialized).
-    To at least reuse code that relies on accessing dataclasses, this converts the dictionary back to a dataclass.
-    When *full_cfg* is already a dataclass nothing will be done and it will be returned.
-
-    Args:
-        full_cfg (dict[dict]): Dictionary of dictionary, where first level describes a dataclass, while second one are the normal values.
-
-    Returns:
-        dataclasses.dataclass: A dataclass with dataclasses as attributes
-    """
-    if dataclasses.is_dataclass(full_cfg):
-        return full_cfg
-
-    # create sub-configs
-    sub_dataclasses = {}
-    for cls_cfg, sub_cfg in full_cfg.items():
-        sub_dataclasses[cls_cfg] = dataclasses.make_dataclass(cls_cfg, [(k, type(v)) for k, v in sub_cfg.items()])(
-            **sub_cfg
-        )
-
-    # create full config that hosts all sub-configs
-    full_config = dataclasses.make_dataclass(
-        "full_config", [(dataclass, type(dataclass)) for dataclass in sub_dataclasses]
-    )(**sub_dataclasses)
-    return full_config

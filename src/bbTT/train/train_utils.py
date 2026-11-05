@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+import logger
 import torch
 
 from bbTT.monitoring.logger.logger import get_logger

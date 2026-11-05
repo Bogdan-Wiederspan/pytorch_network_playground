@@ -153,7 +153,11 @@ def main(**kwargs):
         checkpoint_inst = CheckPoint(
             checkpoint_name=full_config.training_config.save_model_name,
             checkpoint_fold=current_fold,
+            patience=full_config.record_config.checkpoint_patience,
+            delta=full_config.record_config.checkpoint_delta,
+            confirm=full_config.record_config.checkpoint_confirm,
         )
+
         training_monitor_inst = TrainingMonitor(to_cpu=True, non_blocking=True)
         scheduler_handler_inst = SchedulerHandler(
             scheduler_inst=scheduler_inst,
@@ -361,14 +365,14 @@ def main(**kwargs):
                         },
                     )
                 ### checkpoint criteria checks and saving
-                if checkpoint_inst.check_criteria(eval_v_loss):
-                    checkpoint_inst.create_checkpoint(
-                        model=model_inst,
-                        optimizer=optimizer_inst,
-                        scheduler=scheduler_inst,
-                        current_iteration=current_iteration,
-                        full_config=full_config,
-                    )
+                checkpoint_inst.update(
+                    loss=eval_v_loss,
+                    model=model_inst,
+                    optimizer=optimizer_inst,
+                    scheduler=scheduler_inst,
+                    current_iteration=current_iteration,
+                    full_config=full_config,
+                )
 
                 scheduler_handler_inst.step(
                     model_inst, optimizer_inst, metric=eval_v_loss
