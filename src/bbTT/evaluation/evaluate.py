@@ -7,10 +7,11 @@ from typing import Callable, Iterable, Literal
 import numpy as np
 import torch
 
+from bbTT.checkpoint.loading import rebuild_checkpoint_information
+
 # personal imports
 from bbTT.data_handling import io
 from bbTT.data_handling.preprocessing import k_fold
-from bbTT.evaluation.load_models import rebuild_checkpoint_information
 from bbTT.monitoring.logger.logger import get_logger
 from bbTT.utils.parser import ParserBuilder
 
