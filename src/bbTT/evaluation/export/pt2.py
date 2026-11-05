@@ -6,7 +6,7 @@ from typing import Literal
 
 import torch
 
-from bbTT.evaluation.load_models import rebuild_checkpoint_information
+from bbTT.checkpoint.loading import rebuild_checkpoint_information
 from bbTT.models.utils.append_layers import ACTIVATION_CHOICE, AddActFnToModel
 from bbTT.monitoring.logger.logger import get_logger
 from bbTT.utils.parser import ParserBuilder

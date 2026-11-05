@@ -8,6 +8,7 @@ import numpy as np
 import torch
 
 import bbTT.data_handling.sampling.sampler as sampler
+from bbTT.checkpoint.checkpoint import CheckPoint
 from bbTT.configs.full_config import FullConfig
 
 # personal imports
@@ -30,7 +31,6 @@ from bbTT.monitoring import (
 from bbTT.monitoring.context.batch_composition_context import BatchCompositionHistory
 from bbTT.monitoring.logger.logger import get_logger
 from bbTT.monitoring.logger.tensorboard_logger import TensorboardLogger
-from bbTT.optimizer.early_stopping import CheckPoint
 from bbTT.optimizer.scheduler_handler import SchedulerHandler
 from bbTT.optimizer.utils import init_optimizer, init_scheduler
 from bbTT.train.loops import TrainingLoop, ValidationLoop
