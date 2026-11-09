@@ -13,7 +13,6 @@ from bbTT.configs.full_config import FullConfig
 
 # personal imports
 from bbTT.data_handling.io import get_data
-from bbTT.monitoring.context.checkpoint_history import CheckpointHistory
 from bbTT.data_handling.preprocessing.k_fold import FoldAndSplitCoordinator
 from bbTT.data_handling.preprocessing.standardization import FeatureStatisticCache
 from bbTT.data_handling.sampling.weight import WeightAggregator
@@ -30,6 +29,7 @@ from bbTT.monitoring import (
     setup_monitoring,
 )
 from bbTT.monitoring.context.batch_composition_context import BatchCompositionHistory
+from bbTT.monitoring.context.checkpoint_history import CheckpointHistory
 from bbTT.monitoring.logger.logger import get_logger
 from bbTT.monitoring.logger.tensorboard_logger import TensorboardLogger
 from bbTT.optimizer.scheduler_handler import SchedulerHandler
@@ -37,12 +37,13 @@ from bbTT.optimizer.utils import init_optimizer, init_scheduler
 from bbTT.train.loops import TrainingLoop, ValidationLoop
 from bbTT.utils.utils import DEVICE
 
-full_config = FullConfig()
-torch.manual_seed(full_config.training_config.seed)
-np.random.seed(full_config.training_config.seed)
-
 
 def main(**kwargs):
+
+    full_config = FullConfig()
+    torch.manual_seed(full_config.training_config.seed)
+    np.random.seed(full_config.training_config.seed)
+
     # prepare logger
     logger_inst = get_logger(__name__)
     logger_inst.info(f"DEVICE: {DEVICE}")
@@ -98,7 +99,9 @@ def main(**kwargs):
         # calculate weight statistics, NEEDS TO RUN BEFORE APPLY INDICES
         weight_aggregator = WeightAggregator(events, fold_split_coordinator.indices)
         # actually apply indices, but release on the fly to reduce peak memory
-        split_events = fold_split_coordinator.split_and_free(events, kinds=("training", "validation"), columns=columns_to_split)
+        split_events = fold_split_coordinator.split_and_free(
+            events, kinds=("training", "validation"), columns=columns_to_split
+        )
         train_events, validation_events = split_events["training"], split_events["validation"]
         del events
 
@@ -149,9 +152,7 @@ def main(**kwargs):
         training_loss_inst, validation_loss_inst = init_loss(
             full_config=full_config, device=DEVICE, training_sampler=training_sampler
         )
-        scheduler_inst = init_scheduler(
-            full_config=full_config, optimizer_inst=optimizer_inst
-        )
+        scheduler_inst = init_scheduler(full_config=full_config, optimizer_inst=optimizer_inst)
         checkpoint_inst = CheckPoint(
             checkpoint_name=full_config.training_config.save_model_name,
             checkpoint_fold=current_fold,
@@ -202,9 +203,7 @@ def main(**kwargs):
             )
 
             if batch_composition_history_inst is not None:
-                batch_composition_history_inst.record(
-                    step=current_iteration, cursors=training_sampler.cursors
-                )
+                batch_composition_history_inst.record(step=current_iteration, cursors=training_sampler.cursors)
 
             # --- Batch - training metrics
             if current_iteration % full_config.record_config.verbose_interval == 0:
@@ -396,9 +395,7 @@ def main(**kwargs):
                         step=current_iteration,
                     )
 
-                scheduler_handler_inst.step(
-                    model_inst, optimizer_inst, metric=eval_v_loss
-                )
+                scheduler_handler_inst.step(model_inst, optimizer_inst, metric=eval_v_loss)
 
         from IPython import embed
 
