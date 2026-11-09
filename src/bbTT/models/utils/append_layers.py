@@ -16,8 +16,8 @@ class AddBinningLayer(torch.nn.Module):
         )
         self.signal_cls = ... if signal_cls is None else signal_cls  # used for class slicing
 
-    def forward(self, categorical_inputs, continuous_inputs):
-        x = self.unbinned_model(categorical_inputs, continuous_inputs)[
+    def forward(self, categorical_inputs, continuous_inputs, physics_parameters=None):
+        x = self.unbinned_model(categorical_inputs, continuous_inputs, physics_parameters)[
             :, self.signal_cls
         ]  # normal prediction as probabilities
         x = self.binning_layer(x)
@@ -34,6 +34,7 @@ class AddActFnToModel(torch.nn.Module):
         self.act_func = self.activation_layer(act_fn)
         self.categorical_features = model.categorical_features
         self.continuous_features = model.continuous_features
+        self.num_physics_parameters = model.num_physics_parameters
 
     @staticmethod
     def activation_layer(name: ACTIVATION_CHOICE) -> torch.nn.Module:
@@ -57,7 +58,12 @@ class AddActFnToModel(torch.nn.Module):
         return choices[name]()
 
 
-    def forward(self, categorical_inputs: torch.Tensor, continuous_inputs: torch.Tensor) -> torch.Tensor:
-        x = self.model(categorical_inputs, continuous_inputs)
+    def forward(
+        self,
+        categorical_inputs: torch.Tensor,
+        continuous_inputs: torch.Tensor,
+        physics_parameters: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        x = self.model(categorical_inputs, continuous_inputs, physics_parameters)
         x = self.act_func(x)
         return x
