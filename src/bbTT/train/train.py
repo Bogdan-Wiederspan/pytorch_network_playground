@@ -22,7 +22,10 @@ from bbTT.models.utils import init_model
 
 # from .train_utils import log_metrics
 from bbTT.monitoring import (
-    EvalContext,
+    MONITOR_MODE_BATCH,
+    MONITOR_MODE_TRAINING,
+    MONITOR_MODE_VALIDATION,
+    EvaluationReporter,
     EvaluationRunner,
     TrainingMonitor,
     load_registers,
@@ -52,9 +55,6 @@ def main(**kwargs):
         path=kwargs["tensorboard_name"],
     )
     evaluation_runner_inst = EvaluationRunner(tensorboard_writer)
-
-    # lives across folds like the tensorboard writer, so the table lists the checkpoints of all folds
-    checkpoint_history_inst = CheckpointHistory()
 
     # load all registered plots and metrics
     load_registers()
@@ -167,15 +167,22 @@ def main(**kwargs):
             checkpoint_inst=checkpoint_inst,
             logger_inst=logger_inst,
         )
-        mode_batch, mode_eval_training, mode_eval_validation = (
-            "training_batch",
-            "evaluation_training",
-            "evaluation_validation",
-        )
 
-        # debug plot of the batch composition: the history grows with every iteration, so it is
-        # only created when requested. Without it the optional plot is skipped by the runner.
+        # monitoring state of this fold: histories grow with the training and are rendered by the reporter.
+        # The batch composition history grows with every iteration, so it is only created when requested;
+        # without it the optional plot is skipped by the runner.
+        checkpoint_history_inst = CheckpointHistory()
         batch_composition_history_inst = BatchCompositionHistory() if full_config.record_config.batch_metrics else None
+        reporter_inst = EvaluationReporter(
+            evaluation_runner_inst=evaluation_runner_inst,
+            training_monitor_inst=training_monitor_inst,
+            tensorboard_writer=tensorboard_writer,
+            record_config=full_config.record_config,
+            target_map=full_config.dataset_config.target_map,
+            default_n_bins=full_config.binning_config.num_bins,
+            checkpoint_history_inst=checkpoint_history_inst,
+            batch_composition_history_inst=batch_composition_history_inst,
+        )
 
         setup_monitoring(
             training_monitor_inst,
@@ -193,7 +200,7 @@ def main(**kwargs):
             batch_result = training_loop(
                 model_inst=model_inst,
                 monitor=training_monitor_inst,
-                kind_of_data=mode_batch,
+                kind_of_data=MONITOR_MODE_BATCH,
                 loss_fn=training_loss_inst,
                 sampler=training_sampler,
                 device=DEVICE,
@@ -202,8 +209,7 @@ def main(**kwargs):
                 optimizer_inst=optimizer_inst,
             )
 
-            if batch_composition_history_inst is not None:
-                batch_composition_history_inst.record(step=current_iteration, cursors=training_sampler.cursors)
+            reporter_inst.record_batch_composition(step=current_iteration, cursors=training_sampler.cursors)
 
             # --- Batch - training metrics
             if current_iteration % full_config.record_config.verbose_interval == 0:
@@ -233,7 +239,7 @@ def main(**kwargs):
                     evaluation_training_result = validation_loop(
                         model_inst=model_inst,
                         monitor=training_monitor_inst,
-                        kind_of_data=mode_eval_training,
+                        kind_of_data=MONITOR_MODE_TRAINING,
                         loss_fn_inst=validation_loss_inst,
                         sampler_inst=training_sampler,
                         sample_columns=full_config.sampler_config.sample_attributes,
@@ -246,7 +252,7 @@ def main(**kwargs):
                 evaluation_validation_result = validation_loop(
                     model_inst=model_inst,
                     monitor=training_monitor_inst,
-                    kind_of_data=mode_eval_validation,
+                    kind_of_data=MONITOR_MODE_VALIDATION,
                     loss_fn_inst=validation_loss_inst,
                     sampler_inst=validation_sampler,
                     sample_columns=full_config.sampler_config.sample_attributes,
@@ -267,64 +273,12 @@ def main(**kwargs):
                 if full_config.record_config.log_metrics:
                     model_evaluation_state = model_inst.evaluation_state()
 
-                    #  meta context is the same for all data
-                    shared_eval_context_meta_data = {
-                        "model_evaluation_state": model_evaluation_state,
-                        "target_map": full_config.dataset_config.target_map,
-                        "global_step": current_iteration,
-                        "default_n_bins": full_config.binning_config.num_bins,
-                    }
-                    if batch_composition_history_inst is not None:
-                        shared_eval_context_meta_data["batch_composition_history"] = batch_composition_history_inst
-
-                    # --- batch monitoring ---
-                    ctx_batch = EvalContext(
-                        mode="batch",
-                        predictions=batch_result["predictions"],
-                        targets=batch_result["targets"],
-                        event_weights=batch_result["event_weights"],
-                        **shared_eval_context_meta_data,
-                    )
-
-                    ctx_batch.add_features(
-                        *training_monitor_inst.get_plot_gradients(mode_batch),
-                        *training_monitor_inst.get_plot_tensors(mode_batch),
-                    )
-                    evaluation_runner_inst.run_plots(ctx=ctx_batch, plots=full_config.record_config.batch_plots)
-
-                    # --- training monitoring ---
+                    reporter_inst.report(mode="batch", result=batch_result, global_step=current_iteration, model_evaluation_state=model_evaluation_state) # noqa
+                    reporter_inst.report(mode="batch", result=batch_result, global_step=current_iteration, model_evaluation_state=model_evaluation_state) # noqa
                     # optional - since training can also be monitored by batch monitoring
                     if evaluation_training_result is not None:
-                        ctx_train = EvalContext(
-                            mode="training",
-                            predictions=evaluation_training_result["predictions"],
-                            targets=evaluation_training_result["targets"],
-                            event_weights=evaluation_training_result["event_weights"],
-                            **shared_eval_context_meta_data,
-                        )
-                        ctx_train.add_features(
-                            *training_monitor_inst.get_plot_tensors(mode_eval_training),
-                            ("loss", eval_t_loss),
-                        )
-
-                    evaluation_runner_inst.run_plots(ctx=ctx_train, plots=full_config.record_config.training_plots)
-                    evaluation_runner_inst.run_scalars(ctx=ctx_train, artifact_names=full_config.record_config.training_scalars)
-
-                    # --- validation monitoring ---
-                    ctx_validation = EvalContext(
-                        mode="validation",
-                        predictions=evaluation_validation_result["predictions"],
-                        targets=evaluation_validation_result["targets"],
-                        event_weights=evaluation_validation_result["event_weights"],
-                        **shared_eval_context_meta_data,
-                    )
-                    ctx_validation.add_features(
-                        *training_monitor_inst.get_plot_tensors(mode_eval_validation),
-                        ("loss", eval_v_loss),
-                    )
-
-                    evaluation_runner_inst.run_plots(ctx=ctx_validation, plots=full_config.record_config.validation_plots)
-                    evaluation_runner_inst.run_scalars(ctx=ctx_validation, artifact_names=full_config.record_config.validation_scalars)
+                        reporter_inst.report(mode="training", result=evaluation_training_result, global_step=current_iteration, model_evaluation_state=model_evaluation_state, loss=eval_t_loss) # noqa
+                    reporter_inst.report(mode="validation", result=evaluation_validation_result, global_step=current_iteration, model_evaluation_state=model_evaluation_state, loss=eval_v_loss) # noqa
 
                 ### --- checkpoint criteria checks and saving ---
                 is_checkpoint_written = checkpoint_inst.update(
@@ -339,15 +293,10 @@ def main(**kwargs):
                 if is_checkpoint_written:
                     # with confirmation enabled the written state may be the candidate from the previous
                     # validation, so take iteration and loss from what was actually written, not from this step
-                    checkpoint_history_inst.record(
+                    reporter_inst.record_checkpoint(
                         name=checkpoint_inst.save_path.stem,
                         iteration=checkpoint_inst.last_checkpoint["iteration"],
                         loss=checkpoint_inst.best_loss,
-                    )
-
-                    tensorboard_writer.log_text(
-                        tag="Checkpoints",
-                        text=checkpoint_history_inst.to_markdown(),
                         step=current_iteration,
                     )
 

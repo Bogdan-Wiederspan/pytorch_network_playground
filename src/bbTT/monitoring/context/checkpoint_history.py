@@ -23,9 +23,9 @@ class CheckpointRecord:
 @dataclass
 class CheckpointHistory:
     """
-    History of all checkpoints written during a training, across folds.
+    History of all checkpoints written during a training of one fold.
 
-    Accumulated in the training loop and rendered as a markdown table for the TensorBoard
+    Accumulated through EvaluationReporter.record_checkpoint and rendered as a markdown table for the TensorBoard
     text dashboard. Exists to make visible at which iterations a checkpoint was taken and
     which of them still exist on disk: checkpoints with the same name are written to the same
     file, so every record except the most recent one per name has been overwritten.
