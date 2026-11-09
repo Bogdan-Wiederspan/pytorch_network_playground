@@ -60,7 +60,7 @@ class CheckPoint:
         Returns:
             str: Destination of the checkpoint file, see ``checkpoint_path``.
         """
-        return str(checkpoint_path(self.name, self.fold))
+        return checkpoint_path(self.name, self.fold)
 
     def _improves(self, loss: float) -> bool:
         """

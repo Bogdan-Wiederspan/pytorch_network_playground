@@ -13,6 +13,7 @@ from bbTT.configs.full_config import FullConfig
 
 # personal imports
 from bbTT.data_handling.io import get_data
+from bbTT.monitoring.context.checkpoint_history import CheckpointHistory
 from bbTT.data_handling.preprocessing.k_fold import FoldAndSplitCoordinator
 from bbTT.data_handling.preprocessing.standardization import FeatureStatisticCache
 from bbTT.data_handling.sampling.weight import WeightAggregator
@@ -50,6 +51,10 @@ def main(**kwargs):
         path=kwargs["tensorboard_name"],
     )
     evaluation_runner_inst = EvaluationRunner(tensorboard_writer)
+
+    # lives across folds like the tensorboard writer, so the table lists the checkpoints of all folds
+    checkpoint_history_inst = CheckpointHistory()
+
     # load all registered plots and metrics
     load_registers()
     # TODO add LOGGER FILEPATH in same directory of tensorboard
@@ -57,9 +62,7 @@ def main(**kwargs):
 
     # load data
     for current_fold in full_config.training_config.train_folds:
-        logger_inst.info(
-            f"Trainings fold: {current_fold}/{full_config.training_config.k_fold - 1}"
-        )
+        logger_inst.info(f"Trainings fold: {current_fold}/{full_config.training_config.k_fold - 1}")
         # -----
         ### data loading and preprocessing
         # -----
@@ -83,7 +86,6 @@ def main(**kwargs):
             training_percentage=full_config.training_config.train_ratio,
             randomize=full_config.training_config.randomize,
         )
-
 
         columns_to_split = (
             "continuous",
@@ -204,44 +206,43 @@ def main(**kwargs):
                     step=current_iteration, cursors=training_sampler.cursors
                 )
 
-            # ----
-            # Verbose and Metrics that are triggered often
-            # ----
+            # --- Batch - training metrics
             if current_iteration % full_config.record_config.verbose_interval == 0:
                 tensorboard_writer.log_lr(optimizer_inst, current_iteration)
                 batch_loss = batch_result["loss"].item()
-                tensorboard_writer.log_loss(
-                    {"batch_loss": batch_loss}, step=current_iteration
-                )
+                tensorboard_writer.log_loss({"batch_loss": batch_loss}, step=current_iteration)
                 current_lr = optimizer_inst.param_groups[0]["lr"]
-                logger_inst.training(
-                    f"T-It: {current_iteration} - LR: {current_lr} - batch loss: {batch_loss:.2E}"
-                )
+                logger_inst.training(f"T-It: {current_iteration} - LR: {current_lr} - batch loss: {batch_loss:.2E}")
 
             # ----
             #### Evaluation of training and validation data, logging and checkpointing
             # ----
-            evaluation_condition = (current_iteration % full_config.record_config.validation_interval == 0)
+            evaluation_condition = current_iteration % full_config.record_config.validation_interval == 0
+
             if evaluation_condition:
                 # evaluation of training data
-                logger_inst.info(
-                    f"Iteration {current_iteration}. Start evaluation of training data."
-                )
 
-                evaluation_training_result = validation_loop(
-                    model_inst=model_inst,
-                    monitor=training_monitor_inst,
-                    kind_of_data=mode_eval_training,
-                    loss_fn_inst=validation_loss_inst,
-                    sampler_inst=training_sampler,
-                    sample_columns=full_config.sampler_config.sample_attributes,
-                    device=DEVICE,
+                # --- Evaluation training ---
+                # optional - every n-th validation do training evaluation
+                validation_count = current_iteration // full_config.record_config.validation_interval
+                training_evaluation_condition = (
+                    validation_count % full_config.record_config.training_evaluation_interval == 0
                 )
-                # evaluation of validation
-                logger_inst.info(
-                    f"Iteration {current_iteration}. Start evaluation of validation data."
-                )
+                if training_evaluation_condition:
+                    logger_inst.info(f"Iteration {current_iteration}. Start evaluation of training data.")
+                    evaluation_training_result = validation_loop(
+                        model_inst=model_inst,
+                        monitor=training_monitor_inst,
+                        kind_of_data=mode_eval_training,
+                        loss_fn_inst=validation_loss_inst,
+                        sampler_inst=training_sampler,
+                        sample_columns=full_config.sampler_config.sample_attributes,
+                        device=DEVICE,
+                    )
 
+
+                logger_inst.info(f"Iteration {current_iteration}. Start evaluation of validation data.")
+                # --- Evaluation validation ---
                 evaluation_validation_result = validation_loop(
                     model_inst=model_inst,
                     monitor=training_monitor_inst,
@@ -252,17 +253,21 @@ def main(**kwargs):
                     device=DEVICE,
                 )
 
-                eval_t_loss = evaluation_training_result["loss"].item()
+                eval_t_loss = (
+                    evaluation_training_result["loss"].item() if evaluation_training_result is not None else None
+                )
                 eval_v_loss = evaluation_validation_result["loss"].item()
+                eval_t_loss_text = f"{eval_t_loss:.2E}" if eval_t_loss is not None else "skipped"
+
                 logger_inst.training(
-                    f"Iteration: {current_iteration} - TLoss: {eval_t_loss:.2E} VLoss: {eval_v_loss:.2E}"
+                    f"Iteration: {current_iteration} - TLoss: {eval_t_loss_text} VLoss: {eval_v_loss:.2E}"
                 )
 
-                # TODO when edges should be tracked add this in a way that is universal and does not break for models without binning layer, e.g. add property to model that returns None if no binning layer is present and add check in log_metrics
+                # --- Monitoring ---
                 if full_config.record_config.log_metrics:
-                    # --- plots on evaluation, on training data ---
                     model_evaluation_state = model_inst.evaluation_state()
 
+                    #  meta context is the same for all data
                     shared_eval_context_meta_data = {
                         "model_evaluation_state": model_evaluation_state,
                         "target_map": full_config.dataset_config.target_map,
@@ -272,7 +277,7 @@ def main(**kwargs):
                     if batch_composition_history_inst is not None:
                         shared_eval_context_meta_data["batch_composition_history"] = batch_composition_history_inst
 
-
+                    # --- batch monitoring ---
                     ctx_batch = EvalContext(
                         mode="batch",
                         predictions=batch_result["predictions"],
@@ -281,40 +286,11 @@ def main(**kwargs):
                         **shared_eval_context_meta_data,
                     )
 
-                    ctx_train = EvalContext(
-                        mode="training",
-                        predictions=evaluation_training_result["predictions"],
-                        targets=evaluation_training_result["targets"],
-                        event_weights=evaluation_training_result["event_weights"],
-                        **shared_eval_context_meta_data,
-                    )
-
-                    ctx_validation = EvalContext(
-                        mode="validation",
-                        predictions=evaluation_validation_result["predictions"],
-                        targets=evaluation_validation_result["targets"],
-                        event_weights=evaluation_validation_result["event_weights"],
-                        **shared_eval_context_meta_data,
-                    )
-                    # ctx_batch.add_feature("kernels", model_inst.kernels)
-                    # ctx_batch.add_feature("binning_fn", model_inst.binning_fn)
-
                     ctx_batch.add_features(
                         *training_monitor_inst.get_plot_gradients(mode_batch),
                         *training_monitor_inst.get_plot_tensors(mode_batch),
                     )
 
-                    ctx_train.add_features(
-                        *training_monitor_inst.get_plot_tensors(mode_eval_training),
-                        ("loss", eval_t_loss),
-                    )
-
-                    ctx_validation.add_features(
-                        *training_monitor_inst.get_plot_tensors(mode_eval_validation),
-                        ("loss", eval_v_loss),
-                    )
-
-                    # --- Plotting
                     evaluation_runner_inst.run_plots(
                         ctx_batch,
                         plots=[
@@ -322,7 +298,23 @@ def main(**kwargs):
                             "batch_composition_history",
                         ],
                     )
-                    # run metrics and store them
+
+                    # --- training monitoring ---
+                    # optional - since training can also be monitored by batch monitoring
+                    if evaluation_training_result is not None:
+                        ctx_train = EvalContext(
+                            mode="training",
+                            predictions=evaluation_training_result["predictions"],
+                            targets=evaluation_training_result["targets"],
+                            event_weights=evaluation_training_result["event_weights"],
+                            **shared_eval_context_meta_data,
+                        )
+
+                        ctx_train.add_features(
+                            *training_monitor_inst.get_plot_tensors(mode_eval_training),
+                            ("loss", eval_t_loss),
+                        )
+                    # plots for training evaluation
                     evaluation_runner_inst.run_plots(
                         ctx_train,
                         plots=[
@@ -334,6 +326,28 @@ def main(**kwargs):
                             "score_correlation_matrix",
                             # "precision_recall", # deactivated takes 40s to use
                         ],
+                    )
+
+                    evaluation_runner_inst.run_scalars(
+                        ctx=ctx_train,
+                        artifact_names={
+                            "CrossEntropy/Evaluation Training": "cross_entropy",
+                            "Loss/Evaluation Training Loss": "loss",
+                        },
+                    )
+
+                    # --- validation monitoring ---
+                    ctx_validation = EvalContext(
+                        mode="validation",
+                        predictions=evaluation_validation_result["predictions"],
+                        targets=evaluation_validation_result["targets"],
+                        event_weights=evaluation_validation_result["event_weights"],
+                        **shared_eval_context_meta_data,
+                    )
+
+                    ctx_validation.add_features(
+                        *training_monitor_inst.get_plot_tensors(mode_eval_validation),
+                        ("loss", eval_v_loss),
                     )
 
                     evaluation_runner_inst.run_plots(
@@ -350,22 +364,15 @@ def main(**kwargs):
                     )
 
                     evaluation_runner_inst.run_scalars(
-                        ctx=ctx_train,
-                        artifact_names={
-                            "CrossEntropy/Evaluation Training": "cross_entropy",
-                            "Loss/Evaluation Training Loss": "loss",
-                        },
-                    )
-
-                    evaluation_runner_inst.run_scalars(
                         ctx=ctx_validation,
                         artifact_names={
                             "CrossEntropy/Evaluation Validation": "cross_entropy",
                             "Loss/Validation VLoss": "loss",
                         },
                     )
-                ### checkpoint criteria checks and saving
-                checkpoint_inst.update(
+
+                ### --- checkpoint criteria checks and saving ---
+                is_checkpoint_written = checkpoint_inst.update(
                     loss=eval_v_loss,
                     model=model_inst,
                     optimizer=optimizer_inst,
@@ -373,6 +380,21 @@ def main(**kwargs):
                     current_iteration=current_iteration,
                     full_config=full_config,
                 )
+
+                if is_checkpoint_written:
+                    # with confirmation enabled the written state may be the candidate from the previous
+                    # validation, so take iteration and loss from what was actually written, not from this step
+                    checkpoint_history_inst.record(
+                        name=checkpoint_inst.save_path.stem,
+                        iteration=checkpoint_inst.last_checkpoint["iteration"],
+                        loss=checkpoint_inst.best_loss,
+                    )
+
+                    tensorboard_writer.log_text(
+                        tag="Checkpoints",
+                        text=checkpoint_history_inst.to_markdown(),
+                        step=current_iteration,
+                    )
 
                 scheduler_handler_inst.step(
                     model_inst, optimizer_inst, metric=eval_v_loss

@@ -20,3 +20,7 @@ class RecordConfig:
     # Hold a new best as candidate and write it only if the next validation also beats the previous best.
     # Protects checkpoint and scheduler from a single validation spike; costs one validation_interval of delay.
     checkpoint_confirm: bool = True
+
+    # full pass over the training data is pure monitoring but costs ~4x a validation pass.
+    # as compromise, the evaluation of training data is only done every `training_evaluation_interval` validation passes.
+    training_evaluation_interval: int = 5 # 1 means that every validation pass evaluates the training data, 2 means every second validation pass, etc.
