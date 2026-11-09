@@ -222,11 +222,12 @@ def main(**kwargs):
                 # evaluation of training data
 
                 # --- Evaluation training ---
-                # optional - every n-th validation do training evaluation
+                # optional - every n-th validation do training evaluation, None when skipped
                 validation_count = current_iteration // full_config.record_config.validation_interval
                 training_evaluation_condition = (
                     validation_count % full_config.record_config.training_evaluation_interval == 0
                 )
+                evaluation_training_result = None
                 if training_evaluation_condition:
                     logger_inst.info(f"Iteration {current_iteration}. Start evaluation of training data.")
                     evaluation_training_result = validation_loop(
@@ -289,14 +290,7 @@ def main(**kwargs):
                         *training_monitor_inst.get_plot_gradients(mode_batch),
                         *training_monitor_inst.get_plot_tensors(mode_batch),
                     )
-
-                    evaluation_runner_inst.run_plots(
-                        ctx_batch,
-                        plots=[
-                            # "kernels_monitor",
-                            "batch_composition_history",
-                        ],
-                    )
+                    evaluation_runner_inst.run_plots(ctx=ctx_batch, plots=full_config.record_config.batch_plots)
 
                     # --- training monitoring ---
                     # optional - since training can also be monitored by batch monitoring
@@ -308,32 +302,13 @@ def main(**kwargs):
                             event_weights=evaluation_training_result["event_weights"],
                             **shared_eval_context_meta_data,
                         )
-
                         ctx_train.add_features(
                             *training_monitor_inst.get_plot_tensors(mode_eval_training),
                             ("loss", eval_t_loss),
                         )
-                    # plots for training evaluation
-                    evaluation_runner_inst.run_plots(
-                        ctx_train,
-                        plots=[
-                            "confusion_matrix",
-                            # "roc", # roc computation is the long factor (14s)
-                            "output_score_hh_node",
-                            "output_score_hh_node_untransformed",
-                            "kernels_monitor",
-                            "score_correlation_matrix",
-                            # "precision_recall", # deactivated takes 40s to use
-                        ],
-                    )
 
-                    evaluation_runner_inst.run_scalars(
-                        ctx=ctx_train,
-                        artifact_names={
-                            "CrossEntropy/Evaluation Training": "cross_entropy",
-                            "Loss/Evaluation Training Loss": "loss",
-                        },
-                    )
+                    evaluation_runner_inst.run_plots(ctx=ctx_train, plots=full_config.record_config.training_plots)
+                    evaluation_runner_inst.run_scalars(ctx=ctx_train, artifact_names=full_config.record_config.training_scalars)
 
                     # --- validation monitoring ---
                     ctx_validation = EvalContext(
@@ -343,32 +318,13 @@ def main(**kwargs):
                         event_weights=evaluation_validation_result["event_weights"],
                         **shared_eval_context_meta_data,
                     )
-
                     ctx_validation.add_features(
                         *training_monitor_inst.get_plot_tensors(mode_eval_validation),
                         ("loss", eval_v_loss),
                     )
 
-                    evaluation_runner_inst.run_plots(
-                        ctx_validation,
-                        plots=[
-                            "confusion_matrix",
-                            # "roc", # roc computation is the long factor (4s)
-                            "output_score_hh_node",
-                            "output_score_hh_node_untransformed",
-                            "kernels_monitor",
-                            "score_correlation_matrix",
-                            # "precision_recall", # takes to long
-                        ],
-                    )
-
-                    evaluation_runner_inst.run_scalars(
-                        ctx=ctx_validation,
-                        artifact_names={
-                            "CrossEntropy/Evaluation Validation": "cross_entropy",
-                            "Loss/Validation VLoss": "loss",
-                        },
-                    )
+                    evaluation_runner_inst.run_plots(ctx=ctx_validation, plots=full_config.record_config.validation_plots)
+                    evaluation_runner_inst.run_scalars(ctx=ctx_validation, artifact_names=full_config.record_config.validation_scalars)
 
                 ### --- checkpoint criteria checks and saving ---
                 is_checkpoint_written = checkpoint_inst.update(
