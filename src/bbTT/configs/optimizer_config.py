@@ -10,13 +10,13 @@ OPTIMIZER_CHOICE = Literal["adamw"]
 
 @dataclass
 class ADAMWConfig:
-    decay_factor: float = 500  # factor of L2 - Marcel: 500
-    normalize: bool = True  # normalize weight decay factor to number of parameters
-    lr: float = 1e-2  # start learning rate
-
+    # weight decay lambda as in Loshchilov & Hutter (AdamW): per-step shrink at full learning rate
+    weight_decay: float = 1.83e-5
+    decouple_weight_decay_from_lr = True  # if true, decoupled weight decay with lr, as in AdamW
 
 @dataclass
 class OptimizerConfig:
+    lr: float = 1e-2  # start learning rate
     optimizer_choice: OPTIMIZER_CHOICE = "adamw"
 
     def __post_init__(self):

@@ -4,8 +4,14 @@ from typing import Any
 
 import torch
 
-from bbTT.models.input import CategoricalInputLayer, ContinuousInputLayer, InputLayer, OptionalInputLayer
-from bbTT.models.preprocessing import CatEmbeddingLayer, EmptyLayer, PaddingLayer, RotatePhiLayer, StandardizeLayer
+from bbTT.models.input import CategoricalInputLayer, ContinuousInputLayer, InputLayer
+from bbTT.models.preprocessing import (
+    CategoricalPaddingLayer,
+    CatEmbeddingLayer,
+    ContinuousPaddingLayer,
+    RotatePhiLayer,
+    StandardizeLayer,
+)
 from bbTT.monitoring.monitoring_hooks.hookable_model import HookableModelMixin
 
 
@@ -215,33 +221,40 @@ class BaseModel(HookableModelMixin, torch.nn.Module):
                 raise ValueError(f"unknown replacement unit {unit!r} for {feature}, expected 'raw' or 'std'")
         return replacement
 
-    def init_padding_layer(self) -> tuple[torch.nn.Module | None, torch.nn.Module | None]:
+    def init_categorical_padding_layer(self) -> torch.nn.Module | None:
         """
-        Each layer is only created when the corresponding ``enable_*_padding`` flag of the model config is set.
-        The continuous layer replaces the dummy markers of the dataset config (``continuous_dummy_values``)
-        with the per-feature replacement of the padding config, see ``resolve_continuous_replacement``.
+        Helper to initialize a categorical padding layer instance. This layer replaces the dummy markers of the dataset config (``categorical_target_value``)
+        with the replacement of the padding config, see ``categorical_masking_value``.
+        If categorical padding is not enabled in the model building config, None is returned.
 
         Returns:
-            tuple[torch.nn.Module | None, torch.nn.Module | None]: Continuous and categorical PaddingLayer, None when disabled.
+            torch.nn.Module: Categorical Padding layer instance or None if categorical padding is not enabled in the model building config.
         """
         m_cfg = self.model_config
-        padding_cfg = m_cfg.padding
+        if m_cfg.enable_categorical_padding:
+            cat_pad_layer = CategoricalPaddingLayer(
+                target_value=m_cfg.padding.categorical_target_value,
+                padding_value=m_cfg.padding.categorical_masking_value,
+            )
+            return cat_pad_layer
 
 
-        continuous_padding = None
+    def init_continuous_padding_layer(self) -> torch.nn.Module | None:
+        """
+        Helper to initialize a continuous padding layer instance.
+        This layer replaces the dummy markers of the dataset config (``continuous_dummy_values``) with the per-feature replacement of the padding config, see ``resolve_continuous_replacement``.
+        If continuous padding is not enabled in the model building config, None is returned.
+
+        Returns:
+            torch.nn.Module: Continuous Padding layer instance or None if continuous padding is not enabled in the model building config.
+        """
+        m_cfg = self.model_config
         if m_cfg.enable_continuous_padding:
-            continuous_padding = PaddingLayer(
+            cont_pad_layer = ContinuousPaddingLayer(
                 target_value=self.dataset_config.continuous_dummy_values,
                 padding_value=self.resolve_continuous_replacement(), # resolve creates a padding tensor that is saved as buffer
             )
-
-        categorical_padding = None
-        if m_cfg.enable_categorical_padding:
-            categorical_padding = PaddingLayer(
-                target_value=padding_cfg.categorical_target_value,
-                padding_value=padding_cfg.categorical_masking_value,
-            )
-        return continuous_padding, categorical_padding
+            return cont_pad_layer
 
     def init_last_activation_layer(self) -> torch.nn.Module:
         """
@@ -267,59 +280,28 @@ class BaseModel(HookableModelMixin, torch.nn.Module):
         Returns:
             torch.nn.Module: input layer instance with preprocessing pipeline
         """
-        m_cfg = self.model_config
-
-        std_layer = self.init_standardization_layer()
-        rot_layer = self.init_rotation_layer()
-        cont_pad_layer, cat_pad_layer = self.init_padding_layer()
-        input_layer = InputLayer(
-            continuous_inputs=self.continuous_features,
-            categorical_inputs=self.categorical_features,
-            embedding_dim=m_cfg.embedding.embedding_dim,
-            expected_categorical_inputs=self.dataset_config.expected_embedding_inputs,
-            empty=m_cfg.embedding.categorical_masking_value,
-            std_layer=std_layer,
-            rotation_layer=rot_layer,
-            padding_categorical_layer=cat_pad_layer,
-            padding_continuous_layer=cont_pad_layer,
-        )
-        return input_layer
-
-    def init_optional_input_layer(self) -> torch.nn.Module:
-        """
-        Helper function to initialize the input layer, which consist of a preprocessing pipeline.
-        This preprocessing pipeline consist of standardization, rotation and padding layer, which are initialized with the corresponding helper functions.
-
-        Returns:
-            torch.nn.Module: input layer instance with preprocessing pipeline
-        """
         d_cfg = self.dataset_config
-        # m_cfg = self.model_building_config
 
-        cont_pad_layer, cat_pad_layer = self.init_padding_layer()
-
+        # initialize continuous input layer if continuous features are present
+        cont_input_layer = None
         if d_cfg.continuous_features:
-            std_layer = self.init_standardization_layer()
-            rot_layer = self.init_rotation_layer()
+
             cont_input_layer = ContinuousInputLayer(
                 continuous_inputs=self.continuous_features,
-                rotation_layer=rot_layer,
-                std_layer=std_layer,
-                padding_continuous_layer=cont_pad_layer,
+                rotation_layer=self.init_rotation_layer(),
+                std_layer=self.init_standardization_layer(),
+                padding_continuous_layer=self.init_continuous_padding_layer(),
             )
-        else:
-            cont_input_layer = EmptyLayer()
 
+        # initialize categorical input layer if categorical features are present
+        cat_input_layer = None
         if d_cfg.categorical_features:
-            embedding_layer = self.init_cat_embedding_layer()
             cat_input_layer = CategoricalInputLayer(
-                embedding_layer=embedding_layer,
-                padding_categorical_layer=cat_pad_layer,
+                embedding_layer=self.init_cat_embedding_layer(),
+                padding_categorical_layer=self.init_categorical_padding_layer(),
             )
-        else:
-            cat_input_layer = EmptyLayer()
 
-        input_layer = OptionalInputLayer(
+        input_layer = InputLayer(
             continuous_layer_inst=cont_input_layer,
             categorical_layer_inst=cat_input_layer,
         )

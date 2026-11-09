@@ -22,12 +22,6 @@ class RotatePhiLayer(torch.nn.Module):  # noqa: F811
         self.rotate_indices = torch.nn.Buffer(self.find_indices_of(columns, rotate_columns, True), persistent=True)
         self.active = active
 
-    def load_state_dict(self, state_dict: dict, strict: bool, assign: bool):
-        # overload load_state_dict to set buffer sizes to same of state dict
-        for name in self.state_dict().keys():
-            self.__setattr__(name, torch.zeros_like(state_dict[name]))
-        super().load_state_dict(state_dict=state_dict, strict=strict, assign=assign)
-
     def find_indices_of(
         self,
         search_in: list[str],

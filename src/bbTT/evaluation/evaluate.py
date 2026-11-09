@@ -1,23 +1,36 @@
 from __future__ import annotations
 
 # standard imports
-from typing import Iterable, Literal
+from typing import Callable, Iterable, Literal
 
 # package imports
 import numpy as np
 import torch
 
+from bbTT.checkpoint.loading import rebuild_checkpoint_information
+
 # personal imports
 from bbTT.data_handling import io
 from bbTT.data_handling.preprocessing import k_fold
-from bbTT.evaluation.load_models import rebuild_checkpoint_information
 from bbTT.monitoring.logger.logger import get_logger
 from bbTT.utils.parser import ParserBuilder
 
 logger_inst = get_logger(__name__)
 
 
-def last_fn_picker(last_fn):
+def last_fn_picker(last_fn: str) -> Callable[[torch.Tensor], torch.Tensor]:
+    """
+    Pick the activation function that is appended on the network output.
+
+    Args:
+        last_fn (str): One of "sigmoid", "softmax" or "identity".
+
+    Returns:
+        Callable[[torch.Tensor], torch.Tensor]: The activation function.
+
+    Raises:
+        KeyError: If ``last_fn`` is not a known activation name.
+    """
     def sigmoid(x):
         return torch.sigmoid(x)
 
@@ -27,8 +40,8 @@ def last_fn_picker(last_fn):
     def identity(x):
         return x
 
-    choices = {"sigmoid": sigmoid, "softmax": softmax, "none": identity}
-    return choices[last_fn.lower()]
+    choices = {"sigmoid": sigmoid, "softmax": softmax, "identity": identity}
+    return choices[last_fn]
 
 
 def evaluate_model_on_fold(
@@ -70,6 +83,15 @@ def evaluate_model_on_fold(
 
         num_targets = len(full_config.dataset_config.target_map.values())
         last_fn = last_fn_picker(last_activation_fn)
+        # the model applies its own last activation when use_last_activation is set
+        # adding another one on top would silently produce wrong scores
+        # throw error when user tries to add another activation on top of the model's last activation
+        if model_inst.use_last_activation and last_activation_fn != "identity":
+            raise ValueError(
+                f"Model already applies its last activation (use_last_activation=True), but "
+                f"last_activation_fn='{last_activation_fn}' was requested. Use 'identity' or disable the "
+                "activation inside the model to avoid a double activation."
+            )
 
         dnn_scores = {}
         for fold in folds:

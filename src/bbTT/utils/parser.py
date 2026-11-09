@@ -107,10 +107,27 @@ class ParserBuilder:
         self.parser.add_argument(
             "--add_activation",
             required=False,
-            default="None",
-            choices=["sigmoid", "softmax", "None"],
-            help="Activation function appended on the network output. (default: None)",
+            default="identity",
+            choices=["sigmoid", "softmax", "identity"],
+            help=(
+                "Activation function appended on the network output. Must be 'identity' if "
+                "model already use their last activation (use_last_activation=True). (default: identity)"
+                ),
+            )
+
+    def add_model_activation(self):
+        self.parser.add_argument(
+            "--model_activation",
+            required=False,
+            default="from_checkpoint",
+            choices=["on", "off", "from_checkpoint"],
+            help=(
+                "Models can define their own activation. This choice is also saved in their saved configuration. "
+                "This function determines whether the activation defined inside the model (use_last_activation) is applied. "
+                "'from_checkpoint' keeps the value stored in the checkpoint config. (default: from_checkpoint)"
+            ),
         )
+
 
     def add_save_path(self):
 
@@ -146,7 +163,7 @@ class ParserBuilder:
             dest="batch_size",
             type=self.positive_int,
             required=True,
-            help="Batch Size used for event loop. When memory is a problem reduce batch size first."
+            help="Batch Size used for event loop. When memory is a problem reduce batch size first.",
         )
 
     def add_num_threading(self):

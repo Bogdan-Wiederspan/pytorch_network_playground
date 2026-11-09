@@ -9,7 +9,7 @@ from torch import Generator
 
 from bbTT.configs.utils import choice_check
 
-SAMPLING_STRATEGY = Literal["old_largest_remainder", "largest_remainder", "stochastic"]
+SAMPLING_STRATEGY = Literal["largest_remainder", "stochastic"]
 
 
 
@@ -62,7 +62,6 @@ class SamplerConfig:
     @property
     def active_config(self):
         return {
-            "old": self.largest_remainder_rounding_config,  # old implementation just for backwards compatibility
             "largest_remainder": self.largest_remainder_rounding_config,
             "stochastic": self.stochastic_rounding_config,
         }[self.sampler_strategy_choice]

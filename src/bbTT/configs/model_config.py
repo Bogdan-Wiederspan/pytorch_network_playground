@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal, Optional, Tuple
 
-from bbTT.utils.utils import EMPTY_FLOAT
+from bbTT.utils.utils import EMPTY_INT
 
 
 @dataclass
@@ -23,8 +23,8 @@ REPLACEMENT_TYPE_CHOICE = Tuple[Literal["raw", "std"], float]
 
 @dataclass
 class PaddingConfig:
-    categorical_target_value: Optional[float] = EMPTY_FLOAT  # which categorical value is targeted by the padding
-    categorical_masking_value: Optional[float] = -1  # value that is used to mask the categorical target value
+    categorical_target_value: int = EMPTY_INT  # which categorical value is targeted by the padding
+    categorical_masking_value: int = -1  # value that is used to mask the categorical target value
 
     # the value that marks a missing continuous feature comes from DataConfig.dummy_values
     # 2 Mods exist:

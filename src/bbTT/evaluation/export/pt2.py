@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import os
 import pathlib
+from typing import Literal
 
 import torch
 
-from bbTT.evaluation.load_models import rebuild_checkpoint_information
-from bbTT.models.utils.append_layers import AddActFnToModel
+from bbTT.checkpoint.loading import rebuild_checkpoint_information
+from bbTT.models.utils.append_layers import ACTIVATION_CHOICE, AddActFnToModel
 from bbTT.monitoring.logger.logger import get_logger
 from bbTT.utils.parser import ParserBuilder
 
@@ -14,28 +15,55 @@ logger_inst = get_logger(__name__)
 
 
 def export_pt2(
-    model_inst: torch.nn.Module, name: str, fold: str, base_dir: str | None = None, activation_fn_name: str = None
+    model_inst: torch.nn.Module,
+    name: str,
+    fold: str,
+    base_dir: str | None = None,
+    model_activation: Literal["on", "off", "from_checkpoint"] = "from_checkpoint",
+    add_activation: ACTIVATION_CHOICE = "identity",
 ) -> pathlib.Path:
     """
     Takes *model_inst* and export it to pt2 format, with dynamic batch dimension.
-    The exported model is stored under a name defined by *name* and *fold* in the directory defined by *base_dir*.
-    If *activation_fn_name* is given, add the respective activation function as last layer to the model before exporting.
-    This is helpful, when the model for example is trained with BCEWithLogitsLoss and thus does not have a sigmoid at the end, but for inference one would like to have probabilities as output.
+    The exported model is stored as ``<base_dir>/<name>_fold<fold>.pt2``.
+
+    Two activations can become part of the exported graph, independently of each other:
+    the activation defined inside the model (controlled by ``use_last_activation``, see *model_activation*)
+    and an extra activation wrapped on top of the model output (*add_activation*). The latter is helpful
+    when a model is trained on logits (e.g. with BCEWithLogitsLoss), but probabilities are wanted at inference.
+    Stacking both is allowed, but logged as warning since it is rarely intended.
 
     Args:
         model_inst (torch.nn.Module): PyTorch model instance, no path.
         name (str): Name of the model, used to name the result.
         fold (str): Current fold of the model. Is part of the naming scheme
         base_dir (str | None, optional): Directory where model is stored, if None take from MODELS_DIR environment. Defaults to None.
-        activation_fn_name (bool, optional): Adds activation function as last layer. Defaults to None, which means no activation is added. If given, must be one of "sigmoid" or "softmax".
-
+        model_activation (Literal["on", "off", "from_checkpoint"], optional): "on"/"off" set the model's own
+            last activation explicitly, "from_checkpoint" keeps the value the model was rebuilt with. Defaults to "from_checkpoint".
+        add_activation (ACTIVATION_CHOICE, optional): Extra activation applied on top of the model output,
+            "identity" adds nothing. Defaults to "identity".
     Returns:
         pathlib.Path: Path to exported pt2 model.
     """
     # by default set CPU device, to enable most compatible export.
     DEVICE = torch.device("cpu")
-    if activation_fn_name is not None:
-        model_inst = AddActFnToModel(model_inst, activation_fn_name)
+
+    # check if model already applies its last activation, and if so, warn if user tries to add another activation on top
+    if model_activation != "from_checkpoint":
+        if model_activation == "on":
+            model_inst.use_last_activation = True
+        elif model_activation == "off":
+            model_inst.use_last_activation = False
+        else:
+            raise ValueError(f"Unknown model_activation value: {model_activation}. Must be 'on', 'off' or 'from_checkpoint'.")
+
+    if model_inst.use_last_activation and add_activation != "identity":
+        logger_inst.warning(
+            f"Model applies its own last activation: {model_inst.use_last_activation}. "
+            f"Adding another activation on top: {add_activation}. This may lead to unexpected results."
+            )
+
+    if add_activation != "identity":
+        model_inst = AddActFnToModel(model_inst, add_activation)
 
     # prepare model_inst
     model_inst = model_inst.to(DEVICE)
@@ -68,9 +96,7 @@ def export_pt2(
         base_dir = os.environ["MODELS_DIR"]
 
     dst = (pathlib.Path(base_dir) / f"{name}_fold{fold}").with_suffix(".pt2")
-    # HINT: pickle protocol 4 ensures that size of network is not a limiting factor.
-    # otherwise 4 GBit would be max.
-    torch.export.save(exp, dst, pickle_protocol=4)
+    torch.export.save(exp,dst)
     return dst
 
 
@@ -122,6 +148,7 @@ def resolve_models_path(path: pathlib.Path, folds) -> tuple[pathlib.Path, pathli
 if __name__ == "__main__":
     parser = ParserBuilder(
         "load_checkpoint",
+        "model_activation",
         "activation_fn",
         description="Export a model checkpoint to torch-export (.pt2) with a dynamic batch dimension.",
         epilog="example:\n  python src/bbTT/evaluation/export/pt2.py --checkpoint_src my_first_run --fold 0",
@@ -131,13 +158,16 @@ if __name__ == "__main__":
 
     paths = resolve_models_path(args.path, args.fold)
 
-    # model is dict with keys
-    # epoch ,model_inst, model_state_dict, optimizer
-    # we want an model_instance OR if not existing we create new model instance and load the state dict
-    # TODO add_activation_FN
+    # resolved paths already carry the fold suffix, the export adds it again based on the plain model name
     for fold, path in paths.items():
         logger_inst.info(f"Export fold {fold} with model checkpoint from {path}")
         model_inst, full_cfg = rebuild_checkpoint_information(path.with_suffix(".pt"))
-        # model_inst = rebuild_model_from_checkpoint()
-        export_pt2(model_inst, name=path.with_suffix(".pt2"), fold=fold)
+
+        export_pt2(
+            model_inst,
+            name=args.path.stem,
+            fold=fold,
+            model_activation=args.model_activation,
+            add_activation=args.add_activation,
+        )
     logger_inst.info(f"Finished exporting models for folds {args.fold} with name {args.path.stem}")

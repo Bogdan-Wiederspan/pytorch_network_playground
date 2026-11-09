@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import torch
 
-from bbTT.models.preprocessing import EmptyLayer
 from bbTT.models.register import MODEL_REGISTRY
 from bbTT.monitoring.logger.logger import get_logger
 
 logger_inst = get_logger(__name__)
+
 
 class WeightNormalizedLinear(torch.nn.Linear):  # noqa: F811
     def __init__(self, *args, normalize=False, **kwargs):
@@ -29,12 +29,6 @@ class WeightNormalizedLinear(torch.nn.Linear):  # noqa: F811
 def optional_layer(layer: torch.nn.Module | None) -> torch.nn.Module:
     if layer is None:
         return torch.nn.Identity()
-    return layer
-
-
-def dummy_empty(condition, layer: torch.nn.Module | None) -> torch.nn.Module:
-    if condition:
-        return EmptyLayer()
     return layer
 
 

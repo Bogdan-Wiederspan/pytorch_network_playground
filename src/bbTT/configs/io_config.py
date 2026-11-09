@@ -11,7 +11,7 @@ from typing import Any, Literal, Optional, get_args
 from bbTT.data_handling.io.find_datasets import cached_find_datasets
 from bbTT.utils.utils import EMPTY_FLOAT
 
-ERAS_CHOICE = Literal["22pre", "22post", "23pre", "23post", "24"]
+ERAS_CHOICE = Literal["22pre", "22post", "23pre", "23post"]
 
 @dataclass
 class DataConfig:
@@ -117,7 +117,7 @@ class DataConfig:
         # "({tau2_isolated} == 1)", # exist only for <prod28
         # "(({channel_id} == 1) | ({channel_id} == 2) | ({channel_id} == 3) )", # < prod 28
         "({leptons_os} == 1)",
-        "(({channel_id} == 1) & ({num_taus_iso} >= 1) | ({channel_id} == 2) &  ({num_taus_iso} >= 1)| ({channel_id} == 3) &  ({num_taus_iso} >= 1))",  # noqa
+        "((({channel_id} == 1) & ({num_taus_iso} >= 1) | ({channel_id} == 2) &  ({num_taus_iso} >= 1)| ({channel_id} == 3) &  ({num_taus_iso} >= 1)))",  # noqa
         "(({vis_tau1_charge} == 1) | ({vis_tau1_charge} == -1))",
         "(({vis_tau2_charge} == 1) | ({vis_tau2_charge} == -1))",
         "({vbf_dnn_moe_hh_vbf} < 0.5)",
@@ -295,12 +295,20 @@ class DataConfig:
         """
         return [self.resolve_template(cut) for cut in self.cuts]
 
+    @property
+    def production(self):
+        """
+        Return the production name, e.g. "prod14" or "prod19", derived from the input data directory.
+        """
+        return os.environ["ERA"]
+
     def cache_entries(self):
         """
         Return a dictionary of the config that defines uniquely the dataset.
         This is relevant for caching algorithms, as changes in this config will create a new hash of the data.
         """
         return {
+            "production": self.production,
             "target_map": self.target_map,
             "continuous_features": self.continuous_features,
             "categorical_features": self.categorical_features,

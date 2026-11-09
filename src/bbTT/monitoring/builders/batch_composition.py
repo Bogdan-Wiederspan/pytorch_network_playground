@@ -1,4 +1,5 @@
 from bbTT.monitoring.register import register_builder
+from bbTT.monitoring.runner import RequirementNotMet
 
 
 @register_builder(
@@ -22,9 +23,13 @@ def build_batch_composition_parts(ctx, **kwargs):
     Returns:
         dict: ``composition_steps`` (list[int]) and ``composition_by_parent``
         (dict[str, list[int]]).
+
+    Raises:
+        ReqirementNotMet: If ``batch_composition_history`` is not present in the context.
     """
     history = ctx.get("batch_composition")
-
+    if not history.counts:
+        raise RequirementNotMet("batch_composition_history is not present in the context")
     # uid is (parent_process, subprocess); sorting by it groups by parent, and
     # str() on the second element guards against mixed int/str subprocess ids.
     uids = sorted(history.counts[0], key=lambda uid: (uid[0], str(uid[1])))

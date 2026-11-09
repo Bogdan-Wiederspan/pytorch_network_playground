@@ -2,105 +2,61 @@ from __future__ import annotations
 
 import torch
 
-from ..preprocessing.embedding import CatEmbeddingLayer
-from ..utils.layer_utils import optional_layer
 
-
-class OptionalInputLayer(torch.nn.Module):  # noqa: F811
+class InputLayer(torch.nn.Module):
     def __init__(
         self,
         continuous_layer_inst: torch.nn.Module | None = None,
         categorical_layer_inst: torch.nn.Module | None = None,
-        *args,
-        **kwargs,
     ):
+        """
+        Combine the preprocessing branches for continuous and categorical features into one input tensor.
+        If one branch is not needed (marked by None), its inputs are ignored in the forward pass.
+        At least one branch is required.
+
+        Args:
+            continuous_layer_inst (torch.nn.Module | None, optional): Branch for continuous features, needs an ``ndim``
+                attribute with its output dimension. Defaults to None.
+            categorical_layer_inst (torch.nn.Module | None, optional): Branch for categorical features, needs an ``ndim``
+                attribute with its output dimension. Defaults to None.
+
+        Raises:
+            ValueError: If both branches are None.
+        """
         super().__init__()
+        if continuous_layer_inst is None and categorical_layer_inst is None:
+            raise ValueError("InputLayer needs at least one of continuous_layer or categorical_layer")
+
         self.continuous_layer = continuous_layer_inst
         self.categorical_layer = categorical_layer_inst
-        self.ndim = self.continuous_layer.ndim + self.categorical_layer.ndim
+        self.ndim = sum(layer.ndim for layer in self.branches)
 
-    def forward(self, *, categorical_inputs, continuous_inputs):
-        x = torch.cat(
-            [
-                self.continuous_layer(continuous_inputs),
-                self.categorical_layer(categorical_inputs),
-            ],
-            dim=1,
-        )
-        return x
+    @property
+    def branches(self) -> tuple[torch.nn.Module, ...]:
+        """
+        Returns:
+            tuple[torch.nn.Module, ...]: The branches that exist, in concatenation order (continuous, categorical).
+        """
+        return tuple(layer for layer in (self.continuous_layer, self.categorical_layer) if layer is not None)
 
-
-class InputLayer(torch.nn.Module):  # noqa: F811
-    def __init__(
+    def forward(
         self,
-        continuous_inputs: tuple[str],
-        embedding_dim: int,
-        categorical_inputs: tuple[str] | None = None,
-        category_dims: int | None = None,
-        expected_categorical_inputs: dict[str, list[int]] | None = None,
-        empty: int = 15,
-        std_layer: torch.nn.Module | None = None,
-        rotation_layer: torch.nn.Module | None = None,
-        padding_continuous_layer: torch.nn.Module | None = None,
-        padding_categorical_layer: torch.nn.Module | None = None,
-        *args,
-        **kwargs,
-    ):
+        *,
+        categorical_inputs: torch.Tensor | None,
+        continuous_inputs: torch.Tensor | None
+        ) -> torch.Tensor:
         """
-        Enables the use of categorical and continuous features in a single model.
-        A tokenizer and embedding layer are created  is created using and an embedding layer.
-        The continuous features are passed through a linear layer and then concatenated with the
-        categorical features.
+        Args:
+            categorical_inputs (torch.Tensor | None): Categorical features, ignored when no categorical branch exists.
+            continuous_inputs (torch.Tensor | None): Continuous features, ignored when no continuous branch exists.
+
+        Returns:
+            torch.Tensor: Concatenation of the branch outputs along the feature dimension.
         """
-        super().__init__()
-        self.empty = empty
-        self.ndim = len(continuous_inputs)
-        self.embedding_layer = None
-        # when categories exist
-        if categorical_inputs is not None:
-            # and categories has clear ranges
-            if expected_categorical_inputs is not None:
-                self.embedding_layer = CatEmbeddingLayer(
-                    embedding_dim=embedding_dim,
-                    categories=categorical_inputs,
-                    expected_categorical_inputs=expected_categorical_inputs,
-                    empty=empty,
-                )
-            # otherwise ?
-            elif category_dims:
-                self.embedding_layer = CatEmbeddingLayer(
-                    embedding_dim=embedding_dim,
-                    category_dims=category_dims,
-                    categories=categorical_inputs,
-                    empty=empty,
-                )
-
-        if self.embedding_layer:
-            self.ndim += self.embedding_layer.ndim
-
-        self.rotation_layer = optional_layer(rotation_layer)
-        self.std_layer = optional_layer(std_layer)
-        self.padding_continuous_layer = optional_layer(padding_continuous_layer)
-        self.padding_categorical_layer = optional_layer(padding_categorical_layer)
-
-    def categorical_preprocessing_pipeline(self, x: torch.FloatTensor) -> torch.FloatTensor:
-        x = self.padding_categorical_layer(x)
-        return self.embedding_layer(x)
-
-    def continuous_preprocessing_pipeline(self, x: torch.FloatTensor) -> torch.FloatTensor:
-        # preprocessing
-        x = self.padding_continuous_layer(x)
-        x = self.rotation_layer(x)
-        x = self.std_layer(x)
-        return x
-
-    def forward(self, categorical_inputs, continuous_inputs):
-        # HINT: When comparing this layer with other compare order of inputs
-        x = torch.cat(
-            [
-                self.continuous_preprocessing_pipeline(continuous_inputs),
-                self.categorical_preprocessing_pipeline(categorical_inputs),
-            ],
-            dim=1,
-        )
-        return x
+        outputs = []
+        if self.continuous_layer is not None:
+            outputs.append(self.continuous_layer(continuous_inputs))
+        if self.categorical_layer is not None:
+            outputs.append(self.categorical_layer(categorical_inputs))
+        return torch.cat(outputs, dim=1)
+[]

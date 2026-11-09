@@ -8,6 +8,7 @@ import numpy as np
 import torch
 
 import bbTT.data_handling.sampling.sampler as sampler
+from bbTT.checkpoint.checkpoint import CheckPoint
 from bbTT.configs.full_config import FullConfig
 
 # personal imports
@@ -30,7 +31,6 @@ from bbTT.monitoring import (
 from bbTT.monitoring.context.batch_composition_context import BatchCompositionHistory
 from bbTT.monitoring.logger.logger import get_logger
 from bbTT.monitoring.logger.tensorboard_logger import TensorboardLogger
-from bbTT.optimizer.early_stopping import CheckPoint
 from bbTT.optimizer.scheduler_handler import SchedulerHandler
 from bbTT.optimizer.utils import init_optimizer, init_scheduler
 from bbTT.train.loops import TrainingLoop, ValidationLoop
@@ -93,7 +93,6 @@ def main(**kwargs):
             "product_of_weights",
             "evaluation_mask",
         )
-
         # calculate weight statistics, NEEDS TO RUN BEFORE APPLY INDICES
         weight_aggregator = WeightAggregator(events, fold_split_coordinator.indices)
         # actually apply indices, but release on the fly to reduce peak memory
@@ -166,7 +165,10 @@ def main(**kwargs):
             "evaluation_training",
             "evaluation_validation",
         )
-        batch_composition_history_inst = BatchCompositionHistory()
+
+        # debug plot of the batch composition: the history grows with every iteration, so it is
+        # only created when requested. Without it the optional plot is skipped by the runner.
+        batch_composition_history_inst = BatchCompositionHistory() if full_config.record_config.batch_metrics else None
 
         setup_monitoring(
             training_monitor_inst,
@@ -193,7 +195,7 @@ def main(**kwargs):
                 optimizer_inst=optimizer_inst,
             )
 
-            if full_config.record_config.batch_metrics:
+            if batch_composition_history_inst is not None:
                 batch_composition_history_inst.record(
                     step=current_iteration, cursors=training_sampler.cursors
                 )
@@ -262,8 +264,10 @@ def main(**kwargs):
                         "target_map": full_config.dataset_config.target_map,
                         "global_step": current_iteration,
                         "default_n_bins": full_config.binning_config.num_bins,
-                        "batch_composition": batch_composition_history_inst,
                     }
+                    if batch_composition_history_inst is not None:
+                        shared_eval_context_meta_data["batch_composition_history"] = batch_composition_history_inst
+
 
                     ctx_batch = EvalContext(
                         mode="batch",

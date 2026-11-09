@@ -48,31 +48,39 @@ def get_weight_decay_parameter_names(model: torch.nn.Module) -> set[str]:
     return decay_names
 
 
-def normalized_weight_decay(
+def weight_decay_parameter_groups(
     model: torch.nn.Module,
-    decay_factor: float = 1e-1,
-    normalize_decay_factor: bool = True,
+    weight_decay: float,
+    lr: float,
+    decouple_weight_decay_from_lr: bool = True,
 ) -> tuple[dict, dict]:
     """
     Split the trainable parameters of ``model`` into two optimizer parameter groups:
-    one without weight decay (biases, normalization layers, embeddings, custom ``nn.Parameter``,
-    the classification layer and the direction of weight-normalized layers) and one with
-    weight decay (weights of all other linear layers, see ``get_weight_decay_parameter_names``).
+    one with weight decay, covering weights of all other linear layers and without weight day (everything else).
+    The layers that are altered by weight decay are determined by ``get_weight_decay_parameter_names``.
 
     Pytorch Optimizers only update parameters that are passed to them, so both groups together
-    must cover every trainable parameter of the model. This is asserted here.
+    must cover every trainable parameter of the model. Due to an issue before this is now asserted here.
+
+    ``weight_decay`` is the lambda of the AdamW paper (Loshchilov & Hutter, Algorithm 2).
+    The weights are shrunk by ``1 - scheduler_scale * weight_decay`` per step, i.e. the decay
+    follows the LR scheduler but is independent of the base learning rate.
+
+    The PyTorch only stores the product ``lr = base_lr * scheduler_scale`` and shrinks therefore by ``1 - lr * weight_decay``,
+    which couples lambda to the base learning rate.
+    Dividing by ``lr`` here undoes that coupling, so learning rate and weight decay can be scanned independently.
 
     Args:
         model (torch.nn.Module): The model whose parameters are grouped.
-        decay_factor (float): The weight decay factor applied to the decay group.
-        normalize_decay_factor (bool): If True, the decay factor is divided by the number of
-            parameters in the decay group. This keeps the total L2 penalty of comparable size
-            for big and small models.
+        weight_decay (float): Weight decay lambda in the sense of the AdamW paper, applied to the decay group.
+        lr (float): Base learning rate passed to the optimizer, used to undo PyTorch's coupling.
+
 
     Returns:
         tuple[dict, dict]: Parameter groups in the format expected by ``torch.optim.Optimizer``:
             - no weight decay: ``{"params": [...], "weight_decay": 0.0}``
-            - weight decay: ``{"params": [...], "weight_decay": decay_factor}``
+            - weight decay: ``{"params": [...], "weight_decay": weight_decay / lr}``
+
     """
     decay_names = get_weight_decay_parameter_names(model)
 
@@ -104,11 +112,12 @@ def normalized_weight_decay(
             f"but the model has {num_trainable} trainable parameters."
         )
 
-    # decouple lambda choice from number of parameters, by normalizing the decay factor
-    num_weight_decay_params = sum(parameter.numel() for parameter in decay_parameters)
-    if normalize_decay_factor:
-        decay_factor = decay_factor / num_weight_decay_params
-        logger_inst.debug(f"\tNormalize weight decay factor by number of parameters to: {decay_factor}")
+    # undo PyTorch's coupling of weight decay to the base learning rate (see docstring)
+    pytorch_weight_decay = weight_decay
+    if decouple_weight_decay_from_lr:
+        pytorch_weight_decay = weight_decay / lr
+    logger_inst.debug(f"\tWeight decay lambda {weight_decay} passed to PyTorch as {pytorch_weight_decay}")
+
 
     def _msg(names):
         return "\n".join(sorted(names))
@@ -119,5 +128,5 @@ def normalized_weight_decay(
     )
 
     no_decay_group = {"params": no_decay_parameters, "weight_decay": 0.0}
-    decay_group = {"params": decay_parameters, "weight_decay": decay_factor}
+    decay_group = {"params": decay_parameters, "weight_decay": pytorch_weight_decay}
     return no_decay_group, decay_group

@@ -19,7 +19,7 @@ class ResidualNet(BaseModel):
 
         # helper where all layers are defined
         # std layers are filled when statistics are known
-        self.input_layer = self.init_optional_input_layer()
+        self.input_layer = self.init_input_layer()
 
         dense_cfg = self.model_config.dense_network
         cfg = {
