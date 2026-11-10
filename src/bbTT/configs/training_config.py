@@ -27,8 +27,6 @@ class TrainingConfig:
     training_batch_size: int = int(4096 / 2) # -1 = full set
     validation_batch_size: int = 4096 * 30  # -1 = full set. -1 is discouraged, due to memory constraints # noqa
 
-    # Sampler Settings
-
     def __post_init__(self):
         choice_check(self.training_fn, TRAINING_LOOP_CHOICE)
         choice_check(self.validation_fn, VALIDATION_LOOP_CHOICE)

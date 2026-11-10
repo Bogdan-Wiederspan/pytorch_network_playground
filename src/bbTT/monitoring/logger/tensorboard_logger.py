@@ -1,6 +1,7 @@
+from __future__ import annotations
+
 import os
 import pathlib
-
 
 class TensorboardLogger:
     def __init__(self, name=None, path=None):
@@ -36,6 +37,21 @@ class TensorboardLogger:
 
     def log_figure(self, tag, figure, step):
         self.writer.add_figure(tag, figure, step)
+
+    def log_text(self, tag: str, text: str, step: int) -> None:
+        """
+        Write a markdown text entry to the TensorBoard text dashboard.
+
+        TensorBoard keeps only a small reservoir sample of text entries per tag, so callers that
+        log a growing history should re-log the complete text on every call instead of one entry per item.
+
+        Args:
+            tag (str): TensorBoard tag of the entry.
+            text (str): Markdown content.
+            step (int): Global step the entry belongs to.
+        """
+        self.writer.add_text(tag, text, global_step=step)
+
 
     def logger_path(self):
         from time import localtime, strftime
