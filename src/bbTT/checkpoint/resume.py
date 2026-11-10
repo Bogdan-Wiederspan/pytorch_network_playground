@@ -103,12 +103,36 @@ def _resolve_parent(root: Any, segments: Sequence[str]) -> Any:
     return obj
 
 
+def _rerun_post_init(config: Any) -> None:
+    """
+    Run ``__post_init__`` again on *config* and every dataclass below it.
+
+    A config rebuilt from a checkpoint dict skipped ``__post_init__``, so fields derived there (e.g.
+    DataConfig.datasets from dataset_pattern and eras) still hold the checkpoint's values after an override.
+    Re-running makes the merged config equal to a freshly constructed one with the same fields.
+    This should only matter, when an overwrite contains 'wrong' values.
+
+    Args:
+        config (Any): Dataclass instance.
+    """
+    for field in dataclasses.fields(config):
+        value = getattr(config, field.name)
+        if dataclasses.is_dataclass(value):
+            _rerun_post_init(value)
+    post_init = getattr(config, "__post_init__", None)
+    if post_init is not None:
+        post_init()
+
+
+
 def merge_config(base: FullConfig, current: FullConfig, overrides: Iterable[str]) -> FullConfig:
     """
     Take *base* and replace the attributes named in *overrides* by their values in *current*.
 
     Both a whole sub config ("record_config") and a single field ("record_config.validation_interval")
-    are valid paths. The merged config is re-validated with the compatibility rules of FullConfig.
+    are valid paths.
+    Afterwards every ``__post_init__`` in the config tree runs again, so derived fields
+    follow the overrides and the compatibility rules of FullConfig are checked.
 
     Args:
         base (FullConfig): Config stored in the checkpoint, the source of truth for the model.
@@ -134,8 +158,8 @@ def merge_config(base: FullConfig, current: FullConfig, overrides: Iterable[str]
         setattr(target_parent, segments[-1], value)
         logger_inst.i_info(f"Resume override: {path} = {value!r}")
 
-    # from_dict skips __post_init__, and overrides can break a rule, so validate explicitly
-    merged.__post_init__()
+    # from_dict skipped __post_init__: recompute derived fields and re-check the compatibility rules
+    merged._rerun_post_init__(merged)
     return merged
 
 

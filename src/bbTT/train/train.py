@@ -172,7 +172,7 @@ def main(
         tensorboard_name (str): Sub directory of the tensorboard logs for this run.
         rebuild_cache (bool): Rebuild the event cache instead of reading it.
         save_cache (bool): Write a rebuilt event cache to disk.
-        resuem (str | None): Checkpoint to continue from, see checkpoint.resume.load_resume_state.
+        resume (str | None): Checkpoint to continue from, see checkpoint.resume.load_resume_state.
         overrides (Sequence[str]): Dotted config paths to take from the code config on a resume.
     """
     full_config = FullConfig()
