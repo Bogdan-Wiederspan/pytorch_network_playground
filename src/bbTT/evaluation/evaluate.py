@@ -180,9 +180,8 @@ if __name__ == "__main__":
     # evaluate data on each part separate and then flush scores
     for evaluate_on in args.evaluate_on:
         stem = args.path.stem
-        suffix = args.path.suffix
 
-        path = args.path.with_stem(f"{used_data_hash}_{model_name}_{evaluate_on}").with_suffix(suffix)
+        path = args.save_dst.with_stem(f"{used_data_hash}_{model_name}_{evaluate_on}").with_suffix(".pt")
 
         evaluated_data = evaluate_model_on_fold(
             model_inst=model_inst,
