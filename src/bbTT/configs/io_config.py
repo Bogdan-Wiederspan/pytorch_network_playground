@@ -112,7 +112,6 @@ class DataConfig:
     flush_threshold: int = 1_000_000  # number of rows before a flush is initiated when creating the cache, reduce when memory issues are a problem
     statistics_chunk_rows: int = 1_000_000  # rows per chunk when computing feature mean/std; bounds the transient memory, does not change the result
 
-    datasets: Optional[list[str]] = field(init=False)
     cuts: Optional[tuple[str]] = (
         # "({tau2_isolated} == 1)", # exist only for <prod28
         # "(({channel_id} == 1) | ({channel_id} == 2) | ({channel_id} == 3) )", # < prod 28
@@ -158,9 +157,32 @@ class DataConfig:
         "bjet2_hhbtag": -1.0
     }) # noqa per-feature marker of a missing value, e.g. {"bjet1_tag_b": -1.0}; means that the missing value is marked by -1
     dummy_default: float = EMPTY_FLOAT  # marker of a missing value for every continuous feature not listed in dummy_values
-    data_prefix: Optional[str] = field(init=False)  # prefix for features, e.g. "res_dnn_pnet" or "reg_dnn_moe"
 
     # --- Helpers ---
+
+    @property
+    def data_prefix(self) -> str:
+        """
+        Prefix of the feature columns for the current production, e.g. "res_dnn_pnet" or "reg_dnn_moe".
+        Derived on access from INPUT_DATA_DIR, so it is never stored in a checkpoint.
+
+        Returns:
+            str: Column prefix.
+        """
+        return self._prefix_map()
+
+    @property
+    def datasets(self) -> tuple[str, ...]:
+        """
+        All dataset file paths matching ``dataset_pattern`` for the configured ``eras``.
+        Derived on access through the memoized ``cached_find_datasets``, so it always follows the current
+        ``eras`` (e.g. after a resume override) and is never stored in a checkpoint.
+
+        Returns:
+            tuple[str, ...]: Dataset file paths.
+        """
+        return cached_find_datasets(tuple(self.dataset_pattern), tuple(self.eras), file_type="root")
+
 
     @property
     def continuous_dummy_values(self) -> tuple[float, ...]:
@@ -357,7 +379,3 @@ class DataConfig:
         unknown = set(self.dummy_values) - set(self.continuous_features)
         if unknown:
             raise ValueError(f"dummy_values refer to unknown continuous features: {sorted(unknown)}")
-
-        # a dictionary of all files corresponding to a certain dataset
-        self.data_prefix = self._prefix_map()
-        self.datasets = cached_find_datasets(self.dataset_pattern, self.eras, file_type="root")

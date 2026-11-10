@@ -130,9 +130,8 @@ def merge_config(base: FullConfig, current: FullConfig, overrides: Iterable[str]
     Take *base* and replace the attributes named in *overrides* by their values in *current*.
 
     Both a whole sub config ("record_config") and a single field ("record_config.validation_interval")
-    are valid paths.
-    Afterwards every ``__post_init__`` in the config tree runs again, so derived fields
-    follow the overrides and the compatibility rules of FullConfig are checked.
+    are valid paths. Derived config values are properties, so they follow the overrides by themselves; only the
+    compatibility rules of FullConfig are checked again.
 
     Args:
         base (FullConfig): Config stored in the checkpoint, the source of truth for the model.
