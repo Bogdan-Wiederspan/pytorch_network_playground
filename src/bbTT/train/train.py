@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Sequence
 
 import numpy as np
 import torch
 
+from bbTT.checkpoint.resume import format_overrides, load_resume_state, restore_training_state
 from bbTT.configs.full_config import FullConfig
 from bbTT.data_handling.utils import hash_dictionary
 from bbTT.monitoring import (
@@ -152,30 +154,61 @@ def run_training_loop(
         training_components.scheduler_handler_inst.step(training_components.model_inst, training_components.optimizer_inst, metric=eval_v_loss)
 
 
-def main(tensorboard_name: str, rebuild_cache: bool, save_cache: bool) -> None:
+def main(
+    tensorboard_name: str,
+    rebuild_cache: bool,
+    save_cache: bool,
+    resume: str | None = None,
+    overrides: Sequence[str] = (),
+    ) -> None:
     """
     Train the configured folds one after another, sharing logger, tensorboard writer and runner.
+
+    With *resume* the config comes from the checkpoint (plus *overrides* from the code config), only the
+    checkpoint's fold is trained, and checkpoints and tensorboard run get a "-resume-<tag>" suffix so the
+    original run stays untouched.
 
     Args:
         tensorboard_name (str): Sub directory of the tensorboard logs for this run.
         rebuild_cache (bool): Rebuild the event cache instead of reading it.
         save_cache (bool): Write a rebuilt event cache to disk.
+        resuem (str | None): Checkpoint to continue from, see checkpoint.resume.load_resume_state.
+        overrides (Sequence[str]): Dotted config paths to take from the code config on a resume.
     """
     full_config = FullConfig()
+
+    # handle checkpoint resume loading
+    # full config will be partly overwritten (merged)
+    resume_state = None
+    if resume is not None:
+        resume_state = load_resume_state(resume, current_config=full_config, overrides=overrides)
+        full_config = resume_state.full_config
+    elif overrides:
+        raise ValueError("--override only has an effect together with --resume")
+
     torch.manual_seed(full_config.training_config.seed)
     np.random.seed(full_config.training_config.seed)
 
     logger_inst.info(f"DEVICE: {DEVICE}")
-    tensorboard_writer = TensorboardLogger(
-        name=hash_dictionary(dataclasses.asdict(full_config.training_config)),
-        path=tensorboard_name,
-    )
+
+    # create tensorboard instance to monitor plots for the training
+    # when doing a continue a NEW instance of tensorboard is created, but the name of the previous training is used as suffix
+    run_name = hash_dictionary(dataclasses.asdict(full_config.training_config))
+    if resume_state is not None:
+        run_name = resume_state.run_name(run_name)
+        tensorboard_name = resume_state.run_name(tensorboard_name) if tensorboard_name is not None else None
+    tensorboard_writer = TensorboardLogger(name=run_name, path=tensorboard_name)
+
+
     evaluation_runner_inst = EvaluationRunner(tensorboard_writer)
     load_registers()
     # TODO add LOGGER FILEPATH in same directory of tensorboard
     logger_inst.i_info(f"Tensorboard logs: {tensorboard_writer.path}")
 
-    for current_fold in full_config.training_config.train_folds:
+    # a resume trains only the fold of its checkpoint
+    # mixing folds would mix their data splits (so a complete mess)
+    folds = full_config.training_config.train_folds if resume_state is None else (resume_state.fold,)
+    for current_fold in folds:
         logger_inst.info(f"Trainings fold: {current_fold}/{full_config.training_config.k_fold - 1}")
 
         # --- data ---
@@ -211,6 +244,11 @@ def main(tensorboard_name: str, rebuild_cache: bool, save_cache: bool) -> None:
             batch_composition_history_inst=batch_composition_history_inst,
         )
 
+        # --- resume: load the checkpoint into the fresh components ---
+        start_iteration = 0
+        if resume_state is not None:
+            start_iteration = restore_training_state(components, resume_state)
+
         # --- training ---
         run_training_loop(
             full_config=full_config,
@@ -218,6 +256,7 @@ def main(tensorboard_name: str, rebuild_cache: bool, save_cache: bool) -> None:
             fold_data=fold_data,
             reporter_inst=reporter_inst,
             tensorboard_writer=tensorboard_writer,
+            start_iteration=start_iteration,
         )
 
 
@@ -227,12 +266,25 @@ if __name__ == "__main__":
     parser = ParserBuilder(
         "tensorboard",
         "cache",
+        "resume",
         description="Train the HH -> bbtautau DNN with the configuration in bbTT/configs.",
-        epilog="example:\n  python src/bbTT/train/train.py -tn my_first_run -rc",
-    )
+        epilog=(
+            "examples:\n"
+            "  python src/bbTT/train/train.py -tn my_first_run -rc\n"
+            "  python src/bbTT/train/train.py -tn my_first_run -r my_model_fold0 -o training_config.max_train_iteration"
+            "\nto see all overwrite add --list-overrides"
+            ),
+        )
+
+    # print every possible overwrite option
+    if parser.args.list_overrides:
+        print(format_overrides(FullConfig()))
+        raise SystemExit(0)
 
     main(
         rebuild_cache=parser.args.rebuild_cache,
         save_cache=parser.args.save_cache,
         tensorboard_name=parser.args.tensorboard_name,
+        resume=parser.args.resume,
+        overrides=parser.args.overrides,
     )
