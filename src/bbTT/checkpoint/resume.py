@@ -159,7 +159,7 @@ def merge_config(base: FullConfig, current: FullConfig, overrides: Iterable[str]
         logger_inst.i_info(f"Resume override: {path} = {value!r}")
 
     # from_dict skipped __post_init__: recompute derived fields and re-check the compatibility rules
-    merged._rerun_post_init__(merged)
+    _rerun_post_init(merged)
     return merged
 
 

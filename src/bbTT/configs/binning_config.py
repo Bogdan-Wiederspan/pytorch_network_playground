@@ -70,6 +70,20 @@ class BinningConfig:
     )
 
     @property
+    def active_config(self) -> dict[str, Any]:
+        """
+        Keyword arguments for the chosen kernel: its own section of ``kernel_config`` updated with "General".
+        Derived on access, so ``kernel_config`` stays as written and the config survives a save/load round trip.
+
+        Returns:
+            dict[str, Any]: Merged kernel settings, "General" wins over the kernel section.
+        """
+        if "General" not in self.kernel_config:
+            # legacy: checkpoints written before this property existed hold the already merged dict
+            return dict(self.kernel_config)
+        return {**self.kernel_config[self.kernel_cls], **self.kernel_config["General"]}
+
+    @property
     def binning_fn(self):
         """
         Returns:
@@ -89,8 +103,5 @@ class BinningConfig:
     def __post_init__(self):
         choice_check(self.kernel_cls, KERNEL_CHOICE)
         # extract configs and combine kernel configs and populate corresponding fields
-        # kernel cfg
-        kernel_general_config = self.kernel_config["General"].copy()
-        kernel_choice_config = self.kernel_config[self.kernel_cls].copy()
-        kernel_choice_config.update(kernel_general_config)
-        self.kernel_config = kernel_choice_config
+        if "General" in self.kernel_config and self.kernel_cls not in self.kernel_config:
+            raise ValueError(f"kernel_config has no section for kernel_cls='{self.kernel_cls}'")

@@ -68,13 +68,15 @@ class SamplerConfig:
 
     def __post_init__(self):
         choice_check(self.sampler_strategy_choice, SAMPLING_STRATEGY)
-        # calculate subprocess rates
-        self.sub_process_ratios = self.multiply_sub_process_rates(self.use_sub_process_ratios, self.sub_process_ratios)
 
         # check for sampler
         necessary_field = ("continuous", "categorical", "targets")
         if not set(necessary_field).issubset(set(self.sample_attributes)):
             raise ValueError(f"Sample Attributes need to contain: {necessary_field}")
+
+        # validate the group structure once; the map itself is derived on access
+        if not self._is_flat(self.sub_process_ratios):
+            self.multiply_sub_process_rates(self.use_sub_process_ratios, self.sub_process_ratios)
 
 
     @staticmethod
@@ -111,3 +113,28 @@ class SamplerConfig:
                 else:
                     final_rate[key] *= rate
         return dict(final_rate)
+
+    @property
+    def sub_process_ratio_map(self) -> dict[int, float]:
+        """
+        Flat ratio per sub process, the product over the groups named in ``use_sub_process_ratios``.
+        Derived on access, so ``sub_process_ratios`` stays as written and the config survives a save/load round trip.
+
+        Returns:
+            dict[int, float]: Sub process id -> ratio; ids not mentioned get no entry (the sampler treats that as 1).
+        """
+        if self._is_flat(self.sub_process_ratios):
+            # legacy: checkpoints written before this property existed hold the already multiplied map
+            return dict(self.sub_process_ratios)
+        return self.multiply_sub_process_rates(self.use_sub_process_ratios, self.sub_process_ratios)
+
+    @staticmethod
+    def _is_flat(ratios: dict) -> bool:
+        """
+        Args:
+            ratios (dict): Either the nested group form or the flat sub process -> ratio form.
+
+        Returns:
+            bool: True for the flat form (no dict values); an empty dict counts as nested.
+        """
+        return bool(ratios) and not any(isinstance(v, dict) for v in ratios.values())
