@@ -214,7 +214,7 @@ def main(tensorboard_name: str, rebuild_cache: bool, save_cache: bool) -> None:
         # --- training ---
         run_training_loop(
             full_config=full_config,
-            components=components,
+            training_components=components,
             fold_data=fold_data,
             reporter_inst=reporter_inst,
             tensorboard_writer=tensorboard_writer,
