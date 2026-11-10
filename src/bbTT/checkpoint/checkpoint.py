@@ -54,6 +54,23 @@ class CheckPoint:
 
         self.no_improvement_count = 0
 
+    def state_dict(self) -> dict[str, Any]:
+        """
+        Returns:
+            dict[str, Any]: The criteria state that survives a resume: best loss and patience counter.
+                The unconfirmed candidate is not part of it, a resume starts without one.
+        """
+        return {"best_loss": self.best_loss, "no_improvement_count": self.no_improvement_count}
+
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        """
+        Args:
+            state (dict[str, Any]): As returned by ``state_dict``.
+        """
+        self.best_loss = state["best_loss"]
+        self.no_improvement_count = state["no_improvement_count"]
+        self.candidate = None
+
     @property
     def save_path(self) -> str:
         """
@@ -78,7 +95,7 @@ class CheckPoint:
         loss: float,
         model: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
-        scheduler: torch.optim.lr_scheduler.LRScheduler,
+        scheduler: torch.optim.lr_scheduler.LRScheduler | None,
         current_iteration: int,
         full_config: Any,
     ) -> bool:
@@ -123,7 +140,7 @@ class CheckPoint:
             return False
 
 
-        snapshot = self._snapshot(model, optimizer, scheduler, current_iteration, full_config)
+        snapshot = self._snapshot(model, optimizer, scheduler, current_iteration, full_config, loss)
 
         if self.confirm and self.candidate is None:
             # first measurement below the best: hold as candidate, decide with the next validation
@@ -156,6 +173,8 @@ class CheckPoint:
         scheduler: torch.optim.lr_scheduler.LRScheduler,
         current_iteration: int,
         full_config: Any,
+        loss: float,
+
     ) -> dict[str, Any]:
         """
         Copy the training state. The state dicts are deep-copied, since a held snapshot must not alias the live parameters.
@@ -172,9 +191,11 @@ class CheckPoint:
         """
         return {
             "iteration": current_iteration,
+            "fold": self.fold,
+            "loss": loss,
             "model_state_dict": copy.deepcopy(model.state_dict()),
             "optimizer_state_dict": copy.deepcopy(optimizer.state_dict()),
-            "scheduler_state_dict": copy.deepcopy(scheduler.state_dict()),
+            "scheduler_state_dict": copy.deepcopy(scheduler.state_dict()) if scheduler is not None else None,
             "full_config": asdict(full_config),
         }
 
@@ -182,9 +203,12 @@ class CheckPoint:
     def _write(self, checkpoint: dict[str, Any]) -> None:
         """
         Keep *checkpoint* as ``last_checkpoint`` and write it to ``save_path``.
+        The criteria state is added here, after ``best_loss`` was updated, so a resume can continue with the same best loss.
 
         Args:
             checkpoint (dict[str, Any]): Checkpoint dictionary as returned by ``_snapshot``.
         """
+        # include self state_dict
+        checkpoint["checkpoint_state_dict"] = self.state_dict()
         self.last_checkpoint = checkpoint
         torch.save(self.last_checkpoint, self.save_path)
