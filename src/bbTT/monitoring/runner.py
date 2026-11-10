@@ -1,3 +1,5 @@
+from collections.abc import Iterable
+
 from bbTT.monitoring.logger.logger import get_logger
 from bbTT.monitoring.register import BUILDER_REGISTRY, PLOT_REGISTRY
 
@@ -110,7 +112,7 @@ class EvaluationRunner:
             set()
         )  # plots skipped due to being optional or not registered, second str is the mode
 
-    def run_plots(self, ctx, plots: list[str]):
+    def run_plots(self, ctx, plots: Iterable[str]):
         for plot_name in plots:
             plot_is_not_skipped = (plot_name, ctx.mode) not in self._skipped_plots
             if plot_name not in PLOT_REGISTRY:
