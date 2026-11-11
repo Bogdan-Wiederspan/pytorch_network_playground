@@ -16,14 +16,24 @@ if TYPE_CHECKING:
 
 logger_inst = get_logger(__name__)
 
-# Which sub-config cant be overwritten
-# reasoning: if you change a models definition you can't load its model parameter
-PROTECTED_OVERRIDES: tuple[str, ...] = ("model_building_config",)
+# Which config attributes are protected from overrides
+# Expected Style: {"WHAT IS FORBIDDEN": "WHY IT IS FORBIDDEN"}
+# whole config is possible, e.g. "model_building_config"
+# but also arguments in dot notation, e.g. dataset_config.eras
+PROTECTED_OVERRIDES: dict[str, str] = {
+    "model_building_config": "defines the architecture the checkpoint was written for",
 
+    # TODO train/validation split is position based over the merged eras, so another era set moves events
+    # between training and validation; blocked until the cache is stored per (era, fold)
+    "dataset_config.eras": "changes the train/validation split of the checkpoint",
+}
+
+# Special Case: Incompatibility due to loss changes.
 # overrides below this prefix change what the validation loss means, so the best loss of the checkpoint
 # is no longer comparable and the checkpoint criteria start fresh
 LOSS_OVERRIDE_PREFIX = "loss_config"
 
+# tag that is included when doing a resume
 RESUME_TAG_SEPARATOR = "-resume-"
 
 
@@ -124,6 +134,23 @@ def _rerun_post_init(config: Any) -> None:
         post_init()
 
 
+def _protected_by(path: str) -> str | None:
+    """
+    Handling PROTECTED_OVERRIDES modules.
+
+    Args:
+        path (str): Dotted override path.
+
+    Returns:
+        str | None: The protected path that covers *path* (itself or a parent of it), None if unprotected.
+    """
+    segments = _split_path(path)
+    for protected in PROTECTED_OVERRIDES:
+        protected_segments = _split_path(protected)
+        if segments[: len(protected_segments)] == protected_segments:
+            return protected
+    return None
+
 
 def merge_config(base: FullConfig, current: FullConfig, overrides: Iterable[str]) -> FullConfig:
     """
@@ -142,20 +169,27 @@ def merge_config(base: FullConfig, current: FullConfig, overrides: Iterable[str]
         FullConfig: Deep copy of *base* with the overrides applied.
 
     Raises:
-        ValueError: If a path starts with a protected sub config.
+        ValueError: If a path is protected or an override would change a protected value.
     """
     merged = copy.deepcopy(base)
     for path in overrides:
         segments = _split_path(path)
-        if segments[0] in PROTECTED_OVERRIDES:
-            raise ValueError(
-                f"override '{path}' is not allowed: {segments[0]} defines the architecture the checkpoint was written for"
-            )
+
+        protected = _protected_by(path)
+        if protected is not None:
+            raise ValueError(f"override '{path}' is not allowed: {protected} {PROTECTED_OVERRIDES[protected]}")
         source_parent = _resolve_parent(current, segments)
         target_parent = _resolve_parent(merged, segments)
         value = copy.deepcopy(getattr(source_parent, segments[-1]))
         setattr(target_parent, segments[-1], value)
         logger_inst.i_info(f"Resume override: {path} = {value!r}")
+
+    # an override of a parent can still change a protected value underneath it
+    for protected, reason in PROTECTED_OVERRIDES.items():
+        segments = _split_path(protected)
+        if getattr(_resolve_parent(merged, segments), segments[-1]) != getattr(_resolve_parent(base, segments), segments[-1]):
+            raise ValueError(f"overrides change '{protected}', which is not allowed: {reason}")
+
 
     # from_dict skipped __post_init__: recompute derived fields and re-check the compatibility rules
     _rerun_post_init(merged)
@@ -230,11 +264,12 @@ def format_overrides(config: Any) -> str:
     for path in override_paths(config):
         segments = path.split(".")
         value = getattr(_resolve_parent(config, segments), segments[-1])
+        note = "  [protected, not overridable]" if _protected_by(path) is not None else ""
+
         if dataclasses.is_dataclass(value):
-            note = "  [protected, not overridable]" if segments[0] in PROTECTED_OVERRIDES else ""
             lines.append(f"\n{path}{note}")
         else:
-            lines.append(f"  {path} = {value!r}")
+            lines.append(f"  {path} = {value!r}{note}")
     return "\n".join(lines)
 
 
