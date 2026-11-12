@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Sequence
+from typing import Any, Sequence
 
 import torch
 
@@ -96,6 +96,31 @@ class LBN(torch.nn.Module):
         }
         params_str = ", ".join(f"{k}={v}" for k, v in params.items())
         return f"{self.__class__.__name__}({params_str}, {hex(id(self))})"
+
+    def create_evaluation_state(self) -> dict[str, Any]:
+        """
+        Detached cpu snapshot of the combination weights for monitoring.
+
+        Both weight matrices have shape (N, M): row = input particle, column = combination. The negative fraction
+        is the share of weights that would be clamped with clip_weights, i.e. combinations that rely on the
+        e >= p safeguard instead of being physical; with clip_weights it is the share of dead (zero gradient) weights.
+
+        Returns:
+            dict[str, Any]: Per matrix (prefix "particle_w" / "restframe_w"): "<prefix>" (torch.Tensor, flattened
+                entries), "<prefix>_combination_norms" (torch.Tensor of shape (M,), norm per combination column),
+                "<prefix>_norm" (float) and "<prefix>_negative_fraction" (float).
+        """
+        state: dict[str, Any] = {}
+        for prefix, weight in (("particle_w", self.particle_w), ("restframe_w", self.restframe_w)):
+            weight = weight.detach()
+            _prefix = f"lbn/{prefix}"
+            state[_prefix] = weight.flatten().cpu()
+            state[f"{_prefix}_combination_norms"] = torch.linalg.vector_norm(weight, dim=0).cpu()
+            state[f"{_prefix}_norm"] = torch.linalg.vector_norm(weight).item()
+            state[f"{_prefix}_negative_fraction"] = (weight < 0).float().mean().item() # how many weights are negative (positive init)
+        return state
+
+
 
     def update_boosted_vectors(self, boosted_vecs: torch.Tensor) -> torch.Tensor:
         return boosted_vecs
