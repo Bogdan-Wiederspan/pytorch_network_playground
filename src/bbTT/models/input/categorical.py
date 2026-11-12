@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import torch
 
 from ..utils.layer_utils import optional_layer
@@ -29,6 +31,16 @@ class CategoricalInputLayer(torch.nn.Module):
         self.embedding_layer = embedding_layer
         self.ndim = self.embedding_layer.ndim
         self.padding_categorical_layer = optional_layer(padding_categorical_layer)
+
+    def create_evaluation_state(self) -> dict[str, Any]:
+        """
+        Snapshot of the embedding layer, the padding layer holds no learnable state.
+
+        Returns:
+            dict[str, Any]: See CatEmbeddingLayer.create_evaluation_state.
+        """
+        return self.embedding_layer.create_evaluation_state()
+
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
