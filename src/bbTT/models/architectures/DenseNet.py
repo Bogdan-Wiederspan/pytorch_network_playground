@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-from typing import Any
-
 import torch
 
 from bbTT.models.architectures.base_model import BaseModel
 from bbTT.models.blocks import DenseBlock, DenseNetBlock
 from bbTT.models.register import register_model
-from bbTT.models.utils import linear_state
 
 
 @register_model("dense")
@@ -57,18 +54,6 @@ class DenseNet(BaseModel):
 
         # can only be sigmoid or softmax, uses only dim as configuration
         self.last_activation_fn = self.init_last_activation_layer()
-
-    def evaluation_state(self) -> dict[str, Any]:
-        """
-        Monitored blocks of the parent plus the output layer, which is a plain torch layer owned by the model
-        and therefore has no state method of its own.
-
-        Returns:
-            dict[str, Any]: {"monitored_blocks": {..., "last_linear": linear norms}}.
-        """
-        state = super().evaluation_state()
-        state["monitored_blocks"]["last_linear"] = linear_state(self.last_linear)
-        return state
 
 
     def forward(self, categorical_inputs, continuous_inputs):
