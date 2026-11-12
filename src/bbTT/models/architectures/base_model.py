@@ -12,12 +12,17 @@ from bbTT.models.preprocessing import (
     RotatePhiLayer,
     StandardizeLayer,
 )
+from bbTT.models.utils import batch_norm_state, embedding_state, linear_state
 from bbTT.monitoring.monitoring_hooks.hookable_model import HookableModelMixin
 
 
 class BaseModel(HookableModelMixin, torch.nn.Module):
     is_binned = False
     LEARNING_MODES = {}
+
+    # attribute names of blocks that expose a monitoring snapshot via create_evaluation_state.
+    # Subclasses replace or extend this tuple: for this write something like: ``monitored_blocks = Parent.monitored_blocks + ("block",)``
+    monitored_blocks: tuple[str, ...] = ()
 
     def __init__(self, full_config, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -117,14 +122,50 @@ class BaseModel(HookableModelMixin, torch.nn.Module):
         for _, layer in self.named_children():
             layer.requires_grad_(True)
 
-    def evaluation_state(self) -> dict[str:Any]:
+
+    def evaluation_state(self) -> dict[str, Any]:
         """
-        Function handle that is supposed to return snapshots from layer the user defines.
+        Detached cpu snapshots of the layers the model exposes for monitoring; no blind search happens.
+        Each layer defines its own snapshot via create_evaluation_state (this is the place to look into when define your own monitoring)
+        Subclasses extend the returned dict with their own keys after calling super().
+        Bare BatchNorm and LinearLayer are wrapped (since they have no evaluate_state, see '_get_layer_state').
+
+        Everything else returns an lookup error.
 
         Returns:
-            dict: _description_
+            dict[str, Any]: {"monitored_blocks": {attribute name: block snapshot}} for the blocks listed in
+                `monitored_blocks`, empty when none are listed.
         """
-        return {}
+        return {
+            "monitored_blocks": {name: self._get_layer_state(getattr(self, name)) for name in self.monitored_blocks},
+        }
+
+    @staticmethod
+    def _get_layer_state(layer: torch.nn.Module) -> dict[str, Any]:
+        """
+        Translate one monitored layer into its snapshot.
+        Custom blocks define it themselves, plain torch layers have no state method and use the helpers from layer_utils.
+
+        Args:
+            layer (torch.nn.Module): Layer listed in `monitored_blocks`.
+
+        Returns:
+            dict[str, Any]: Snapshot of the layer.
+
+        Raises:
+            TypeError: Layer neither defines create_evaluation_state nor is a supported torch layer.
+        """
+        # Order: Custom, direct Torch
+        if hasattr(layer, "create_evaluation_state"):
+            return layer.create_evaluation_state()
+        if isinstance(layer, torch.nn.Linear):
+            return linear_state(layer)
+        if isinstance(layer, torch.nn.modules.batchnorm._BatchNorm):
+            return batch_norm_state(layer)
+        if isinstance(layer, torch.nn.Embedding):
+            return embedding_state(layer)
+        raise TypeError(f"no evaluation state defined for monitored layer of type {type(layer).__name__}")
+
 
     # ----------------------------- initialization of layers ---------------------------------
     def init_cat_embedding_layer(self) -> torch.nn.Module:

@@ -10,6 +10,8 @@ from bbTT.models.register import register_model
 
 @register_model("lbn_dense")
 class LBNDenseNet(DenseNet):
+    monitored_blocks: tuple[str, ...] = DenseNet.monitored_blocks + ("lbn",)
+
     def __init__(self, full_config, *args, **kwargs):
         # has same init as DenseNet
         super().__init__(full_config, *args, **kwargs)

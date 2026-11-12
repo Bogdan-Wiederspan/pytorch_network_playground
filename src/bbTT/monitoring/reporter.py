@@ -192,3 +192,35 @@ class EvaluationReporter:
             text=self.checkpoint_history_inst.to_markdown(),
             step=step,
         )
+
+    def report_model_state(self, model_evaluation_state: dict[str, Any], global_step: int) -> None:
+        """
+        Log the monitored block snapshots of the model: one chart per scalar quantity with a line per block,
+        one histogram per block and tensor quantity, and one chart per block and grouped quantity (a dict of
+        named floats, e.g. cosine similarities of token pairs) with a line per name.
+
+        This is pure model state and independent of any data, so it bypasses the EvalContext and the
+        scalar registry. Blocks define their own snapshot, see DenseBlock.create_evaluation_state.
+
+        Args:
+            model_evaluation_state (dict[str, Any]): Snapshot from Model.evaluation_state(), the key
+                "monitored_blocks" maps block name -> {quantity: float | torch.Tensor | dict[str, float]}.
+
+            global_step (int): Current training iteration, used as tensorboard step.
+        """
+        block_states: dict[str, dict[str, Any]] = model_evaluation_state.get("monitored_blocks", {})
+        scalars: dict[str, dict[str, float]] = {}
+        for block_name, state in block_states.items():
+            for quantity, value in state.items():
+                if isinstance(value, torch.Tensor) and value.ndim > 0:
+                    self.tensorboard_writer.log_histogram(
+                        tag=f"MonitoredBlocks/{block_name}/{quantity}", values=value, step=global_step
+                    )
+                elif isinstance(value, dict):
+                    self.tensorboard_writer.log_scalar(
+                        values=value, step=global_step, name=f"MonitoredBlocks/{block_name}/{quantity}"
+                    )
+                else:
+                    scalars.setdefault(quantity, {})[block_name] = float(value)
+        for quantity, values in scalars.items():
+            self.tensorboard_writer.log_scalar(values=values, step=global_step, name=f"MonitoredBlocks/{quantity}")

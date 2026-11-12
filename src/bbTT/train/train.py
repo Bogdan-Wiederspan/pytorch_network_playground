@@ -272,6 +272,7 @@ def main(**kwargs):
                 # --- Monitoring ---
                 if full_config.record_config.log_metrics:
                     model_evaluation_state = model_inst.evaluation_state()
+                    reporter_inst.report_model_state(model_evaluation_state=model_evaluation_state, global_step=current_iteration) # noqa
 
                     reporter_inst.report(mode="batch", result=batch_result, global_step=current_iteration, model_evaluation_state=model_evaluation_state) # noqa
                     reporter_inst.report(mode="batch", result=batch_result, global_step=current_iteration, model_evaluation_state=model_evaluation_state) # noqa
