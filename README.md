@@ -63,21 +63,66 @@ The examples below show the minimal call for each script, `--help` lists all opt
 Run them from `DNN_ROOT`.
 
 ### Train a model
-Configure the models Hyperparameters in `src/bbTT/configs/`.
-Checkpoints are written to `${MODELS_DIR}/<name>_fold<k>.pt`, logs to `TENSORBOARD_DIR`.
+Configure the model hyperparameters in `src/bbTT/configs/`.
+Checkpoints are written to `${MODELS_DIR}/<save_model_name>_fold<k>.pt`, logs to `TENSORBOARD_DIR`.
 ```bash
 cd ${DNN_ROOT}
-python src/bbTT/train/train.py -tn my_first_run -s -rc
+python src/bbTT/train/train.py -tn my_first_run -rc
 ```
+`-tn` names the tensorboard run, `-rc` rebuilds the preprocessed data cache (needed after changing the input
+data or the data config), `-ns` skips writing the cache.
+
+A checkpoint holds only state dicts (model, optimizer, scheduler) and the full config, so it is tied to the code
+version it was written with. The `.pt2` export below is the code-independent artifact.
+
+The checkpoint behaviour is set in `RecordConfig` (`src/bbTT/configs/record_config.py`):
+
+| Option | Meaning |
+| --- | --- |
+| `validation_interval` | Iterations between two validation passes; checkpoints are judged once per validation. |
+| `checkpoint_confirm` | A new best validation loss is held as candidate and only written if the next validation also beats the previous best, so a single lucky spike does not become the checkpoint. |
+| `checkpoint_delta` | Minimum improvement of the validation loss to count as a new best. |
+| `checkpoint_patience` | Number of validations to skip after a written checkpoint before looking for a new best again. |
+| `training_evaluation_interval` | The full pass over the training data is pure monitoring and costs ~4x a validation pass, so it only runs every n-th validation. |
+
+The scheduler (`ReduceLROnPlateau`) is fed the confirmed best loss of the checkpoint, so checkpoint and scheduler
+share one definition of "improvement".
+
+### Resume a training
+A training can be continued from its checkpoint. Only the fold of the checkpoint is trained and the checkpoint
+config is used, not the one in the code:
+```bash
+python src/bbTT/train/train.py -tn my_first_run -r my_first_run_fold0
+```
+`-r` takes a name looked up in `MODELS_DIR` or a full path.
+
+The resumed run writes under its own name, `<name>-resume-<hash>`, for both checkpoint and tensorboard; the
+original checkpoint is never overwritten and stays an anchor for further experiments.
+
+To take single values from the current code config instead of the checkpoint, name them with `-o` as dotted
+paths. A whole sub config works as well:
+```bash
+# train longer than the checkpoint config says
+python src/bbTT/train/train.py -tn my_first_run -r my_first_run_fold0 -o training_config.max_train_iteration
+# replace the whole monitoring settings
+python src/bbTT/train/train.py -tn my_first_run -r my_first_run_fold0 -o record_config
+```
+`--list-overrides` prints every path `-o` accepts together with its current code value and exits.
+Some paths are protected and cannot be overridden: `model_building_config` defines the architecture the
+checkpoint was written for, `dataset_config.eras` would change the train/validation split of the checkpoint.
+Overriding anything in `loss_config` changes what the validation loss means, so the best-loss criteria of the
+checkpoint are dropped and start fresh.
 
 ### Evaluate your model
 A trained model is saved in a checkpoint.
 To evaluate it on either "test", "training" or "validation" set use `evaluate.py`.
-Scores are saved to `${EVALUATION_DIR}/<file_path>.pt`.
+Scores are saved to `${EVALUATION_DIR}/<save_dst>.pt`.
 
 ```bash
-python evaluation/evaluate.py --checkpoint_src "${MODELS_DIR}/my_first_run_fold0.pt" --fold 0 --evaluate_on "test" -batch_size 4096 --save_dst my_first_run
+python src/bbTT/evaluation/evaluate.py --checkpoint_src "${MODELS_DIR}/my_first_run_fold0.pt" --fold 0 --evaluate_on test --batch_size 4096 --save_dst my_first_run
 ```
+`--fold` and `--evaluate_on` accept comma separated lists, e.g. `--fold 0,1,2`. `--num_threads` limits the torch
+threads if the machine is shared.
 
 ### Export to .pt2
 
@@ -86,11 +131,18 @@ This is necessary when running the model with "Columnflow".
 A bare name is looked up in `MODELS_DIR`, but full path is also supported.
 
 ```bash
-python evaluation/export/pt2.py --checkpoint_src my_first_run --fold 0
+python src/bbTT/evaluation/export/pt2.py --checkpoint_src my_first_run --fold 0
 ```
+The model knows which last activation (sigmoid/softmax) belongs to it; `--model_activation on|off|from_checkpoint`
+decides whether it is applied, `--add_activation` appends one on top. Appending an activation to a model that
+already applies its own raises an error on purpose, handle it explicitly.
 
 ### Tensorboard
 All plots created in the training can be looked up with "Tensorboard".
+Besides losses and plots the run logs the model internals once per validation under `MonitoredBlocks/`:
+weight and bias norms and weight histograms of the linear layers, BatchNorm running statistics, the embedding
+geometry (distance and cosine per token pair) and the LBN weights.
+
 When your setup is on a remote side, you need to setup an ssh connection with the same port as Tensorboard.
 
 So run the following code after being on a machine connected via -L option like:
