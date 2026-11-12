@@ -177,6 +177,38 @@ class ParserBuilder:
             help="Number of torch threads. 0 keeps the torch default (all available). (default: 0)",
         )
 
+    def add_resume(self) -> None:
+        self.parser.add_argument(
+            "--resume",
+            "-r",
+            default=None,
+            help=(
+                "Continue a training from this checkpoint (name in MODELS_DIR or path). Only the fold of the "
+                "checkpoint is trained. The checkpoint config is used; see --override. (default: fresh training)"
+            ),
+        )
+        self.parser.add_argument(
+            "--override",
+            "-o",
+            dest="overrides",
+            nargs="*",
+            default=[],
+            metavar="PATH",
+            help=(
+                "Dotted config paths to take from the current code config instead of the checkpoint, e.g. "
+                "'training_config.max_train_iteration' or a whole 'record_config'. Only with --resume."
+            ),
+        )
+
+        self.parser.add_argument(
+            "--list-overrides",
+            dest="list_overrides",
+            action="store_true",
+            default=False,
+            help="Print all config paths --override accepts, with their current code values, and exit.",
+        )
+
+
     # validators ---------------------------------------------------------------
     # type= callables for argparse: convert the raw string, raise ArgumentTypeError on bad input
     # (argparse turns that into a clean "usage: ... error: argument X: <message>" and exits with code 2)

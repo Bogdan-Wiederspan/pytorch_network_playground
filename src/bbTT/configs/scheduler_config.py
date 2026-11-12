@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from bbTT.configs.utils import choice_check
 
@@ -62,18 +62,23 @@ class SchedulerConfig:
     scheduler_chain: tuple[SCHEDULER_CHOICE, ...] = ("reduce_on_plateau",) # schedulers used in chain
     # scheduler_chain: tuple[SCHEDULER_CHOICE, ...] = ("linear", "reduce_on_plateau")  # schedulers used in chain
     milestones: tuple[int, ...] = (1000,)  # intervals after which the LR scheduler is swapped
-    config_chain: Optional[tuple[Any, ...]] = (
-        None  # list of configs corresponding to the schedulers in the scheduler chain
-    )
-    scheduler_cls_chain: Optional[tuple[Any, ...]] = None # noqa list of scheduler classes corresponding to the schedulers in the scheduler chain
+
+    @property
+    def config_chain(self) -> tuple[dict[str, Any], ...]:
+        """
+        Returns:
+            tuple[dict[str, Any], ...]: Default keyword arguments of each scheduler in ``scheduler_chain``, in order.
+        """
+        return tuple(asdict(SCHEDULER_REGISTRY[choice][0]()) for choice in self.scheduler_chain)
+
+    @property
+    def scheduler_cls_chain(self) -> tuple[str, ...]:
+        """
+        Returns:
+            tuple[str, ...]: Class name of each scheduler in ``scheduler_chain``, in order; instantiated in the training.
+        """
+        return tuple(SCHEDULER_REGISTRY[choice][1] for choice in self.scheduler_chain)
 
     def __post_init__(self):
-        scheduler_configs = []
-        scheduler_cls_chain = []
         for choice in self.scheduler_chain:
-            config, scheduler_cls = SCHEDULER_REGISTRY[choice]
-            scheduler_configs.append(asdict(config()))
-            scheduler_cls_chain.append(scheduler_cls)  # init is done in the training
             choice_check(choice, SCHEDULER_CHOICE)
-        self.config_chain = tuple(scheduler_configs)
-        self.scheduler_cls_chain = tuple(scheduler_cls_chain)
