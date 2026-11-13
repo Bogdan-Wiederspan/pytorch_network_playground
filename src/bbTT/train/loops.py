@@ -41,7 +41,11 @@ class BaseLoop:
             - first value (probabilities) goes to the returned dict, the monitor expects probabilities
             - second value (raw head) goes to the loss
 
-        4. Return a dict with the keys: "loss", "predictions", "targets", "event_weights".
+        4. Return a dict with the keys: "loss", "predictions", "targets", "event_weights" , "composition_weights".
+            loss = Value of the chosen Loss Function
+            targets = Vector of your target
+            event_weights = Product of all Weights on event base
+            composition_weights = Transfer weight to convert an unsampled to an sampled version
 
         5. Add a rule to FullConfig._compatibility_rules if your loss only works with certain loops or activations.
 
@@ -224,6 +228,7 @@ class TrainingLoop(BaseLoop):
             "predictions": predictions,
             "targets": targets,
             "event_weights": events["product_of_weights"],
+            "composition_weights": None, # training loops do not need composition weight, since their are already in sampled space
         }
 
     @register_loop(name="signal_efficiency")
@@ -265,6 +270,7 @@ class TrainingLoop(BaseLoop):
             "predictions": predictions,
             "targets": targets,
             "event_weights": events["product_of_weights"],
+            "composition_weights": None, # training loops do not need composition weight, since their are already in sampled space
         }
 
 
@@ -413,6 +419,7 @@ class ValidationLoop(BaseLoop):
             "predictions": tensors["class_predictions"],
             "targets": tensors["targets"],
             "event_weights": tensors["product_of_weights"],
+            "composition_weights": tensors["post_relative_weights"],
         }
 
     @register_loop(name="signal_efficiency")
@@ -450,4 +457,5 @@ class ValidationLoop(BaseLoop):
             "predictions": tensors["class_predictions"],
             "targets": tensors["targets"],
             "event_weights": tensors["sample_weights"],
+            "composition_weights": tensors["post_relative_weights"],
         }

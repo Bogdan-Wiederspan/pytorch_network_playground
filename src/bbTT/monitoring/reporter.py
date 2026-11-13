@@ -137,7 +137,7 @@ class EvaluationReporter:
 
         Args:
             mode (str): One of the keys in `self.modes`: "batch", "training" or "validation".
-            result (dict[str, torch.Tensor]): Loop result with "predictions", "targets" and "event_weights".
+            result (dict[str, torch.Tensor]): Loop result with "predictions", "targets", "event_weights" and "composition_weights" (None for a sampled batch).
             global_step (int): Current training iteration.
             model_evaluation_state (dict[str, Any]): Snapshot from Model.evaluation_state().
             loss (float | None): Loss of this data, added as feature "loss" when given.
@@ -152,6 +152,8 @@ class EvaluationReporter:
             predictions=result["predictions"],
             targets=result["targets"],
             event_weights=result["event_weights"],
+            composition_weights=result.get("composition_weights"), # for training loops its None [is in optional_defaults]
+
             **self._shared_meta(global_step=global_step, model_evaluation_state=model_evaluation_state),
         )
         ctx.add_features(*self.training_monitor_inst.get_plot_tensors(monitoring_mode.monitor_mode))
