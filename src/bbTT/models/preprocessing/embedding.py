@@ -66,18 +66,43 @@ class CatEmbeddingLayer(torch.nn.Module):  # noqa: F811
         """
         Detached cpu snapshot of the embedding table for monitoring, the tokenizer holds no learnable state.
 
-        With a tokenizer the geometry of the token vectors within each category is exposed. Per category the norm
-        of the mean vector (the offset shared by all values, absorbed by the following bias). Per pair of values:
-        the distance between the two vectors (what separates the values after that offset), the cosine of the raw
-        vectors (direction including the offset) and, for three or more values, the cosine after subtracting the
-        mean (direction of the differences only; for two values this is trivially -1 and skipped).
+        Every value of a category (e.g. pair_type = 0, 1, 2) owns one vector in the table. The network can only
+        tell two values apart by how different their vectors are, so the quantities below compare the vectors of
+        each category with each other. Its important that interpretation needs an ANCHOR. Thus random init values are given in the following explanation.
+
+        How to read the plots:
+
+        - "distance_<category>": one line per pair of values.
+            They describe how far apart the two vectors are. Larger means the network can separate these two values better.
+            As comparison, a random initialization gives about sqrt(2 * embedding_dim).
+            A pair far above that was pushed apart by training, a pair far below it was pulled together.
+
+        - "angle_raw_<category>": one line per pair.
+            Its describing the angle between the two vectors in degrees: 0 = same direction, 90 = unrelated, 180 = opposite.
+            Random initialization gives about 90 +- 20.
+            Two vectors can look similar here only because they share a common part, see offset description.
+
+        - "angle_centered_<category>": only for three or more values.
+            The same as angle after removing the common part/offset of the category.
+            This shows which values group together (small angle) and which are opposites
+            (large angle).
+            The random values depend on number of categories: k values the random expectation is acos(-1 / (k - 1)), e.g. 120 for k = 3.
+
+        - "offset", one line per category.
+            Describes the length of the common part (common = mean of all vectors in that category).
+            This part is tricky to interpreted, since its the same for every event and carries no information about which value is active.
+            For example the bias of the next layer could also do the same job.
+            A large offset compared to the distances means most of the token
+            norm is shared ballast rather than separation. This affects also <angle_raw_*> since a very offset value will be more narrow by definition.
 
         Returns:
             dict[str, Any]: See embedding_state, plus "offset" {category: float} and per category
-                "distance_<category>", "cosine_raw_<category>" and (k >= 3) "cosine_centered_<category>", each
-                {"<value a>_vs_<value b>": float}.        """
+                "distance_<category>", "angle_raw_<category>" and (k >= 3) "angle_centered_<category>", each
+                {"<value a>_vs_<value b>": float}.
+        """
         state = embedding_state(self.embeddings)
-        # there will always be a tokenizer ( expect when one did it them self )
+        # there will always be a tokenizer in den Pipeline
+        # this is just there for the case one uses pre-tokenized data)
         if self.tokenizer is None:
             return state
 
@@ -99,14 +124,14 @@ class CatEmbeddingLayer(torch.nn.Module):  # noqa: F811
             distance = torch.cdist(vectors, vectors)  # (k, k), invariant under centering
             state[f"distance_{category}"] = {f"{values[i]}_vs_{values[j]}": distance[i, j].item() for i, j in pairs}
 
-            cosine_of = [("raw", vectors)] + ([("centered", centered)] if len(values) >= 3 else [])
-            for name, vecs in cosine_of:
 
-                cosine = torch.nn.functional.cosine_similarity(
-                    vecs[:, None, :], vecs[None, :, :], dim=-1
-                    )  # (k, k)
+            angle_of = [("raw", vectors)] + ([("centered", centered)] if len(values) >= 3 else [])
+            for name, vecs in angle_of:
+                cosine = torch.nn.functional.cosine_similarity(vecs[:, None, :], vecs[None, :, :], dim=-1)  # (k, k)
+                # clamp against float error outside [-1, 1], which would give nan in acos
+                angle = torch.rad2deg(torch.acos(cosine.clamp(-1.0, 1.0)))
+                state[f"angle_{name}_{category}"] = {f"{values[i]}_vs_{values[j]}": angle[i, j].item() for i, j in pairs}
 
-                state[f"cosine_{name}_{category}"] = {f"{values[i]}_vs_{values[j]}": cosine[i, j].item() for i, j in pairs}
         state["offset"] = offsets
         return state
 
