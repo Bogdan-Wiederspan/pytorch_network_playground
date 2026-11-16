@@ -22,6 +22,7 @@ from bbTT.monitoring.context.checkpoint_history import CheckpointHistory
 from bbTT.monitoring.logger.logger import get_logger
 from bbTT.monitoring.logger.tensorboard_logger import TensorboardLogger
 from bbTT.train.setup import FoldData, TrainingComponents, build_training_components, prepare_fold_data
+from bbTT.train.train_utils import calibrate_batch_norms
 from bbTT.utils.utils import DEVICE
 
 logger_inst = get_logger(__name__)
@@ -51,6 +52,17 @@ def run_training_loop(
     """
     sample_columns = full_config.sampler_config.sample_attributes
     record_config = full_config.record_config
+
+    # running statistics live in the state_dict, a resume brings its own
+    # thus this calibration WILL NEVER run on a resume
+    if start_iteration == 0:
+        calibrate_batch_norms(
+            model_inst=training_components.model_inst,
+            sampler=fold_data.training_sampler,
+            sample_columns=sample_columns,
+            num_batches=full_config.training_config.batch_norm_calibration_batches,
+            device=DEVICE,
+        )
 
     logger_inst.info("Start training loop")
     for current_iteration in range(start_iteration, full_config.training_config.max_train_iteration):
