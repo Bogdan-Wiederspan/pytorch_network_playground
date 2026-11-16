@@ -11,13 +11,15 @@ from bbTT.models.register import register_model
 
 @register_model("binned_lbn_dense")
 class BinnedLBNDenseNet(LBNDenseNet):
-    is_binned = True
+    """
+    Reuse LBNDenseNet Architecture, but add a learnable BinningLayer as additional head.
 
+    The forward is unchanged and returns logits. The ``binned`` head maps logits to kernel weighted
+    probabilities, so cross entropy (logits), monitoring (probabilities) and Asimov (binned) can be
+    served from one forward pass.
     """
-    Reuse LBNDenseNet Architecture, but add a learnable BinningLayer at the end of the network.
-    The output is now two-headed: One binned and one non-binned network.
-    The network is only trained on the binned output.
-    """
+
+    HEADS = LBNDenseNet.HEADS + ("binned",)
 
     def __init__(
         self,
@@ -31,19 +33,14 @@ class BinnedLBNDenseNet(LBNDenseNet):
     def init_layers(self):
         # create normal LBN DenseNet
         super().init_layers()
-        # init binning layer, its possible to deactivate the binning layer.
-        if not self.model_config.enable_binning:
-            self.binning_layer = torch.nn.Identity()
-            self.is_binned = False
-        else:
-            self.binning_layer = BinningLayer(
-                num_bins=self.binning_config.num_bins,
-                bounds=self.binning_config.bounds,
-                binning_fn=self.binning_config.binning_fn,
-                binning_cfg=self.binning_config.binning_cfg,
-                kernel_map=KERNEL_MAP[self.binning_config.kernel_cls],
-                kernel_cfg=self.binning_config.kernel_config,
-            )
+        self.binning_layer = BinningLayer(
+            num_bins=self.binning_config.num_bins,
+            bounds=self.binning_config.bounds,
+            binning_fn=self.binning_config.binning_fn,
+            binning_cfg=self.binning_config.binning_cfg,
+            kernel_map=KERNEL_MAP[self.binning_config.kernel_cls],
+            kernel_cfg=self.binning_config.kernel_config,
+        )
 
     def learning_mode_bin_only(self):
         all_layers = dict(self.named_children())
@@ -68,12 +65,10 @@ class BinnedLBNDenseNet(LBNDenseNet):
         return self.binning_layer.kernels
 
     def freeze_edges(self):
-        if self.enabled_binning:
-            self.binning_layer.freeze_edges()
+        self.binning_layer.freeze_edges()
 
     def unfreeze_edges(self):
-        if self.enable_binning:
-            self.binning_layer.unfreeze_edges()
+        self.binning_layer.unfreeze_edges()
 
     @property
     def binning_fn(self):
@@ -94,7 +89,15 @@ class BinnedLBNDenseNet(LBNDenseNet):
         """
         return {"binning": self.binning_layer.create_evaluation_state()}
 
-    def forward(self, categorical_inputs, continuous_inputs):
-        normal_network_output = super().forward(categorical_inputs, continuous_inputs)
-        binned_output = self.binning_layer(normal_network_output)  # increases dimension at axis 0
-        return normal_network_output, binned_output
+    def binned(self, logits: torch.Tensor) -> torch.Tensor:
+        """
+        Head that bins the class probabilities with the learnable kernels.
+
+        Args:
+            logits (torch.Tensor): Output of forward, shape ``[event, node]``.
+
+        Returns:
+            torch.Tensor: Kernel weighted probabilities, shape ``[bin, event, node]``.
+        """
+        # binning acts on probabilities only, binning logits has no physical meaning
+        return self.binning_layer(self.probabilities(logits))  # increases dimension at axis 0

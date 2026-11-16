@@ -1,4 +1,4 @@
-from .append_layers import AddActFnToModel, AddBinningLayer
+from .append_layers import AddActFnToModel, AddBinningLayer, SelectHead
 from .layer_utils import (
     WeightNormalizedLinear,
     batch_norm_state,

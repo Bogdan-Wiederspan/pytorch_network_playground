@@ -39,45 +39,6 @@ class FullConfig:
         E.g. "Cross Entropy Loss expects the correct choices of Loop" means that if the rule is violated, the current choice of Loop is not correct for Cross Entropy Loss.
         """
         return [
-            # Loops needs to be correct
-            (
-                lambda: (
-                    self.loss_config.loss_fn == "cross_entropy"
-                    and ((self.training_config.training_fn != "cross_entropy")
-                    or (self.training_config.validation_fn != "cross_entropy"))
-                ),
-                f"Cross Entropy Loss expects the correct choices of Loop, current choice is:"
-                f"training -> {self.training_config.training_fn}"
-                f"validation -> {self.training_config.validation_fn}",
-            ),
-            (
-                lambda: (
-                    self.loss_config.loss_fn == "signal_efficiency"
-                    and ((self.training_config.training_fn != "signal_efficiency")
-                        or (self.training_config.validation_fn != "signal_efficiency"))
-                ),
-                f"Signal Efficiency Loss expects the correct choices of Loop, current choice is:"
-                f"training -> {self.training_config.training_fn}"
-                f"validation -> {self.training_config.validation_fn}",
-            ),
-            # Loss function and Activation compatibility
-            (
-                lambda: (
-                    (self.loss_config.loss_fn == "cross_entropy")
-                    and (self.model_building_config.use_last_activation is True)
-                ),
-                "Cross Entropy Loss expect Logits (has build in SoftMax)."
-                "Set ModelConfig.use_last_activation=False to avoid SoftMax output.",
-            ),
-            (
-                lambda: (
-                    (self.loss_config.loss_fn == "signal_efficiency")
-                    and (self.model_building_config.use_last_activation is False)
-
-                ),
-                "Signal Efficiency expects the activated model output (use_last_activation=True). "
-                f"Currently: use_last_activation={self.model_building_config.use_last_activation}",
-            ),
 
             # add more rules here, e.g.:
             # (

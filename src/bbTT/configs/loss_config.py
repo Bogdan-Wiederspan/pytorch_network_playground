@@ -27,7 +27,7 @@ class WeightedCrossEntropyConfig:
 
 @dataclass
 class LossConfig:
-    loss_fn: LOSS_CHOICE = "cross_entropy"
+    loss_fn: LOSS_CHOICE = "cross_entropy" # each loss function has its own loop definition, the mapping is done in the registry of the loop in loops.py
     signal_efficiency: SignalEfficiencyLossConfig = field(default_factory=SignalEfficiencyLossConfig)
     weighted_cross_entropy: WeightedCrossEntropyConfig = field(default_factory=WeightedCrossEntropyConfig)
 

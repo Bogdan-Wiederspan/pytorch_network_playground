@@ -110,21 +110,20 @@ class ParserBuilder:
             default="identity",
             choices=["sigmoid", "softmax", "identity"],
             help=(
-                "Activation function appended on the network output. Must be 'identity' if "
-                "model already use their last activation (use_last_activation=True). (default: identity)"
+                "Extra activation function appended on the selected head. Only sensible on top of the "
+                "'logits' head, otherwise the output is activated twice. (default: identity)"
                 ),
             )
 
-    def add_model_activation(self):
+    def add_head(self):
         self.parser.add_argument(
-            "--model_activation",
+            "--head",
             required=False,
-            default="from_checkpoint",
-            choices=["on", "off", "from_checkpoint"],
+            default="probabilities",
+            choices=["logits", "probabilities", "binned"],
             help=(
-                "Models can define their own activation. This choice is also saved in their saved configuration. "
-                "This function determines whether the activation defined inside the model (use_last_activation) is applied. "
-                "'from_checkpoint' keeps the value stored in the checkpoint config. (default: from_checkpoint)"
+                "Which head of the model is used as output. The model's forward returns logits, every head is a "
+                "mapping of them (see BaseModel.HEADS); 'binned' exists only for binned models. (default: probabilities)"
             ),
         )
 
