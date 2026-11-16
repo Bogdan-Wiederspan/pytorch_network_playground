@@ -38,6 +38,8 @@ class RecordConfig:
         "confusion_matrix",
         # "roc",  # roc computation is the long factor (14s)
         "output_score_hh_node",
+        "output_score_hh_node_physics",
+
         "output_score_hh_node_untransformed",
         "kernels_monitor",
         "score_correlation_matrix",
@@ -47,6 +49,8 @@ class RecordConfig:
         "confusion_matrix",
         # "roc",  # roc computation is the long factor (4s)
         "output_score_hh_node",
+        "output_score_hh_node_physics",
+
         "output_score_hh_node_untransformed",
         "kernels_monitor",
         "score_correlation_matrix",
