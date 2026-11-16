@@ -6,17 +6,12 @@ from typing import Literal
 from bbTT.configs.utils import choice_check
 
 MODEL_CHOICE = Literal["residual", "dense", "lbn_dense", "binned_lbn_dense"]
-TRAINING_LOOP_CHOICE = Literal["cross_entropy", "signal_efficiency"]
-VALIDATION_LOOP_CHOICE = Literal["signal_efficiency", "cross_entropy"]
 SAMPLING_STRATEGY = Literal["largest_remainder", "stochastic"]
 
 
 @dataclass
 class TrainingConfig:
-    save_model_name: str = "cross_entropy_benchmark"  # name of the model used to save
     model_choice: MODEL_CHOICE = "lbn_dense"
-    training_fn: TRAINING_LOOP_CHOICE = "cross_entropy"  # name of the training loop
-    validation_fn: VALIDATION_LOOP_CHOICE = "cross_entropy"  # name of the validation loop
     max_train_iteration: int = 500_000  # max number of batches
     label_smoothing: float = 0.0
     train_folds: tuple[int, ...] = (0,)  # which training folds to use
@@ -28,6 +23,4 @@ class TrainingConfig:
     validation_batch_size: int = 4096 * 30  # -1 = full set. -1 is discouraged, due to memory constraints # noqa
 
     def __post_init__(self):
-        choice_check(self.training_fn, TRAINING_LOOP_CHOICE)
-        choice_check(self.validation_fn, VALIDATION_LOOP_CHOICE)
         choice_check(self.model_choice, MODEL_CHOICE)

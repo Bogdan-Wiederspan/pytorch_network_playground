@@ -3,6 +3,7 @@ from __future__ import annotations
 import torch
 
 from bbTT.monitoring.context.eval_context import EvalContext
+from bbTT.monitoring.register import register_builder
 
 # lower clamp for probabilities, prevents log(0) for a confidently wrong prediction
 PROBABILITY_EPSILON = 1e-7
@@ -30,9 +31,10 @@ def cross_entropy_from_probabilities(
     if weights is None:
         return torch.mean(per_event)
 
-    weights = weights.reshape(per_event.shape)
+    weights = weights.reshape(per_event.shape).to("cpu")
     return torch.sum(weights * per_event) / torch.sum(weights)
 
+@register_builder("cross_entropy", provides={"cross_entropy",}, requires=None)
 def build_cross_entropy(ctx: EvalContext, **kwargs) -> dict[str, torch.Tensor]:
     """
     Cross entropy as it is expected in a training batch, independent of the loss that is trained.

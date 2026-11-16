@@ -98,12 +98,6 @@ class ModelConfig:
     enable_continuous_padding: bool = True  # replace DataConfig dummy markers in continuous inputs, see PaddingConfig
 
     enable_rotation: bool = False  # turn off rotation, currently data is rotated in preprocessing by Marcel
-    enable_binning: bool = True  # turn off binning layer, for example when using a model that does not support binning
-
-    # needs to be false for CrossEntropy and True for SignalEfficiency
-    use_last_activation: bool = (
-        False  # use last activation defined inside model. If false logits are returned Marcel: False
-    )
 
     rotation: RotationLayerConfig = field(default_factory=RotationLayerConfig)
 

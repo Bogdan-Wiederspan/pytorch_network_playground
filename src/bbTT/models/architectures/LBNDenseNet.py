@@ -60,6 +60,4 @@ class LBNDenseNet(DenseNet):
         x = self.dense_block_4(x)
         x = self.dense_block_5(x)
         x = self.last_linear(x)
-        if self.use_last_activation:
-            x = self.last_activation_fn(x)
         return x

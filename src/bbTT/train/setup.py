@@ -156,6 +156,7 @@ def build_training_components(
     full_config: FullConfig,
     current_fold: int,
     training_sampler: ProcessSampler,
+    checkpoint_name: str,
 ) -> TrainingComponents:
     """
     Build model, optimizer, losses, scheduler, checkpoint and monitor hooks for one fold.
@@ -166,6 +167,7 @@ def build_training_components(
         full_config (FullConfig): Complete configuration of the run, with fold statistics applied.
         current_fold (int): Fold the checkpoint is named after.
         training_sampler (ProcessSampler): Needed by the loss initialisation for the class weights.
+        checkpoint_name (str): Name the checkpoints of this run are written under (command line --save_model_name).
 
     Returns:
         TrainingComponents: All components wired together and ready for the loop.
@@ -179,7 +181,7 @@ def build_training_components(
     )
     scheduler_inst = init_scheduler(full_config=full_config, optimizer_inst=optimizer_inst)
     checkpoint_inst = CheckPoint(
-        checkpoint_name=full_config.training_config.save_model_name,
+        checkpoint_name=checkpoint_name,
         checkpoint_fold=current_fold,
         patience=full_config.record_config.checkpoint_patience,
         delta=full_config.record_config.checkpoint_delta,

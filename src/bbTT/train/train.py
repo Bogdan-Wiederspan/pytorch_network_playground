@@ -156,6 +156,8 @@ def run_training_loop(
 
 def main(
     tensorboard_name: str,
+    save_model_name: str | None,
+    checkpoint_suffix: str | None,
     rebuild_cache: bool,
     save_cache: bool,
     resume: str | None = None,
@@ -170,10 +172,17 @@ def main(
 
     Args:
         tensorboard_name (str): Sub directory of the tensorboard logs for this run.
+        save_model_name (str | None): Name the checkpoints are written under. Required for a fresh training.
+            On a resume None means "<resumed checkpoint name>-resume-<tag>", a given name is used as is.
+        checkpoint_suffix (str | None): Free text appended to the checkpoint name as "<name>-<suffix>".
         rebuild_cache (bool): Rebuild the event cache instead of reading it.
         save_cache (bool): Write a rebuilt event cache to disk.
         resume (str | None): Checkpoint to continue from, see checkpoint.resume.load_resume_state.
         overrides (Sequence[str]): Dotted config paths to take from the code config on a resume.
+
+    Raises:
+        ValueError: If a fresh training has no *save_model_name*, or *overrides* are given without *resume*.
+
     """
     full_config = FullConfig()
 
@@ -183,8 +192,20 @@ def main(
     if resume is not None:
         resume_state = load_resume_state(resume, current_config=full_config, overrides=overrides)
         full_config = resume_state.full_config
+        # the resume writes next to the original checkpoint, never over it
+        if save_model_name is None:
+            save_model_name = resume_state.run_name(resume_state.checkpoint_base_name)
+
     elif overrides:
         raise ValueError("--override only has an effect together with --resume")
+    elif save_model_name is None:
+        raise ValueError("--save_model_name is required for a fresh training")
+
+    # a readable note next to the hash tag, e.g. what this run tries
+    if checkpoint_suffix is not None:
+        save_model_name = f"{save_model_name}-{checkpoint_suffix}"
+
+    logger_inst.i_info(f"Checkpoints are written under '{save_model_name}'")
 
     torch.manual_seed(full_config.training_config.seed)
     np.random.seed(full_config.training_config.seed)
@@ -227,6 +248,7 @@ def main(
             full_config=full_config,
             current_fold=current_fold,
             training_sampler=fold_data.training_sampler,
+            checkpoint_name=save_model_name,
         )
 
         # --- monitoring state of this fold ---
@@ -265,13 +287,15 @@ if __name__ == "__main__":
 
     parser = ParserBuilder(
         "tensorboard",
+        "save_model_name",
         "cache",
         "resume",
         description="Train the HH -> bbtautau DNN with the configuration in bbTT/configs.",
         epilog=(
             "examples:\n"
-            "  python src/bbTT/train/train.py -tn my_first_run -rc\n"
-            "  python src/bbTT/train/train.py -tn my_first_run -r my_model_fold0 -o training_config.max_train_iteration"
+            "  python src/bbTT/train/train.py -tn my_first_run -sn my_first_run -rc\n"
+            "  python src/bbTT/train/train.py -tn my_first_run -r my_first_run_fold0 -o training_config.max_train_iteration"
+            " -cs longer"
             "\nto see all overwrite add --list-overrides"
             ),
         )
@@ -285,6 +309,8 @@ if __name__ == "__main__":
         rebuild_cache=parser.args.rebuild_cache,
         save_cache=parser.args.save_cache,
         tensorboard_name=parser.args.tensorboard_name,
+        checkpoint_suffix=parser.args.checkpoint_suffix,
+        save_model_name=parser.args.save_model_name,
         resume=parser.args.resume,
         overrides=parser.args.overrides,
     )

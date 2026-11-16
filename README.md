@@ -67,10 +67,12 @@ Configure the model hyperparameters in `src/bbTT/configs/`.
 Checkpoints are written to `${MODELS_DIR}/<save_model_name>_fold<k>.pt`, logs to `TENSORBOARD_DIR`.
 ```bash
 cd ${DNN_ROOT}
-python src/bbTT/train/train.py -tn my_first_run -rc
+python src/bbTT/train/train.py -tn my_first_run -sn my_first_run -rc
 ```
-`-tn` names the tensorboard run, `-rc` rebuilds the preprocessed data cache (needed after changing the input
-data or the data config), `-ns` skips writing the cache.
+`-tn` names the tensorboard run,
+`-sn` the checkpoints (required, both are run names and not part of the config),
+`-rc` rebuilds the preprocessed data cache (needed after changing the input data or the data config),
+`-ns` skips writing the cache.
 
 A checkpoint holds only state dicts (model, optimizer, scheduler) and the full config, so it is tied to the code
 version it was written with. The `.pt2` export below is the code-independent artifact.
@@ -98,6 +100,8 @@ python src/bbTT/train/train.py -tn my_first_run -r my_first_run_fold0
 
 The resumed run writes under its own name, `<name>-resume-<hash>`, for both checkpoint and tensorboard; the
 original checkpoint is never overwritten and stays an anchor for further experiments.
+Pass `-sn` to choose the checkpoint name of the resume yourself, or `-cs <text>` to append a readable note to the name (the hash only
+tells *that* the config changed, not what): `-cs longer` gives `<name>-resume-<hash>-longer`.
 
 To take single values from the current code config instead of the checkpoint, name them with `-o` as dotted
 paths. A whole sub config works as well:
@@ -133,9 +137,10 @@ A bare name is looked up in `MODELS_DIR`, but full path is also supported.
 ```bash
 python src/bbTT/evaluation/export/pt2.py --checkpoint_src my_first_run --fold 0
 ```
-The model knows which last activation (sigmoid/softmax) belongs to it; `--model_activation on|off|from_checkpoint`
-decides whether it is applied, `--add_activation` appends one on top. Appending an activation to a model that
-already applies its own raises an error on purpose, handle it explicitly.
+A model's forward always returns logits; the heads it offers (`logits`, `probabilities`, and `binned` for binned
+models, see `BaseModel.HEADS`) are mappings of them. `--head` selects which one the exported graph returns
+(default `probabilities`), `--add_activation` appends an extra activation on top, which only makes sense on the
+`logits` head and is logged as warning otherwise. The same `--head` option exists for `evaluate.py`.
 
 ### Tensorboard
 All plots created in the training can be looked up with "Tensorboard".

@@ -82,6 +82,27 @@ class ParserBuilder:
             help="Do not write the preprocessed data to the cache. (default: write cache)",
         )
 
+    def add_save_model_name(self) -> None:
+        self.parser.add_argument(
+            "--save_model_name",
+            "-sn",
+            default=None,
+            help=(
+                "Name the checkpoints are written under: ${MODELS_DIR}/<name>_fold<k>.pt. Required for a fresh "
+                "training. On a resume it defaults to '<resumed checkpoint name>-resume-<tag>'. (default: None)"
+            ),
+        )
+
+        self.parser.add_argument(
+            "--checkpoint_suffix",
+            "-cs",
+            default=None,
+            help=(
+                "Free text appended to the checkpoint name as '<name>-<suffix>', e.g. a note what this run tries. "
+                "Works for fresh trainings and resumes, where the resume tag is kept. (default: none)"
+            ),
+        )
+
     def add_load_checkpoint(self):
 
         self.parser.add_argument(
@@ -110,21 +131,20 @@ class ParserBuilder:
             default="identity",
             choices=["sigmoid", "softmax", "identity"],
             help=(
-                "Activation function appended on the network output. Must be 'identity' if "
-                "model already use their last activation (use_last_activation=True). (default: identity)"
+                "Extra activation function appended on the selected head. Only sensible on top of the "
+                "'logits' head, otherwise the output is activated twice. (default: identity)"
                 ),
             )
 
-    def add_model_activation(self):
+    def add_head(self):
         self.parser.add_argument(
-            "--model_activation",
+            "--head",
             required=False,
-            default="from_checkpoint",
-            choices=["on", "off", "from_checkpoint"],
+            default="probabilities",
+            choices=["logits", "probabilities", "binned"],
             help=(
-                "Models can define their own activation. This choice is also saved in their saved configuration. "
-                "This function determines whether the activation defined inside the model (use_last_activation) is applied. "
-                "'from_checkpoint' keeps the value stored in the checkpoint config. (default: from_checkpoint)"
+                "Which head of the model is used as output. The model's forward returns logits, every head is a "
+                "mapping of them (see BaseModel.HEADS); 'binned' exists only for binned models. (default: probabilities)"
             ),
         )
 

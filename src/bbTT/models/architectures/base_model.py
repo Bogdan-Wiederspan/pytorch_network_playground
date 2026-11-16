@@ -17,21 +17,22 @@ from bbTT.monitoring.monitoring_hooks.hookable_model import HookableModelMixin
 
 
 class BaseModel(HookableModelMixin, torch.nn.Module):
-    is_binned = False
     LEARNING_MODES = {}
 
     # attribute names of blocks that expose a monitoring snapshot via create_evaluation_state.
     # Subclasses replace or extend this tuple: for this write something like: ``monitored_blocks = Parent.monitored_blocks + ("block",)``
     monitored_blocks: tuple[str, ...] = ()
 
+    # names of the heads this model offers. Every head is a mapping of the logits returned by forward,
+    # callable as ``model.<head>(logits)`` or generic via ``model.head(name, logits)``.
+    # Subclasses extend this tuple: ``HEADS = Parent.HEADS + ("binned",)`` and define the method of the same name.
+    HEADS: tuple[str, ...] = ("logits", "probabilities")
+
     def __init__(self, full_config, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.model_config = full_config.model_building_config
         self.dataset_config = full_config.dataset_config
         self.binning_config = full_config.binning_config
-
-        # use the last activation function when it exist. Can be deactivated
-        self.use_last_activation = self.model_config.use_last_activation
 
     def __init_subclass__(cls):
         super().__init_subclass__()
@@ -89,14 +90,49 @@ class BaseModel(HookableModelMixin, torch.nn.Module):
                 return True
         return False
 
-    def set_last_fn_mode(self, on=True):
+    # --- heads: mappings of the logits, forward itself always returns logits ---
+    def head(self, name: str, logits: torch.Tensor) -> torch.Tensor:
         """
-        Activate/Deactivate the last activation function. Use full if one wants the logits.
+        Applies the head *name* on *logits*.
+        This is a generic access for code that gets the head name from a config.
 
         Args:
-            on (bool, optional): Bool to determine if one uses the last activation function. Defaults to True.
+            name (str): One of ``self.HEADS``.
+            logits (torch.Tensor): Output of forward, shape ``[event, node]``.
+
+        Returns:
+            torch.Tensor: The head output, shape depends on the head (see the head's own docstring).
+
+        Raises:
+            ValueError: If the model does not offer a head with this name.
         """
-        self.use_last_activation = on
+        if name not in self.HEADS:
+            raise ValueError(f"Model {type(self).__name__} has no head {name!r}, available heads: {self.HEADS}")
+        return getattr(self, name)(logits)
+
+    def logits(self, logits: torch.Tensor) -> torch.Tensor:
+        """
+        Identity head, exists so every head has the same signature.
+
+        Args:
+            logits (torch.Tensor): Output of forward, shape ``[event, node]``.
+
+        Returns:
+            torch.Tensor: *logits* unchanged.
+        """
+        return logits
+
+    def probabilities(self, logits: torch.Tensor) -> torch.Tensor:
+        """
+        Applies the last activation (Softmax or Sigmoid, defined by the architecture) on the logits.
+
+        Args:
+            logits (torch.Tensor): Output of forward, shape ``[event, node]``.
+
+        Returns:
+            torch.Tensor: Class probabilities, shape ``[event, node]``.
+        """
+        return self.last_activation_fn(logits)
 
     def set_learning_mode(self, mode):
         """

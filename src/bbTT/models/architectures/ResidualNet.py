@@ -44,13 +44,11 @@ class ResidualNet(BaseModel):
         # can only be sigmoid or softmax, uses only dim as configuration
         self.last_activation_fn = self.init_last_activation_layer()
 
-    def forward(self, categorical_inputs, continuous_inputs):
+    def forward(self, categorical_inputs: torch.Tensor, continuous_inputs: torch.Tensor) -> torch.Tensor:
         x = self.input_layer(categorical_inputs=categorical_inputs, continuous_inputs=continuous_inputs)
         x = self.transition_dense_1(x)
         x = self.resnet_block_1(x)
         x = self.resnet_block_2(x)
         x = self.resnet_block_3(x)
         x = self.last_linear(x)
-        if self.use_last_activation:
-            x = self.last_activation_fn(x)
         return x

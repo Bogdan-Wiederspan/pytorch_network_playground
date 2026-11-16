@@ -20,7 +20,7 @@ def checkpoint_path(name: str, fold: int | str) -> pathlib.Path:
     Multiple places in the codebase consume a checkpoint path. This function centralizes the logic of how to construct a checkpoint path.
 
     Args:
-        name (str): Name of the training, e.g. ``training_config.save_model_name``.
+        name (str): Name of the training, the command line --save_model_name.
         fold (int | str): Fold the checkpoint belongs to.
 
     Returns:

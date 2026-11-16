@@ -49,6 +49,7 @@ class ResumeState:
         start_iteration (int): First iteration of the resumed loop.
         tag (str): Short hash of the overrides, suffix for checkpoint and tensorboard names of the resume.
         keep_checkpoint_criteria (bool): Whether best loss and counters of the checkpoint still apply.
+        checkpoint_base_name (str): Name the resumed checkpoint was written under, without the "_fold<k>" suffix.
     """
 
     checkpoint: dict[str, Any]
@@ -57,6 +58,7 @@ class ResumeState:
     start_iteration: int
     tag: str
     keep_checkpoint_criteria: bool
+    checkpoint_base_name: str
 
     def run_name(self, base_name: str) -> str:
         """
@@ -68,6 +70,15 @@ class ResumeState:
         """
         return f"{base_name}{RESUME_TAG_SEPARATOR}{self.tag}"
 
+def _base_name_of(path: pathlib.Path) -> str:
+    """
+    Args:
+        path (pathlib.Path): Checkpoint file "<name>_fold<k>.pt".
+
+    Returns:
+        str: The "<name>" part, i.e. what --save_model_name was for that run.
+    """
+    return re.sub(r"_fold\d+$", "", path.stem)
 
 # --- config merge -------------------------------------------------------------------------------------------
 # firs the config from checkpoint is loaded than overwrite happens.
@@ -305,9 +316,9 @@ def load_resume_state(
     """
     Load a checkpoint and prepare the config of the resumed training.
 
-    The checkpoint config is the base; the overrides are taken from *current_config*. Unless
-    `training_config.save_model_name` is overridden, the resume writes its own checkpoints under
-    "<name>-resume-<tag>", so the loaded checkpoint is never overwritten and stays an anchor.
+    The checkpoint config is the base; the overrides are taken from *current_config*.
+    The name the resume writes its checkpoints under is not part of the config: train.main derives "<name>-resume-<tag>" from
+    `checkpoint_base_name` unless --save_model_name is given, so the loaded checkpoint is never overwritten.
 
     Args:
         checkpoint_name (str | pathlib.Path): Checkpoint name or path, see loading.resolve_checkpoint_path.
@@ -327,18 +338,14 @@ def load_resume_state(
 
     merged = merge_config(base=base_config, current=current_config, overrides=overrides)
     tag = override_tag(current_config, overrides)
-    if "training_config.save_model_name" not in overrides:
-        merged.training_config.save_model_name = f"{base_config.training_config.save_model_name}{RESUME_TAG_SEPARATOR}{tag}"
 
     keep_criteria = not loss_changed(overrides)
     if not keep_criteria:
         logger_inst.i_info("Resume with changed loss: checkpoint criteria (best loss, patience) start fresh")
 
     fold = _fold_of(checkpoint, path)
-    logger_inst.i_info(
-        f"Resume from {path.name}: fold {fold}, iteration {checkpoint['iteration']}, "
-        f"new checkpoints under '{merged.training_config.save_model_name}'"
-    )
+    logger_inst.i_info(f"Resume from {path.name}: fold {fold}, iteration {checkpoint['iteration']}")
+
     return ResumeState(
         checkpoint=checkpoint,
         full_config=merged,
@@ -346,6 +353,7 @@ def load_resume_state(
         start_iteration=int(checkpoint["iteration"]) + 1,
         tag=tag,
         keep_checkpoint_criteria=keep_criteria,
+        checkpoint_base_name=_base_name_of(path)
     )
 
 
