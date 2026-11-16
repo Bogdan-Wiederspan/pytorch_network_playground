@@ -55,13 +55,13 @@ class RecordConfig:
     # needs to be dict due to how tensorboard handles scalars
     training_scalars: dict[str, str] = field(
         default_factory=lambda: {
-            # "CrossEntropy/Evaluation Training": "cross_entropy",
+            "CrossEntropy/Evaluation Training": "cross_entropy",
             "Loss/Evaluation Training Loss": "loss",
         }
     )
     validation_scalars: dict[str, str] = field(
         default_factory=lambda: {
-            # "CrossEntropy/Evaluation Validation": "cross_entropy",
+            "CrossEntropy/Evaluation Validation": "cross_entropy",
             "Loss/Validation VLoss": "loss",
         }
     )
