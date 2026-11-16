@@ -22,5 +22,8 @@ class TrainingConfig:
     training_batch_size: int = int(4096 / 2) # -1 = full set
     validation_batch_size: int = 4096 * 30  # -1 = full set. -1 is discouraged, due to memory constraints # noqa
 
+    # forward passes without optimizer step that fill the BatchNorm running statistics with real data before
+    # the first iteration, see train_utils.calibrate_batch_norms. 0 disables it. Skipped on resume.
+    batch_norm_calibration_batches: int = 50
     def __post_init__(self):
         choice_check(self.model_choice, MODEL_CHOICE)
