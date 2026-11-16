@@ -24,7 +24,7 @@ def register_loop(loss: str):
     """
     def decorator(fn):
         fn._is_loop_method = True
-        fn._loss = loss
+        fn._loss_name = loss
         return fn
 
     return decorator

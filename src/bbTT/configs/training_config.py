@@ -11,7 +11,6 @@ SAMPLING_STRATEGY = Literal["largest_remainder", "stochastic"]
 
 @dataclass
 class TrainingConfig:
-    save_model_name: str = "cross_entropy_benchmark"  # name of the model used to save
     model_choice: MODEL_CHOICE = "lbn_dense"
     max_train_iteration: int = 500_000  # max number of batches
     label_smoothing: float = 0.0

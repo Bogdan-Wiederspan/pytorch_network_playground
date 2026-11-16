@@ -35,7 +35,8 @@ def export_pt2(
         fold (str): Current fold of the model. Is part of the naming scheme
         base_dir (str | None, optional): Directory where model is stored, if None take from MODELS_DIR environment. Defaults to None.
         head (HEAD_CHOICE, optional): Head the exported model returns. Defaults to "probabilities".
-        add_activation (ACTIVATION_CHOICE, optional): Extra activation applied on top of the selected head,
+        add_activation (ACTIVATION_CHOICE, optional): Extra activation applied on top of the selected head, "identity" adds nothing.
+            Defaults to "identity".
     Returns:
         pathlib.Path: Path to exported pt2 model.
     """

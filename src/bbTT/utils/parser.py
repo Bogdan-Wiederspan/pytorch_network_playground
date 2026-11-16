@@ -82,6 +82,27 @@ class ParserBuilder:
             help="Do not write the preprocessed data to the cache. (default: write cache)",
         )
 
+    def add_save_model_name(self) -> None:
+        self.parser.add_argument(
+            "--save_model_name",
+            "-sn",
+            default=None,
+            help=(
+                "Name the checkpoints are written under: ${MODELS_DIR}/<name>_fold<k>.pt. Required for a fresh "
+                "training. On a resume it defaults to '<resumed checkpoint name>-resume-<tag>'. (default: None)"
+            ),
+        )
+
+        self.parser.add_argument(
+            "--checkpoint_suffix",
+            "-cs",
+            default=None,
+            help=(
+                "Free text appended to the checkpoint name as '<name>-<suffix>', e.g. a note what this run tries. "
+                "Works for fresh trainings and resumes, where the resume tag is kept. (default: none)"
+            ),
+        )
+
     def add_load_checkpoint(self):
 
         self.parser.add_argument(
