@@ -148,9 +148,15 @@ class EvaluationRunner:
             # separate full name in to tag and name of the scalar
             tag, name = full_name.split("/")
             value = run_scalar(ctx=ctx, name=artifact_name)
+
+            if isinstance(value, dict):
+                # dicts are stored as 1 line per key
+                values = {f"{name} {key}": v for key, v in value.items()}
+            else:
+                values = {name: value}
             self.tensorboard.log_scalar(
                 name=tag,
-                values={name: value},
+                values= values,
                 step=ctx.global_step,
             )
 

@@ -56,3 +56,29 @@ def build_cross_entropy(ctx: EvalContext, **kwargs) -> dict[str, torch.Tensor]:
 
     )
     return {"cross_entropy": cross_entropy}
+
+@register_builder("cross_entropy_per_class", provides={"cross_entropy_per_class"}, requires=None)
+def build_cross_entropy_per_class(ctx: EvalContext, **kwargs) -> dict[str, dict[str, torch.Tensor]]:
+    """
+    Cross entropy separately for the events of every true class, composition weighted like the total.
+
+    Shows which separation the training is currently working on: the total cross entropy is the
+    per-class values weighted by the class shares, so one class at 0.05 and two at 0.5 average to
+    the same number as three at 0.35.
+
+    Args:
+        ctx (EvalContext): Evaluation context with predictions, targets, target_map and composition_weights.
+
+    Returns:
+        dict[str, dict[str, torch.Tensor]]: {"cross_entropy_per_class": {class name: scalar}}.
+    """
+    weights = ctx.weights("composition")
+    per_class = {}
+    for name, idx in ctx.target_map.items():
+        mask = ctx.targets[:, idx] == 1
+        per_class[name] = cross_entropy_from_probabilities(
+            probabilities=ctx.predictions[mask],
+            targets=ctx.targets[mask],
+            weights=weights[mask],
+        )
+    return {"cross_entropy_per_class": per_class}

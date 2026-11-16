@@ -56,12 +56,14 @@ class RecordConfig:
     training_scalars: dict[str, str] = field(
         default_factory=lambda: {
             "CrossEntropy/Evaluation Training": "cross_entropy",
+            "CrossEntropy per class/Training": "cross_entropy_per_class",
             "Loss/Evaluation Training Loss": "loss",
         }
     )
     validation_scalars: dict[str, str] = field(
         default_factory=lambda: {
             "CrossEntropy/Evaluation Validation": "cross_entropy",
+            "CrossEntropy per class/Validation": "cross_entropy_per_class",
             "Loss/Validation VLoss": "loss",
         }
     )
