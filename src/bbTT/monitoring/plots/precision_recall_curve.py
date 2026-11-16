@@ -1,5 +1,4 @@
 import matplotlib.pyplot as plt
-import torch
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from sklearn.metrics import PrecisionRecallDisplay
@@ -15,7 +14,7 @@ from bbTT.monitoring.utils.tensor import make_plotable
     optional=False,
 )
 def plot_precision_recall(
-    ctx: EvalContext, sample_weight: torch.Tensor = None, labels: list[str] = None, colors: list[str] = None, **kwargs
+    ctx: EvalContext, labels: list[str] = None, colors: list[str] = None, **kwargs
 ) -> tuple[Figure, Axes]:
     """
     Plot one-vs-rest precision-recall curves for each class.
@@ -28,11 +27,13 @@ def plot_precision_recall(
     implicit tensor-to-array conversion would raise on GPU tensors
     rather than just being slower.
 
+    Events are weighted on the composition
+    axis: precision depends on the class prevalence, and the prevalence that
+    matters is the one of a training batch (see EvalContext.weights).
+
     Args:
         ctx (EvalContext): Must expose `targets`, `predictions` (both
             shaped [n_samples, n_classes]) and `target_map`.
-        sample_weight (torch.Tensor, optional): Per-event weights.
-            Defaults to uniform weighting.
         labels (list[str], optional): Class names, in column order.
             Defaults to `ctx.target_map` keys.
         colors (Sequence, optional): Colors to cycle per class. Defaults
@@ -50,14 +51,12 @@ def plot_precision_recall(
     fig, ax = plt.subplots(figsize=(6, 6))
     colors = plt.get_cmap("tab10").colors if colors is None else colors
 
-    if sample_weight is None:
-        sample_weight = torch.ones(target.shape[0], device=target.device)
     if labels is None:
         labels = list(target_map.keys())
     if not labels:
         raise ValueError("plot_precision_recall requires at least one label to plot.")
 
-    sample_weight_np = make_plotable(sample_weight)
+    sample_weight_np = make_plotable(ctx.weights["composition"])
 
     for class_idx, name in enumerate(labels):
         disp = PrecisionRecallDisplay.from_predictions(

@@ -152,7 +152,7 @@ class EvaluationReporter:
             predictions=result["predictions"],
             targets=result["targets"],
             event_weights=result["event_weights"],
-            composition_weights=result.get("composition_weights"), # for training loops its None [is in optional_defaults]
+            composition_weights=result.get("composition_weights"), # for sampled batches its none (so inside Training Loop)
 
             **self._shared_meta(global_step=global_step, model_evaluation_state=model_evaluation_state),
         )

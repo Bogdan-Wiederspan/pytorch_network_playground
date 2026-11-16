@@ -49,10 +49,10 @@ def build_cross_entropy(ctx: EvalContext, **kwargs) -> dict[str, torch.Tensor]:
     Returns:
         dict[str, torch.Tensor]: {"cross_entropy": scalar}.
     """
-    composition_weights = ctx.get("composition_weights") if ctx.has("composition_weights") else None
     cross_entropy = cross_entropy_from_probabilities(
         probabilities=ctx.predictions,
         targets=ctx.targets,
-        weights=composition_weights,
+        weights=ctx.weights("composition"),
+
     )
     return {"cross_entropy": cross_entropy}

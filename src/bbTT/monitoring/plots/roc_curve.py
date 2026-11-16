@@ -1,6 +1,5 @@
 import matplotlib.pyplot as plt
 import numpy as np
-import torch
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from sklearn.metrics import RocCurveDisplay, auc, roc_curve
@@ -13,7 +12,7 @@ from bbTT.monitoring.register import register_plot
     requires=None,
     optional=False,
 )
-def _roc_curve(ctx, sample_weight=None, labels=None, **kwargs) -> tuple[Figure, Axes]:
+def _roc_curve(ctx, labels=None, **kwargs) -> tuple[Figure, Axes]:
     """
     Plot one-vs-rest ROC curves for each class.
 
@@ -21,11 +20,12 @@ def _roc_curve(ctx, sample_weight=None, labels=None, **kwargs) -> tuple[Figure, 
     `ctx.predictions`), all overlaid on a single axes, colored by a
     cycling colormap.
 
+    Events are weighted on the composition axis, so a full
+    pass reflects the class mixture of a training batch (see EvalContext.weights).
+
     Args:
         ctx (EvalContext): Must expose `targets`, `predictions`
             (both shaped [n_samples, n_classes]) and `target_map`.
-        sample_weight (torch.Tensor, optional): Per-event weights,
-            shape [n_samples]. Defaults to uniform weighting.
         labels (list[str], optional): Class names to plot, in column
             order. Defaults to `ctx.target_map` keys.
         colors (Sequence, optional): Colors to cycle through per class.
@@ -42,9 +42,6 @@ def _roc_curve(ctx, sample_weight=None, labels=None, **kwargs) -> tuple[Figure, 
     fig, ax = plt.subplots(figsize=(6, 6))
     colors = plt.get_cmap("tab10").colors if kwargs.get("colors") is None else kwargs["colors"]
 
-    if sample_weight is None:
-        sample_weight = torch.ones(target.shape[0])
-
     if labels is None:
         labels = list(target_map.keys())
 
@@ -57,7 +54,7 @@ def _roc_curve(ctx, sample_weight=None, labels=None, **kwargs) -> tuple[Figure, 
         fpr, tpr, _ = roc_curve(
             target[:, class_index],
             pred[:, class_index],
-            sample_weight=sample_weight,
+            sample_weight=ctx.weights["composition"],
         )
         roc_auc = auc(fpr, tpr)
 
