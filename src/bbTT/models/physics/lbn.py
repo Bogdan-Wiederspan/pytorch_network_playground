@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 import torch
 
@@ -11,20 +11,23 @@ class LBN(torch.nn.Module):
     For details and nomenclature see https://arxiv.org/pdf/1812.09722.
     """
 
-    KNOWN_FEATURES = [
-        "e",
-        "px",
-        "py",
-        "pz",
-        "pt",
-        "eta",
-        "phi",
-        "m",
-        "pair_cos",
-        "pair_dr",
-    ]
+    # real physical quantities the LBN can extract from the boosted vectors
+    BASE_FEATURES = ("e", "px", "py", "pz", "pt", "eta", "phi", "m", "pair_cos", "pair_dr")
 
-    DEFAULT_FEATURES = ["e", "pt", "eta", "phi", "m", "pair_cos"]
+    # element-wise transformations, requested by prefixing a base feature: "log1p_m", "log_pt"
+    TRANSFORMS: dict[str, Callable[[torch.Tensor], torch.Tensor]] = {
+        "log_": torch.log,
+        "log1p_": torch.log1p,
+    }
+    # make combination of normal and transformed features
+    KNOWN_FEATURES = []
+    for _prefix in ("", *TRANSFORMS):
+        for _feature in BASE_FEATURES:
+            KNOWN_FEATURES.append(f"{_prefix}{_feature}")
+    del _prefix, _feature # necessary since we are in class space
+
+    # using log1p instead of log: for a vanishing mass or pt the feature goes to 0 instead
+    DEFAULT_FEATURES = ["log1p_e", "log1p_pt", "eta", "phi", "log1p_m", "pair_cos"]
 
     def __init__(
         self,
@@ -68,10 +71,39 @@ class LBN(torch.nn.Module):
         self.particle_w = torch.nn.Parameter(torch.rand(N, M) * weight_init_scale)
         self.restframe_w = torch.nn.Parameter(torch.rand(N, M) * weight_init_scale)
 
+    @classmethod
+    def split_feature(cls, feature: str) -> tuple[str, str]:
+        """
+        Separate a feature name into its transformation prefix and its base feature.
+
+        Args:
+            feature (str): Feature name as in KNOWN_FEATURES, e.g. "log1p_m" or "pt".
+
+        Returns:
+            tuple[str, str]: (prefix, base feature); the prefix is "" for an untransformed feature.
+        """
+        for prefix in cls.TRANSFORMS:
+            if feature.startswith(prefix):
+                return prefix, feature[len(prefix):]
+        return "", feature
+
+    @classmethod
+    def is_pair_feature(cls, feature: str) -> bool:
+        """
+        Whether a feature is defined per pair of output particles, i.e. has (M^2 - M) / 2 columns instead of M.
+
+        Args:
+            feature (str): Feature name, with or without transformation prefix.
+
+        Returns:
+            bool: True for pair features such as "pair_cos" or "log1p_pair_dr".
+        """
+        return cls.split_feature(feature)[1].startswith("pair_")
+
     @property
     def out_features(self) -> int:
         # determine number of pair-wise feature projections
-        n_pair = sum(1 for f in self.features if f.startswith("pair_"))
+        n_pair = sum(1 for f in self.features if self.is_pair_feature(f))
 
         # compute output dimension
         n = (len(self.features) - n_pair) * self.M + n_pair * (self.M**2 - self.M) // 2
@@ -80,10 +112,11 @@ class LBN(torch.nn.Module):
     @property
     def ndim(self):
         # dim normal features: m * 4
-        non_pair_features_dim = len([f for f in self.features if "pair" not in f]) * self.M
+        non_pair_features_dim = len([f for f in self.features if not self.is_pair_feature(f)]) * self.M
 
         # dim pair-wise features is MxM Matrix, which diagonal = 0, and symmetric: (M^2 - M)/2
-        pair_features_dim = len([f for f in self.features if "pair" in f]) * ((self.M**2 - self.M) / 2)
+        pair_features_dim = len([f for f in self.features if self.is_pair_feature(f)]) * ((self.M**2 - self.M) / 2)
+
         num = int(non_pair_features_dim + pair_features_dim)
         return num
 
@@ -211,6 +244,13 @@ class LBN(torch.nn.Module):
             # check cache first
             if feature in cache:
                 return cache[feature]
+
+            # transformed access: resolve the base feature, apply the transformation, cache under the full name
+            prefix, base = self.split_feature(feature)
+            if prefix:
+                cache[feature] = self.TRANSFORMS[prefix](get(base))
+                return cache[feature]
+
             # live feature access
             if feature == "e":
                 return boosted_vecs[..., E]
