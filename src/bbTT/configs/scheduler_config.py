@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 
 from bbTT.configs.utils import choice_check
 
-SCHEDULER_CHOICE = Literal["linear", "cosine_annealing", "reduce_on_plateau", "step", "exponential"]
+SCHEDULER_CHOICE = Literal["cosine_annealing", "half_cosine", "reduce_on_plateau", "step", "exponential"] # main scheduler choices
 
+WARMUP_CHOICE = Literal["linear", "cosine"] # warm-up curves, implemented in bbTT.optimization.scheduler.warmup.WARMUP_REGISTRY
 
 @dataclass
 class StepLRConfig:  # used by marcel
@@ -18,6 +19,12 @@ class StepLRConfig:  # used by marcel
 class CosineAnnealingLRConfig:
     T_max: int = 5000  # maximum number of iterations
     eta_min: float = 1e-9  # minimum learning rate
+
+@dataclass
+class HalfCosineLRConfig:
+    # modification of cosine annealing, cosine decay that stays at eta_min instead of rising again
+    T_max: int = 5000  # iterations of the half wave, counted from the end of the warm-up
+    eta_min: float = 1e-9  # absolute learning rate reached after T_max and kept from then on
 
 
 @dataclass
@@ -36,13 +43,6 @@ class ReduceLROnPlateauConfig:
 
 
 @dataclass
-class LinearLRConfig:
-    start_factor: float = 1e-4  # the initial learning rate will be the start_factor times the base learning rate
-    end_factor: float = 1.0  # the final learning rate will be the end_factor times the base learning rate
-    total_iters: int = 1000  # number of iterations over which the multiplier increases from start_factor to end_factor
-
-
-@dataclass
 class ExponentialLRConfig:
     gamma: float = 0.9  # Multiplicative factor of learning rate decay.
     last_epoch: int = -1  # The index of last epoch. Default: -1.
@@ -50,8 +50,8 @@ class ExponentialLRConfig:
 
 SCHEDULER_REGISTRY = {
     "cosine_annealing": (CosineAnnealingLRConfig, "CosineAnnealingLR"),
+    "half_cosine": (HalfCosineLRConfig, "HalfCosineLR"),
     "reduce_on_plateau": (ReduceLROnPlateauConfig, "ReduceLROnPlateau"),
-    "linear": (LinearLRConfig, "LinearLR"),
     "step": (StepLRConfig, "StepLR"),
     "exponential": (ExponentialLRConfig, "ExponentialLR"),
 }
@@ -59,26 +59,35 @@ SCHEDULER_REGISTRY = {
 
 @dataclass
 class SchedulerConfig:
-    scheduler_chain: tuple[SCHEDULER_CHOICE, ...] = ("reduce_on_plateau",) # schedulers used in chain
-    # scheduler_chain: tuple[SCHEDULER_CHOICE, ...] = ("linear", "reduce_on_plateau")  # schedulers used in chain
-    milestones: tuple[int, ...] = (1000,)  # intervals after which the LR scheduler is swapped
+    # --- Main Config ---
+    # main scheduler, takes over after the warm-up (or from the start without one)
+    scheduler_choice: SCHEDULER_CHOICE = "reduce_on_plateau"
+
+    # --- WarmUp Config ---
+    # warm-up curve, None disables the warm-up. Optional[...] instead of "| None": from_dict evaluates the hints
+    warmup_choice: Optional[WARMUP_CHOICE] = "cosine"
+    warmup_iterations: int = 100  # batch steps until the warm-up factor reaches 1 (= base learning rate)
+    warmup_start_factor: float = 1e-4  # factor of the base learning rate at the first iteration
 
     @property
-    def config_chain(self) -> tuple[dict[str, Any], ...]:
+    def scheduler_kwargs(self) -> dict[str, Any]:
         """
         Returns:
-            tuple[dict[str, Any], ...]: Default keyword arguments of each scheduler in ``scheduler_chain``, in order.
+            dict[str, Any]: Default keyword arguments of the main scheduler.
         """
-        return tuple(asdict(SCHEDULER_REGISTRY[choice][0]()) for choice in self.scheduler_chain)
+        return asdict(SCHEDULER_REGISTRY[self.scheduler_choice][0]())
 
     @property
-    def scheduler_cls_chain(self) -> tuple[str, ...]:
+    def scheduler_cls(self) -> str:
         """
         Returns:
-            tuple[str, ...]: Class name of each scheduler in ``scheduler_chain``, in order; instantiated in the training.
+            str: Class name of the main scheduler, resolved to the class when the scheduler is built.
         """
-        return tuple(SCHEDULER_REGISTRY[choice][1] for choice in self.scheduler_chain)
+        return SCHEDULER_REGISTRY[self.scheduler_choice][1]
 
     def __post_init__(self):
-        for choice in self.scheduler_chain:
-            choice_check(choice, SCHEDULER_CHOICE)
+        choice_check(self.scheduler_choice, SCHEDULER_CHOICE)
+        if self.warmup_choice is not None:
+            choice_check(self.warmup_choice, WARMUP_CHOICE)
+            if self.warmup_iterations <= 0:
+                raise ValueError(f"warmup_iterations must be positive, got {self.warmup_iterations}")

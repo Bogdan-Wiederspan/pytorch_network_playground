@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import copy
 from dataclasses import asdict
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 
 from bbTT.checkpoint.paths import checkpoint_path
 from bbTT.monitoring.logger.logger import get_logger
+
+if TYPE_CHECKING:
+    from bbTT.optimization.scheduler.warmup import WarmupScheduler
 
 logger_inst = get_logger(__name__)
 
@@ -95,7 +98,7 @@ class CheckPoint:
         loss: float,
         model: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
-        scheduler: torch.optim.lr_scheduler.LRScheduler | None,
+        scheduler: WarmupScheduler | None,
         current_iteration: int,
         full_config: Any,
     ) -> bool:
@@ -107,7 +110,7 @@ class CheckPoint:
             loss (float): Current validation loss.
             model (torch.nn.Module): Model in its current state.
             optimizer (torch.optim.Optimizer): Optimizer in its current state.
-            scheduler (torch.optim.lr_scheduler.LRScheduler): Scheduler in its current state.
+            scheduler (WarmupScheduler | None): Scheduler in its current state.
             current_iteration (int): Training iteration the validation belongs to.
             full_config (Any): Full config dataclass, stored as dict.
 
@@ -170,7 +173,7 @@ class CheckPoint:
         self,
         model: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
-        scheduler: torch.optim.lr_scheduler.LRScheduler,
+        scheduler: WarmupScheduler | None,
         current_iteration: int,
         full_config: Any,
         loss: float,
@@ -182,7 +185,7 @@ class CheckPoint:
         Args:
             model (torch.nn.Module): Model to snapshot.
             optimizer (torch.optim.Optimizer): Optimizer to snapshot.
-            scheduler (torch.optim.lr_scheduler.LRScheduler): Scheduler to snapshot.
+            scheduler (WarmupScheduler | None): Scheduler to snapshot.
             current_iteration (int): Training iteration the snapshot belongs to.
             full_config (Any): Full config dataclass, stored as dict.
 

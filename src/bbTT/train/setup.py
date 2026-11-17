@@ -15,8 +15,7 @@ from bbTT.loss import init_loss
 from bbTT.models.utils import init_model
 from bbTT.monitoring import TrainingMonitor, setup_monitoring
 from bbTT.monitoring.logger.logger import get_logger
-from bbTT.optimizer.scheduler_handler import SchedulerHandler
-from bbTT.optimizer.utils import init_optimizer, init_scheduler
+from bbTT.optimization import SchedulerHandler, WarmupScheduler, init_optimizer, init_scheduler
 from bbTT.train.loops import TrainingLoop, ValidationLoop
 from bbTT.utils.utils import DEVICE
 
@@ -63,7 +62,7 @@ class TrainingComponents:
         training_loop (TrainingLoop): One optimization step over a batch.
         validation_loop (ValidationLoop): One full pass over a sampler without optimization.
         optimizer_inst (torch.optim.Optimizer): Optimizer bound to the model parameters.
-        scheduler_inst (torch.optim.lr_scheduler.LRScheduler | None): Scheduler bound to the optimizer, None disables it.
+        scheduler_inst (WarmupScheduler): Warm-up plus main scheduler bound to the optimizer.
         training_loss_inst (torch.nn.Module): Loss used for the optimization step.
         validation_loss_inst (torch.nn.Module): Loss used for the full passes.
         checkpoint_inst (CheckPoint): Decides on and writes checkpoints from the validation loss.
@@ -75,7 +74,7 @@ class TrainingComponents:
     training_loop: TrainingLoop
     validation_loop: ValidationLoop
     optimizer_inst: torch.optim.Optimizer
-    scheduler_inst: torch.optim.lr_scheduler.LRScheduler | None
+    scheduler_inst: WarmupScheduler
     training_loss_inst: torch.nn.Module
     validation_loss_inst: torch.nn.Module
     checkpoint_inst: CheckPoint
