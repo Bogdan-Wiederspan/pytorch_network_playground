@@ -49,6 +49,10 @@ class LBN(torch.nn.Module):
             if f not in self.KNOWN_FEATURES:
                 raise ValueError(f"unknown feature '{f}', known features are: {self.KNOWN_FEATURES}")
 
+        # For Torch pt2 export necessary. pt2 export can't resolve class defined dict
+        self.transforms = dict(self.TRANSFORMS)
+        self._split = {f: self.split_feature(f) for f in self.KNOWN_FEATURES}
+
         # store settings
         self.N = N
         self.M = M
@@ -246,9 +250,10 @@ class LBN(torch.nn.Module):
                 return cache[feature]
 
             # transformed access: resolve the base feature, apply the transformation, cache under the full name
-            prefix, base = self.split_feature(feature)
+            prefix, base = self._split.get(feature, ("", feature))
+
             if prefix:
-                cache[feature] = self.TRANSFORMS[prefix](get(base))
+                cache[feature] = self.transforms[prefix](get(base))
                 return cache[feature]
 
             # live feature access
