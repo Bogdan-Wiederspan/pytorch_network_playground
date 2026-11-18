@@ -163,7 +163,11 @@ def run_training_loop(
                 step=current_iteration,
             )
 
-        training_components.scheduler_handler_inst.step(training_components.model_inst, training_components.optimizer_inst, metric=eval_v_loss)
+        training_components.scheduler_handler_inst.step_metric(
+            model_inst=training_components.model_inst,
+            optimizer_inst=training_components.optimizer_inst,
+            metric=eval_v_loss,
+        )
 
 
 def main(

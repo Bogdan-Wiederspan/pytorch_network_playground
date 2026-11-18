@@ -187,7 +187,7 @@ class TrainingLoop(BaseLoop):
     def cleanup(self, monitor=None, model_inst=None, optimizer_inst=None, scheduler_handler_inst=None, **kwargs):
         super().cleanup(monitor=monitor, model_inst=model_inst)
         if scheduler_handler_inst is not None:
-            scheduler_handler_inst.step(model_inst=model_inst, optimizer_inst=optimizer_inst, metric=None)
+            scheduler_handler_inst.step_batch()
 
         model_inst.disable_gradient_hooks()
         if monitor is not None:
