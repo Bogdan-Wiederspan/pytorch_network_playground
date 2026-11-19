@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal, Optional, Tuple
 
+from bbTT.data_handling.features import FEATURES
 from bbTT.utils.utils import EMPTY_INT
 
 
@@ -26,7 +27,7 @@ class PaddingConfig:
     categorical_target_value: int = EMPTY_INT  # which categorical value is targeted by the padding
     categorical_masking_value: int = -1  # value that is used to mask the categorical target value
 
-    # the value that marks a missing continuous feature comes from DataConfig.dummy_values
+    # the value that marks a missing continuous feature comes from the feature registry (DataConfig.dummy_values)
     # 2 Mods exist:
     # raw: "htt_e": ("raw", 0.0) --> missing values are set to 0.0 GeV, after standardization value is not 0.0
     # std: "htt_e": ("std", -1.0) --> missing value are set to -1std, thus after standardization value is -1.0
@@ -52,12 +53,23 @@ class PaddingConfig:
             "httfatjet_e": ("raw", 0.0), "httfatjet_px": ("raw", 0.0), "httfatjet_py": ("raw", 0.0), "httfatjet_pz": ("raw", 0.0),
             "nu1_px": ("raw", 0.0), "nu1_py": ("raw", 0.0), "nu1_pz": ("raw", 0.0),
             "nu2_px": ("raw", 0.0), "nu2_py": ("raw", 0.0), "nu2_pz": ("raw", 0.0),
+            "bjet1_upart_b": ("raw", -1.0), "bjet2_upart_b": ("raw", -1.0), # only exist for 24
+
         }
-    )  # noqa per-feature replacement of the marker with 2 modes: e.g. {"bjet1_e": ("raw", 0.0), "bjet1_tag_b": ("std", -1.0)}
+    )
+    # noqa per-feature replacement of the marker with 2 modes: e.g. {"bjet1_e": ("raw", 0.0), "bjet1_tag_b": ("std", -1.0)}
+    # a map over all registered features, only the configured ones are used
+
     continuous_replacement_default: REPLACEMENT_TYPE_CHOICE = (
         "raw",
         0.0,
     )  # replacement for every continuous feature not listed above
+
+    def __post_init__(self) -> None:
+        # the replacement map may cover features a training does not use, but every name must exist
+        unknown = set(self.continuous_replacement) - set(FEATURES)
+        if unknown:
+            raise ValueError(f"continuous_replacement refers to features not in the feature registry: {sorted(unknown)}")
 
 
 @dataclass

@@ -1,16 +1,8 @@
+from __future__ import annotations
+
 import awkward as ak
 
-
-def particle_net_wp(year, wp_level="medium"):
-    # as taken from https://github.com/uhh-cms/hh2bbtautau/blob/master/hbt/config/configs_hbt.py#L1252
-    particle_net_wp = {
-        "loose": {"22pre": 0.047, "22post": 0.0499, "23pre": 0.0358, "23post": 0.0359}[year],
-        "medium": {"22pre": 0.245, "22post": 0.2605, "23pre": 0.1917, "23post": 0.1919}[year],
-        "tight": {"22pre": 0.6734, "22post": 0.6915, "23pre": 0.6172, "23post": 0.6133}[year],
-        "xtight": {"22pre": 0.7862, "22post": 0.8033, "23pre": 0.7515, "23post": 0.7544}[year],
-        "xxtight": {"22pre": 0.961, "22post": 0.9664, "23pre": 0.9659, "23post": 0.9688}[year],
-    }
-    return particle_net_wp[wp_level]
+from bbTT.data_handling.eras import EraSpec
 
 
 def di_tau_mass_window(events, suffix="res_dnn_pnet"):
@@ -27,10 +19,22 @@ def di_tau_mass_window(events, suffix="res_dnn_pnet"):
     return di_tau_mass_window_mask
 
 
-def b_jet_mask(events, year="22pre", wp_level="medium", atleast_num=1):
-    """Select events with *atleast_num* of b-tagges values according to ParticleNet score of given *year* and *wp_level*"""
-    b_tag_wp = particle_net_wp(year, wp_level=wp_level)
-    return ak.sum(events.HHBJet_btagPNetB > b_tag_wp, axis=1) >= atleast_num
+def b_jet_mask(events: ak.Array, era: EraSpec, wp_level: str = "medium", atleast_num: int = 1) -> ak.Array:
+    """
+    Select events with at least *atleast_num* b-tagged jets. Which tagger, which branch and which
+    threshold apply is taken from the era constants, so this function knows nothing about ParticleNet or UParT.
+
+    Args:
+        events (ak.Array): Events holding the era's b-tag score branch.
+        era (EraSpec): Era the events belong to.
+        wp_level (str, optional): Working point name. Defaults to "medium".
+        atleast_num (int, optional): Minimum number of tagged jets. Defaults to 1.
+
+    Returns:
+        ak.Array: Boolean mask per event.
+    """
+    b_tag_wp = era.working_point(wp_level)
+    return ak.sum(events[era.btag_score_branch] > b_tag_wp, axis=1) >= atleast_num
 
 
 def di_b_jet_mask_window(events, suffix="res_dnn_pnet"):
@@ -45,21 +49,23 @@ def di_b_jet_mask_window(events, suffix="res_dnn_pnet"):
     return di_bjet_mass_window_mask
 
 
-def res1b_and_res2b_phase_space_mask(events: ak.Array, year: list[str], suffix: str = "res_dnn_pnet") -> tuple[ak.Array, ak.Array, ak.Array]: # noqa
+def res1b_and_res2b_phase_space_mask(events: ak.Array, era: EraSpec, suffix: str = "res_dnn_pnet") -> tuple[ak.Array, ak.Array, ak.Array]: # noqa
     """
     Calculates Masks to get into our evaluation phase space.
-    Depends on *year*, apply  base *cut* and depending on the producer add a *suffix* to fields in root file.
+    Depends on *era*, apply  base *cut* and depending on the producer add a *suffix* to fields in root file.
     Definition of mask is defined in https://github.com/uhh-cms/hh2bbtautau/blob/master/hbt/categorization/default.py#L206-L240
 
     Args:
         events (ak.Array): Awkward Array with necessary events.
-        year (list[str]): Year string e.g. "22pre"
+        era (EraSpec): Era the events belong to, provides the b-tag branch and working points.
         suffix (str, optional): Suffix for fields in uproot file. Defaults to "res_dnn_pnet".
 
     Returns:
         ak.array: Masks for events within lepton pair and b-tagged pair, aswell for bjets
     """
     di_tau_mass_window_mask = di_tau_mass_window(events, suffix=suffix)
-    bjet_mask = b_jet_mask(events, year=year, wp_level="medium", atleast_num=1)
+    at_least_one_btag_mask = b_jet_mask(events, era=era, wp_level="medium", atleast_num=1)
+    at_least_two_btag_mask = b_jet_mask(events, era=era, wp_level="medium", atleast_num=2)
+
     di_bjet_mass_window_mask = di_b_jet_mask_window(events, suffix=suffix)
-    return di_tau_mass_window_mask, di_bjet_mass_window_mask, bjet_mask
+    return di_tau_mass_window_mask, di_bjet_mass_window_mask, at_least_one_btag_mask, at_least_two_btag_mask

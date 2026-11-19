@@ -115,7 +115,7 @@ class PaddingLayer(torch.nn.Module):
 class ContinuousPaddingLayer(PaddingLayer):
     """
     Padding for continuous features: float32 in and out, typically one marker and one replacement per feature,
-    resolved from ``DataConfig.continuous_dummy_values`` and ``PaddingConfig.continuous_replacement``.
+    resolved from ``DataConfig.dummy_values`` (feature registry) and ``PaddingConfig.continuous_replacement``.
     """
 
     target_dtype = torch.float32

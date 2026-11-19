@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Iterator
 import torch
 
 from bbTT.data_handling.cache import BaseCacher
+from bbTT.data_handling.utils import markers_by_position
 from bbTT.monitoring.logger.logger import get_logger
 
 logger_inst = get_logger(__name__)
@@ -36,7 +37,7 @@ class FeatureStatisticCache(BaseCacher):
         This ensures that stale statistics are not silently reused when the dataset is changed, and that different splits of the same dataset do not
 
         Args:
-            dataset_config (DataConfig): Config providing ``content_hash()``, ``continuous_features`` and ``continuous_dummy_values``.
+            dataset_config (DataConfig): Config providing ``content_hash()``, ``continuous_features`` and ``dummy_values``.
             sampler (ProcessSampler): Sampler holding the registered processes.
 
             return_dummy (bool): Skip the computation and use an identity transform (mean 0, std 1). Useful when pretrained weights are loaded anyway.
@@ -51,7 +52,7 @@ class FeatureStatisticCache(BaseCacher):
         self.return_dummy = return_dummy
 
         self.features = self.config.continuous_features
-        self.padding_dummy = list(self.config.continuous_dummy_values)  # one marker per feature, JSON-serializable
+        self.padding_dummy = markers_by_position(self.features, self.config.dummy_values)
 
         self.fingerprint = self.build_fingerprint(split_fingerprint)
         self.path = self.cache_root / self.hash / f"training_statistics_{self.fingerprint_hash()}.json"
