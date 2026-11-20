@@ -1,4 +1,4 @@
-from .utils import EMPTY_FLOAT, EMPTY_INT  # re-export constants
+from .constants import EMPTY_FLOAT, EMPTY_INT  # re-export constants (torch-free, .utils imports torch)
 from .lazy_loader import lazy_import
 
 
