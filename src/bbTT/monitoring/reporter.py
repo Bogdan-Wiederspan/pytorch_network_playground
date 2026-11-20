@@ -179,13 +179,15 @@ class EvaluationReporter:
 
     def record_checkpoint(self, name: str, iteration: int, loss: float, step: int) -> None:
         """
-        Record a written checkpoint and re-log the complete history as tensorboard text.
+        Record a written checkpoint: re-log the complete history as tensorboard text and mark the
+        checkpoint in the validation run as ``Loss_checkpoint``, a sparse curve next to ``Loss`` that
+        only has a point where a checkpoint was written.
 
         Args:
             name (str): File stem of the checkpoint, see CheckPoint.save_path.
             iteration (int): Iteration whose state was written; can differ from `step` with confirmation enabled.
             loss (float): Validation loss of the written state.
-            step (int): Current training iteration, used as tensorboard step.
+            step (int): Current training iteration, used as tensorboard step of the text entry.
         """
         self.checkpoint_history_inst.record(name=name, iteration=iteration, loss=loss)
         # tensorboard only keeps a sample of text entries per tag, so the whole table is written every time
@@ -194,6 +196,8 @@ class EvaluationReporter:
             text=self.checkpoint_history_inst.to_markdown(),
             step=step,
         )
+        # the point sits at the iteration the loss belongs to, not at the step the checkpoint was confirmed
+        self.tensorboard_writer.log_scalar("Loss_checkpoint", loss, step=iteration, mode="validation")
 
     def report_model_state(self, model_evaluation_state: dict[str, Any], global_step: int) -> None:
         """
