@@ -27,10 +27,10 @@ class MonitoringMode:
     Everything that distinguishes one kind of monitored data from another.
 
     Args:
-        context_mode (str): Mode of the EvalContext, becomes the tensorboard tag prefix ("batch", "training", ...).
+        context_mode (str): Mode of the EvalContext, becomes the tensorboard sub-run ("batch", "training", ...).
         monitor_mode (str): Key under which the TrainingMonitor captured tensors for this data.
         plots (tuple[str, ...]): Plot names from PLOT_REGISTRY to run.
-        scalars (dict[str, str]): Tensorboard "tag/name" -> context artifact to log, see EvaluationRunner.run_scalars.
+        scalars (dict[str, str]): Tensorboard tag -> context artifact to log, see EvaluationRunner.run_scalars.
         with_gradients (bool): Also attach the captured gradients, only the training batch has them.
     """
 
@@ -93,13 +93,13 @@ class EvaluationReporter:
                 context_mode="training",
                 monitor_mode=MONITOR_MODE_TRAINING,
                 plots=tuple(record_config.training_plots),
-                scalars=dict(record_config.training_scalars),
+                scalars=dict(record_config.evaluation_scalars),
             ),
             "validation": MonitoringMode(
                 context_mode="validation",
                 monitor_mode=MONITOR_MODE_VALIDATION,
                 plots=tuple(record_config.validation_plots),
-                scalars=dict(record_config.validation_scalars),
+                scalars=dict(record_config.evaluation_scalars),
             ),
         }
 
@@ -219,10 +219,10 @@ class EvaluationReporter:
                         tag=f"MonitoredBlocks/{block_name}/{quantity}", values=value, step=global_step
                     )
                 elif isinstance(value, dict):
-                    self.tensorboard_writer.log_scalar(
-                        values=value, step=global_step, name=f"MonitoredBlocks/{block_name}/{quantity}"
+                    self.tensorboard_writer.log_scalars_overlay(
+                        tag=f"MonitoredBlocks/{block_name}/{quantity}", values=value, step=global_step
                     )
                 else:
                     scalars.setdefault(quantity, {})[block_name] = float(value)
         for quantity, values in scalars.items():
-            self.tensorboard_writer.log_scalar(values=values, step=global_step, name=f"MonitoredBlocks/{quantity}")
+            self.tensorboard_writer.log_scalars_overlay(tag=f"MonitoredBlocks/{quantity}", values=values, step=global_step)

@@ -81,9 +81,9 @@ def run_training_loop(
 
         # --- batch scalars ---
         if current_iteration % record_config.verbose_interval == 0:
-            tensorboard_writer.log_lr(training_components.optimizer_inst, current_iteration)
+            tensorboard_writer.log_lr(training_components.optimizer_inst, current_iteration, mode="batch")
             batch_loss = batch_result["loss"].item()
-            tensorboard_writer.log_loss({"batch_loss": batch_loss}, step=current_iteration)
+            tensorboard_writer.log_scalar("Loss", batch_loss, step=current_iteration, mode="batch")
             current_lr = training_components.optimizer_inst.param_groups[0]["lr"]
             logger_inst.training(f"T-It: {current_iteration} - LR: {current_lr} - batch loss: {batch_loss:.2E}")
 
@@ -143,6 +143,8 @@ def run_training_loop(
                 "validation", evaluation_validation_result, global_step=current_iteration,
                 model_evaluation_state=model_evaluation_state, loss=eval_v_loss,
             )
+            # monitors 'MonitoredBlocks' reports in Tensorboard
+            reporter_inst.report_model_state(model_evaluation_state, global_step=current_iteration)
 
         # --- checkpoint criteria checks and saving ---
         is_checkpoint_written = training_components.checkpoint_inst.update(
