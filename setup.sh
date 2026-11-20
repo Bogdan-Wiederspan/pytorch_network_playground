@@ -10,6 +10,7 @@
 #   2. load config.sh (created from config.sh.template on first run)
 #   3. create the storage directories if CREATE_DIR=1
 #   4. activate the virtualenv ${VENV_ROOT}/${ML_ENV}
+#   5. put the command line tools in bin/ on PATH (bbtt-*)
 
 # this file modifies the calling shell, so it only works when sourced
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
@@ -139,6 +140,10 @@ setup() {
     source "${DNN_ROOT}/.setup/pdb.sh"
 
     activate_venv || return 1
+
+    # add command line tools (bin/bbtt-*) to path
+    export PATH="${DNN_ROOT}/bin:${PATH}"
+
     finish_setup
 }
 
