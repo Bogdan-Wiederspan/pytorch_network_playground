@@ -1,0 +1,7 @@
+#!/usr/bin/env python
+# Thin wrapper, the logic lives in bbTT.tools.sum_sizes.
+import sys
+
+from bbTT.tools.sum_sizes import main
+
+sys.exit(main())

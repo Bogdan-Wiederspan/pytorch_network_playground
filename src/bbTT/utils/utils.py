@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import torch
 
-EMPTY_INT = -99999
-EMPTY_FLOAT = -99999.0
+from bbTT.utils.constants import EMPTY_FLOAT, EMPTY_INT  # noqa: F401  re-exported, torch-free home
 
 CPU_DEVICE = torch.device("cpu")
 CUDA_DEVICE = torch.device("cuda")

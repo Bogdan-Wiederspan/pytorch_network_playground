@@ -9,7 +9,7 @@ from string import Formatter
 from typing import Any, Literal, Optional, get_args
 
 from bbTT.data_handling.io.find_datasets import cached_find_datasets
-from bbTT.utils.utils import EMPTY_FLOAT
+from bbTT.utils.constants import EMPTY_FLOAT
 
 ERAS_CHOICE = Literal["22pre", "22post", "23pre", "23post"]
 
