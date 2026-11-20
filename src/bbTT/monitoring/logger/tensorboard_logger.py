@@ -167,6 +167,16 @@ class TensorboardLogger:
         logger_path = self.log_dir / new_stem
         return logger_path
 
+    def flush(self) -> None:
+        """
+        Write all pending events to disk.
+
+        The writers flush on their own every 120 s; call this after a validation so its results survive a
+        kill of the process (batch system, OOM killer), which no ``finally`` can catch.
+        """
+        for writer in self._writers.values():
+            writer.flush()
+
     def create_tensorboard_writer(self, log_dir: pathlib.Path) -> SummaryWriter:
         """
         Create a SummaryWriter; torch is imported lazily to keep the module importable without it.

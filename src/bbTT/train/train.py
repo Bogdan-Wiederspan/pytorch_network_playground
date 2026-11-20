@@ -241,64 +241,66 @@ def main(
 
     evaluation_runner_inst = EvaluationRunner(tensorboard_writer)
     load_registers()
-    # TODO add LOGGER FILEPATH in same directory of tensorboard
-    logger_inst.i_info(f"Tensorboard logs: {tensorboard_writer.path}")
 
-    # a resume trains only the fold of its checkpoint
-    # mixing folds would mix their data splits (so a complete mess)
-    folds = full_config.training_config.train_folds if resume_state is None else (resume_state.fold,)
-    for current_fold in folds:
-        logger_inst.info(f"Trainings fold: {current_fold}/{full_config.training_config.k_fold - 1}")
+    try:
+        logger_inst.i_info(f"Tensorboard logs: {tensorboard_writer.path}")
 
-        # --- data ---
-        fold_data = prepare_fold_data(
-            full_config=full_config,
-            current_fold=current_fold,
-            rebuild_cache=rebuild_cache,
-            save_cache=save_cache,
-        )
-        # the standardization follows the training split of this fold, so the model config is set per fold
-        full_config.model_building_config.standardization.mean = fold_data.feature_statistic_cache.mean
-        full_config.model_building_config.standardization.std = fold_data.feature_statistic_cache.std
+        # a resume trains only the fold of its checkpoint
+        # mixing folds would mix their data splits (so a complete mess)
+        folds = full_config.training_config.train_folds if resume_state is None else (resume_state.fold,)
+        for current_fold in folds:
+            logger_inst.info(f"Trainings fold: {current_fold}/{full_config.training_config.k_fold - 1}")
 
-        # --- model, optimizer, loss, scheduler, checkpoint, monitor hooks ---
-        components = build_training_components(
-            full_config=full_config,
-            current_fold=current_fold,
-            training_sampler=fold_data.training_sampler,
-            checkpoint_name=save_model_name,
-        )
+            # --- data ---
+            fold_data = prepare_fold_data(
+                full_config=full_config,
+                current_fold=current_fold,
+                rebuild_cache=rebuild_cache,
+                save_cache=save_cache,
+            )
+            # the standardization follows the training split of this fold, so the model config is set per fold
+            full_config.model_building_config.standardization.mean = fold_data.feature_statistic_cache.mean
+            full_config.model_building_config.standardization.std = fold_data.feature_statistic_cache.std
 
-        # --- monitoring state of this fold ---
-        # histories grow with the training and are rendered by the reporter. The batch composition history
-        # grows with every iteration, so it is only created when requested; without it its plot is skipped.
-        batch_composition_history_inst = BatchCompositionHistory() if full_config.record_config.batch_metrics else None
-        reporter_inst = EvaluationReporter(
-            evaluation_runner_inst=evaluation_runner_inst,
-            training_monitor_inst=components.training_monitor_inst,
-            tensorboard_writer=tensorboard_writer,
-            record_config=full_config.record_config,
-            target_map=full_config.dataset_config.target_map,
-            default_n_bins=full_config.binning_config.num_bins,
-            checkpoint_history_inst=CheckpointHistory(),
-            batch_composition_history_inst=batch_composition_history_inst,
-        )
+            # --- model, optimizer, loss, scheduler, checkpoint, monitor hooks ---
+            components = build_training_components(
+                full_config=full_config,
+                current_fold=current_fold,
+                training_sampler=fold_data.training_sampler,
+                checkpoint_name=save_model_name,
+            )
 
-        # --- resume: load the checkpoint into the fresh components ---
-        start_iteration = 0
-        if resume_state is not None:
-            start_iteration = restore_training_state(components, resume_state)
+            # --- monitoring state of this fold ---
+            # histories grow with the training and are rendered by the reporter. The batch composition history
+            # grows with every iteration, so it is only created when requested; without it its plot is skipped.
+            batch_composition_history_inst = BatchCompositionHistory() if full_config.record_config.batch_metrics else None
+            reporter_inst = EvaluationReporter(
+                evaluation_runner_inst=evaluation_runner_inst,
+                training_monitor_inst=components.training_monitor_inst,
+                tensorboard_writer=tensorboard_writer,
+                record_config=full_config.record_config,
+                target_map=full_config.dataset_config.target_map,
+                default_n_bins=full_config.binning_config.num_bins,
+                checkpoint_history_inst=CheckpointHistory(),
+                batch_composition_history_inst=batch_composition_history_inst,
+            )
 
-        # --- training ---
-        run_training_loop(
-            full_config=full_config,
-            training_components=components,
-            fold_data=fold_data,
-            reporter_inst=reporter_inst,
-            tensorboard_writer=tensorboard_writer,
-            start_iteration=start_iteration,
-        )
+            # --- resume: load the checkpoint into the fresh components ---
+            start_iteration = 0
+            if resume_state is not None:
+                start_iteration = restore_training_state(components, resume_state)
 
+            # --- training ---
+            run_training_loop(
+                full_config=full_config,
+                training_components=components,
+                fold_data=fold_data,
+                reporter_inst=reporter_inst,
+                tensorboard_writer=tensorboard_writer,
+                start_iteration=start_iteration,
+            )
+    finally:
+        tensorboard_writer.close()
 
 if __name__ == "__main__":
     from bbTT.utils.parser import ParserBuilder
