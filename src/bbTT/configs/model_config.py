@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal, Optional, Tuple
 
+from bbTT.data_handling.features import FEATURES
 from bbTT.utils.constants import EMPTY_INT
 
 
