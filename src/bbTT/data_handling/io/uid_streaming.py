@@ -19,6 +19,7 @@ def stream_events_by_uid(
     columns: Union[list[str], str],
     cut: Union[list[str], None] = None,
     flush_threshold_rows: int = 1_000_000,
+    jagged: Union[dict[str, tuple[str, int, float]], None] = None,
 ) -> dict[tuple[str, int], np.typing.ArrayLike]:
     """
     Load root files in *dataset_paths*, extract *columns* with applied *cut* on it.
@@ -31,6 +32,7 @@ def stream_events_by_uid(
         branches (Union[list[str], str]): columns that should be loaded e.g. ["events", "run"]. If None loads all columns . Defaults to None.
         cut (Union[list[str], None], optional): list of cuts to be applied on top of baseline cut, which are defined in root_to_numpy. Defaults to None.
         flush_threshold_rows (int, optional): Number of rows inside array before flush is started. Trade of between CPU and peak memory. Defaults to 1_000_000.
+        jagged (dict[str, tuple[str, int, float]], optional): Columns to split from jagged branches, see ``load_root_and_convert_to_numpy``. Defaults to None.
 
     Returns:
         dict[tuple[str, int], np.typing.ArrayLike]: Dict of arrays where key is tuple of dataset name and id.
@@ -66,7 +68,7 @@ def stream_events_by_uid(
     num_events_per_pid = {}
     for dataset, files in dataset_paths.items():
         logger_inst.info(f"Start loading and conversion of root files: {dataset}")
-        events_bucket, num_events_of_files = load_root_and_convert_to_numpy(files, branches=columns, cut=cut)
+        events_bucket, num_events_of_files = load_root_and_convert_to_numpy(files, branches=columns, cut=cut, jagged=jagged)
         num_events_per_dataset[dataset] = num_events_of_files
         for events in events_bucket:
             for pid, p_array in group_by_process_id(events):

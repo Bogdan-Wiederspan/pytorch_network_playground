@@ -5,8 +5,26 @@ import numpy.lib.recfunctions as rfn
 import torch
 
 from bbTT.monitoring.logger.logger import get_logger
+from bbTT.utils.utils import EMPTY_FLOAT
 
 logger_inst = get_logger(__name__)
+
+
+def markers_by_position(features: tuple[str, ...], markers: dict[str, float], fill: float = EMPTY_FLOAT) -> list[float]:
+    """
+    One missing-value marker per feature in *features* order, for tensor-wise comparisons.
+
+    Args:
+        features (tuple[str, ...]): Feature names in tensor column order.
+        markers (dict[str, float]): Marker per feature that has one, see ``DataConfig.dummy_values``.
+        fill (float, optional): Sentinel for features without marker, must never occur in the data.
+            Defaults to EMPTY_FLOAT.
+
+    Returns:
+        list[float]: Marker per column, JSON-serializable.
+    """
+    return [markers.get(f, fill) for f in features]
+
 
 def struct_to_group_tensor(arr: np.typing.NDArray, fields: tuple[str], dtype: torch.dtype = torch.float32):
     """

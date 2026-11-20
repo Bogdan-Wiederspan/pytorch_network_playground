@@ -4,6 +4,7 @@ from typing import Any
 
 import torch
 
+from bbTT.data_handling.utils import markers_by_position
 from bbTT.models.input import CategoricalInputLayer, ContinuousInputLayer, InputLayer
 from bbTT.models.preprocessing import (
     CategoricalPaddingLayer,
@@ -275,11 +276,6 @@ class BaseModel(HookableModelMixin, torch.nn.Module):
         std_cfg = self.model_config.standardization
         features = self.continuous_features
 
-        # check replacement values, if there is a
-        unknown = set(padding_cfg.continuous_replacement) - set(features)
-        if unknown:
-            raise ValueError(f"continuous_replacement refers to unknown continuous features: {sorted(unknown)}")
-
         # feature wise replacement
         replacement = torch.empty(len(features), dtype=torch.float32)
         for idx, feature in enumerate(features):
@@ -319,7 +315,8 @@ class BaseModel(HookableModelMixin, torch.nn.Module):
     def init_continuous_padding_layer(self) -> torch.nn.Module | None:
         """
         Helper to initialize a continuous padding layer instance.
-        This layer replaces the dummy markers of the dataset config (``continuous_dummy_values``) with the per-feature replacement of the padding config, see ``resolve_continuous_replacement``.
+        This layer replaces the dummy markers of the feature registry (``DataConfig.dummy_values``, one per column via
+        ``markers_by_position``) with the per-feature replacement of the padding config, see ``resolve_continuous_replacement``.
         If continuous padding is not enabled in the model building config, None is returned.
 
         Returns:
@@ -328,7 +325,7 @@ class BaseModel(HookableModelMixin, torch.nn.Module):
         m_cfg = self.model_config
         if m_cfg.enable_continuous_padding:
             cont_pad_layer = ContinuousPaddingLayer(
-                target_value=self.dataset_config.continuous_dummy_values,
+                target_value=markers_by_position(self.continuous_features, self.dataset_config.dummy_values),
                 padding_value=self.resolve_continuous_replacement(), # resolve creates a padding tensor that is saved as buffer
             )
             return cont_pad_layer

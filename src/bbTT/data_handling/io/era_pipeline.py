@@ -44,6 +44,7 @@ def _load_and_process_era(config, datasets_per_era, era):
         era_datasets,
         columns=config.uproot_continuous_columns + config.uproot_categorical_columns,
         cut=config.uproot_cuts,
+        jagged=config.uproot_jagged_columns,
         flush_threshold_rows=config.flush_threshold,
     )
 
