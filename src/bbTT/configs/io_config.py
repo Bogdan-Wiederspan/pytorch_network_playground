@@ -10,6 +10,7 @@ from typing import Literal, Optional, get_args
 from bbTT.data_handling.eras import ERAS, column_prefix, era_order
 from bbTT.data_handling.features import FEATURES
 from bbTT.data_handling.io.find_datasets import cached_find_datasets
+from bbTT.utils.constants import EMPTY_FLOAT
 
 # eras that can be configured chosen from, in chronological order
 # the related data of an era is stored in data_handling/eras.py
