@@ -25,13 +25,16 @@ class TensorboardLogger:
 
     def __init__(self, name: str | None = None, path: str | None = None):
         """
+        The run directory is ``<TENSORBOARD_DIR>/<path or timestamp>-<name>``: a custom name makes the run easy
+        to find, the config hash in ``name`` keeps it unique and lets the hash be resolved in the dashboard.
+
         Args:
-            name (str, optional): Name of the training, suffix of the timestamped default directory.
-            path (str, optional): Directory relative to env TENSORBOARD_DIR; replaces the default directory.
+            name (str, optional): Identity of the training, usually the config hash plus a resume suffix.
+            path (str, optional): Custom run name given on the command line; replaces the timestamp.
         """
         self.name = name
         self.log_dir = pathlib.Path(os.environ["TENSORBOARD_DIR"])
-        self.path = self.logger_path() if path is None else self.log_dir / path
+        self.path = self.logger_path(prefix=path)
         self._writers: dict[str | None, SummaryWriter] = {}
 
     @property
@@ -157,17 +160,21 @@ class TensorboardLogger:
             writer.close()
         self._writers.clear()
 
-    def logger_path(self) -> pathlib.Path:
+    def logger_path(self, prefix: str | None = None) -> pathlib.Path:
         """
-        Default directory ``<TENSORBOARD_DIR>/<timestamp>-<name>``.
+        Run directory ``<TENSORBOARD_DIR>/<prefix>-<name>``, the prefix defaults to a timestamp.
+
+        Args:
+            prefix (str, optional): Custom run name. Defaults to the start time.
 
         Returns:
             pathlib.Path: Directory of the main run.
         """
         from time import localtime, strftime
 
-        t = strftime("%Y_%m_%d-%H_%M_%S", localtime())
-        new_stem = f"{t}-{self.name}"
+        if prefix is None:
+            prefix = strftime("%Y_%m_%d-%H_%M_%S", localtime())
+        new_stem = f"{prefix}-{self.name}" if self.name else prefix
         logger_path = self.log_dir / new_stem
         return logger_path
 

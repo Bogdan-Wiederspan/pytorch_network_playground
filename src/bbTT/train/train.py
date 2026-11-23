@@ -172,6 +172,33 @@ def run_training_loop(
         )
 
 
+def format_config_entry(
+    full_config: FullConfig,
+    run_name: str,
+    tensorboard_name: str | None,
+    resume: str | None,
+) -> str:
+    """
+    Markdown for the tensorboard text tab that resolves a run: its hash, custom name, origin and full config.
+
+    Args:
+        full_config (FullConfig): Configuration of the run.
+        run_name (str): Config hash, with resume suffix when resumed.
+        tensorboard_name (str | None): Custom run name from the command line, None when generated.
+        resume (str | None): Checkpoint the run was resumed from, None for a fresh training.
+
+    Returns:
+        str: Markdown with a header table and the config listing in a code block.
+    """
+    header = [
+        "| | |", "|---|---|",
+        f"| run | `{run_name}` |",
+        f"| name | `{tensorboard_name}` |" if tensorboard_name else "| name | generated |",
+        f"| resumed from | `{resume}` |" if resume else "| resumed from | - |",
+    ]
+    return "\n".join(header) + "\n\n```\n" + format_overrides(full_config) + "\n```"
+
+
 def main(
     tensorboard_name: str,
     save_model_name: str | None,
@@ -231,12 +258,17 @@ def main(
     logger_inst.info(f"DEVICE: {DEVICE}")
 
     # create tensorboard instance to monitor plots for the training
-    # when doing a continue a NEW instance of tensorboard is created, but the name of the previous training is used as suffix
+    # the run directory is "<tensorboard_name or timestamp>-<config hash>"; a resume creates a NEW run whose
+    # hash carries the resume suffix, so it sorts next to the original but keeps its own curves
     run_name = hash_dictionary(dataclasses.asdict(full_config.training_config))
     if resume_state is not None:
         run_name = resume_state.run_name(run_name)
-        tensorboard_name = resume_state.run_name(tensorboard_name) if tensorboard_name is not None else None
     tensorboard_writer = TensorboardLogger(name=run_name, path=tensorboard_name)
+    tensorboard_writer.log_text(
+        tag="Config",
+        text=format_config_entry(full_config, run_name=run_name, tensorboard_name=tensorboard_name, resume=resume),
+        step=0,
+    )
 
 
     evaluation_runner_inst = EvaluationRunner(tensorboard_writer)
