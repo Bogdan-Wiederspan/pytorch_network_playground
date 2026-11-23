@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any, Literal, Optional
 
 from bbTT.configs.utils import choice_check
@@ -69,13 +69,33 @@ class SchedulerConfig:
     warmup_iterations: int = 100  # batch steps until the warm-up factor reaches 1 (= base learning rate)
     warmup_start_factor: float = 1e-4  # factor of the base learning rate at the first iteration
 
+    # --- Main scheduler settings ---
+    # one sub config per SCHEDULER_CHOICE, the field name equals the choice. Only the chosen one is used,
+    # but all are fields so they are overridable (--override scheduler_config.half_cosine.T_max=19900)
+    # and saved with the checkpoint.
+    cosine_annealing: CosineAnnealingLRConfig = field(default_factory=CosineAnnealingLRConfig)
+    half_cosine: HalfCosineLRConfig = field(default_factory=HalfCosineLRConfig)
+    reduce_on_plateau: ReduceLROnPlateauConfig = field(default_factory=ReduceLROnPlateauConfig)
+    step: StepLRConfig = field(default_factory=StepLRConfig)
+    exponential: ExponentialLRConfig = field(default_factory=ExponentialLRConfig)
+
+    @property
+    def active_config(self) -> Any:
+        """
+        Returns:
+            Any: Sub config of the chosen main scheduler. Checkpoints written before the sub configs were
+                fields lack the attribute (from_dict skips __init__), then the code default is used.
+        """
+        default_cls = SCHEDULER_REGISTRY[self.scheduler_choice][0]
+        return getattr(self, self.scheduler_choice, None) or default_cls()
+
     @property
     def scheduler_kwargs(self) -> dict[str, Any]:
         """
         Returns:
-            dict[str, Any]: Default keyword arguments of the main scheduler.
+            dict[str, Any]: Keyword arguments of the main scheduler, taken from ``active_config``.
         """
-        return asdict(SCHEDULER_REGISTRY[self.scheduler_choice][0]())
+        return asdict(self.active_config)
 
     @property
     def scheduler_cls(self) -> str:

@@ -213,10 +213,11 @@ class ParserBuilder:
             dest="overrides",
             nargs="*",
             default=[],
-            metavar="PATH",
+            metavar="PATH[=VALUE]",
             help=(
-                "Dotted config paths to take from the current code config instead of the checkpoint, e.g. "
-                "'training_config.max_train_iteration' or a whole 'record_config'. Only with --resume."
+                "Config overrides, applied last. 'PATH=VALUE' sets a field, e.g. 'optimizer_config.lr=3e-3' "
+                "(fresh training and resume). A plain 'PATH', e.g. 'training_config.max_train_iteration' or a whole "
+                "'record_config', takes the current code value instead of the checkpoint one (resume only)."
             ),
         )
 

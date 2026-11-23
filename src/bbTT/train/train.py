@@ -6,7 +6,13 @@ from collections.abc import Sequence
 import numpy as np
 import torch
 
-from bbTT.checkpoint.resume import format_overrides, load_resume_state, restore_training_state
+from bbTT.checkpoint.resume import (
+    apply_overrides,
+    format_overrides,
+    load_resume_state,
+    parse_override,
+    restore_training_state,
+)
 from bbTT.configs.full_config import FullConfig
 from bbTT.data_handling.utils import hash_dictionary
 from bbTT.monitoring import (
@@ -217,9 +223,10 @@ def main(
     Train the configured folds one after another. The tensorboard run carries the config, every fold writes
     its curves to its own sub-run ``fold<k>`` below it (see TensorboardLogger.for_fold).
 
-    With *resume* the config comes from the checkpoint (plus *overrides* from the code config), only the
-    checkpoint's fold is trained, and checkpoints and tensorboard run get a "-resume-<tag>" suffix so the
-    original run stays untouched.
+    With *resume* the config comes from the checkpoint, only the checkpoint's fold is trained, and checkpoints
+    and tensorboard run get a "-resume-<tag>" suffix so the original run stays untouched.
+    The *overrides* are the last truth in both cases: "PATH=VALUE" sets a value on top of the code config (fresh)
+    or the checkpoint config (resume), the plain "PATH" form copies the code value into a resumed config.
 
     Args:
         tensorboard_name (str): Sub directory of the tensorboard logs for this run.
@@ -229,28 +236,29 @@ def main(
         rebuild_cache (bool): Rebuild the event cache instead of reading it.
         save_cache (bool): Write a rebuilt event cache to disk.
         resume (str | None): Checkpoint to continue from, see checkpoint.resume.load_resume_state.
-        overrides (Sequence[str]): Dotted config paths to take from the code config on a resume.
+        overrides (Sequence[str]): Raw --override arguments, "PATH" or "PATH=VALUE", see checkpoint.resume.
 
     Raises:
-        ValueError: If a fresh training has no *save_model_name*, or *overrides* are given without *resume*.
+        ValueError: If a fresh training has no *save_model_name*, or an override is invalid.
 
     """
     full_config = FullConfig()
+    parsed_overrides = [parse_override(spec) for spec in overrides]
 
     # handle checkpoint resume loading
-    # full config will be partly overwritten (merged)
+    # full config will be partly overwritten (merged), the overrides are applied last in both branches
     resume_state = None
     if resume is not None:
-        resume_state = load_resume_state(resume, current_config=full_config, overrides=overrides)
+        resume_state = load_resume_state(resume, current_config=full_config, overrides=parsed_overrides)
         full_config = resume_state.full_config
         # the resume writes next to the original checkpoint, never over it
         if save_model_name is None:
             save_model_name = resume_state.run_name(resume_state.checkpoint_base_name)
 
-    elif overrides:
-        raise ValueError("--override only has an effect together with --resume")
-    elif save_model_name is None:
-        raise ValueError("--save_model_name is required for a fresh training")
+    else:
+        if save_model_name is None:
+            raise ValueError("--save_model_name is required for a fresh training")
+        apply_overrides(full_config, parsed_overrides)
 
     # a readable note next to the hash tag, e.g. what this run tries
     if checkpoint_suffix is not None:
@@ -356,7 +364,9 @@ if __name__ == "__main__":
             "examples:\n"
             "  python src/bbTT/train/train.py -tn my_first_run -sn my_first_run -rc\n"
             "  python src/bbTT/train/train.py -tn my_first_run -r my_first_run_fold0 -o training_config.max_train_iteration"
-            " -cs longer"
+            " -cs longer\n"
+            "  python src/bbTT/train/train.py -tn scan_lr3e-3 -sn scan_lr3e-3 -o optimizer_config.lr=3e-3"
+            " scheduler_config.half_cosine.T_max=19900"
             "\nto see all overwrite add --list-overrides"
             ),
         )

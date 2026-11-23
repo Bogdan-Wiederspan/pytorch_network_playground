@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import ast
 import copy
 import dataclasses
 import hashlib
 import pathlib
 import re
+import types
+import typing
 from collections.abc import Iterable, Sequence
 from typing import TYPE_CHECKING, Any
 
@@ -80,8 +83,159 @@ def _base_name_of(path: pathlib.Path) -> str:
     """
     return re.sub(r"_fold\d+$", "", path.stem)
 
+# --- override specs -----------------------------------------------------------------------------------------
+# An override is the last truth: it is applied after everything else (code config, checkpoint config).
+# Two forms exist:
+#   "PATH"        take the value of the current code config (only meaningful on a resume)
+#   "PATH=VALUE"  set VALUE, parsed with the type hint of the field (works for fresh trainings and resumes)
+
+
+@dataclasses.dataclass(frozen=True)
+class Override:
+    """
+    One parsed --override argument.
+
+    Args:
+        path (str): Dotted path into FullConfig, e.g. "optimizer_config.lr".
+        value (str | None): Raw value string of "PATH=VALUE", None for the plain "PATH" form.
+    """
+
+    path: str
+    value: str | None = None
+
+
+def parse_override(spec: str) -> Override:
+    """
+    Args:
+        spec (str): Raw --override argument, "PATH" or "PATH=VALUE". VALUE may contain further "=".
+
+    Returns:
+        Override: Parsed spec, the path is validated.
+
+    Raises:
+        ValueError: On an invalid path or an empty value after "=".
+    """
+    path, separator, value = spec.partition("=")
+    path = path.strip()
+    _split_path(path)
+    if separator and not value.strip():
+        raise ValueError(f"override '{spec}': empty value after '='")
+    return Override(path=path, value=value.strip() if separator else None)
+
+
+def _field_type(parent: Any, name: str) -> Any:
+    """
+    Args:
+        parent (Any): Dataclass instance holding the field.
+        name (str): Field name.
+
+    Returns:
+        Any: Resolved type hint of the field, ``Any`` if the attribute is no annotated field.
+    """
+    return typing.get_type_hints(type(parent)).get(name, Any)
+
+
+def _coerce(value: str, hint: Any) -> Any:
+    """
+    Parse a command line string into the type a config field expects.
+
+    Strings and Literals are taken verbatim, "none" gives None for Optional fields, booleans accept
+    true/false/1/0, everything else goes through ``ast.literal_eval`` (so "3e-3", "(0, 1)", "{'a': 1}" work).
+
+    Args:
+        value (str): Raw value from "PATH=VALUE".
+        hint (Any): Type hint of the target field.
+
+    Returns:
+        Any: The parsed value.
+
+    Raises:
+        ValueError: If the value does not fit the hint or cannot be parsed.
+    """
+    origin, args = typing.get_origin(hint), typing.get_args(hint)
+
+    # Optional[X] / X | None: strip the None and recurse on the remaining type
+    if origin in (typing.Union, types.UnionType):
+        if value.lower() in ("none", "null"):
+            return None
+        remaining = [a for a in args if a is not type(None)]
+        return _coerce(value, remaining[0] if len(remaining) == 1 else Any)
+
+    if origin is typing.Literal:
+        for choice in args:
+            if value == str(choice):
+                return choice
+        raise ValueError(f"'{value}' is not one of {args}")
+
+    if dataclasses.is_dataclass(hint):
+        raise ValueError(f"a whole sub config ({hint.__name__}) cannot be set from the command line, set its fields")
+
+    if hint is bool:
+        lowered = value.lower()
+        if lowered in ("true", "1", "yes"):
+            return True
+        if lowered in ("false", "0", "no"):
+            return False
+        raise ValueError(f"'{value}' is not a boolean")
+
+    if hint is str:
+        return value
+
+    try:
+        parsed = ast.literal_eval(value)
+    except (ValueError, SyntaxError) as error:
+        raise ValueError(f"cannot parse '{value}' for type {hint}: {error}") from error
+
+    # literal_eval gives int for "1", the field wants a float
+    if hint is float and isinstance(parsed, int) and not isinstance(parsed, bool):
+        return float(parsed)
+    if origin is tuple and isinstance(parsed, list):
+        return tuple(parsed)
+    return parsed
+
+
+def apply_overrides(config: FullConfig, overrides: Iterable[Override], current: FullConfig | None = None) -> None:
+    """
+    Write the overrides into *config* in place. This is the last step of building a config, nothing after it
+    changes a value again except ``__post_init__`` derived fields (see _rerun_post_init).
+
+    Args:
+        config (FullConfig): Config to change.
+        overrides (Iterable[Override]): Parsed --override arguments.
+        current (FullConfig | None): Source of the plain "PATH" form, the code config on a resume.
+            None for a fresh training, where "PATH" without a value is a no-op and therefore an error.
+
+    Raises:
+        ValueError: For "PATH" without *current*, or a value that does not fit the field.
+        AttributeError: If a path does not exist.
+    """
+    for override in overrides:
+        segments = _split_path(override.path)
+        target_parent = _resolve_parent(config, segments)
+
+        if override.value is not None:
+            hint = _field_type(target_parent, segments[-1])
+            try:
+                value = _coerce(override.value, hint)
+            except ValueError as error:
+                raise ValueError(f"override '{override.path}': {error}") from error
+        elif current is None:
+            raise ValueError(
+                f"override '{override.path}' names no value: without --resume the code config is already in use, "
+                "use 'PATH=VALUE'"
+            )
+        else:
+            value = copy.deepcopy(getattr(_resolve_parent(current, segments), segments[-1]))
+
+        setattr(target_parent, segments[-1], value)
+        logger_inst.i_info(f"Override: {override.path} = {value!r}")
+
+    # new values must pass the same checks as code defaults (choice_check etc.) and refresh derived fields
+    _rerun_post_init(config)
+
+
 # --- config merge -------------------------------------------------------------------------------------------
-# firs the config from checkpoint is loaded than overwrite happens.
+# first the config from checkpoint is loaded, then the overrides are applied on top.
 
 def _split_path(path: str) -> list[str]:
     """
@@ -163,9 +317,10 @@ def _protected_by(path: str) -> str | None:
     return None
 
 
-def merge_config(base: FullConfig, current: FullConfig, overrides: Iterable[str]) -> FullConfig:
+def merge_config(base: FullConfig, current: FullConfig, overrides: Sequence[Override]) -> FullConfig:
     """
-    Take *base* and replace the attributes named in *overrides* by their values in *current*.
+    Take *base* and apply the *overrides*: the plain "PATH" form copies the value from *current*, "PATH=VALUE"
+    sets the parsed value (see apply_overrides).
 
     Both a whole sub config ("record_config") and a single field ("record_config.validation_interval")
     are valid paths. Derived config values are properties, so they follow the overrides by themselves; only the
@@ -173,8 +328,8 @@ def merge_config(base: FullConfig, current: FullConfig, overrides: Iterable[str]
 
     Args:
         base (FullConfig): Config stored in the checkpoint, the source of truth for the model.
-        current (FullConfig): Config of the running code, the source of the overridden values.
-        overrides (Iterable[str]): Dotted paths to take from *current*.
+        current (FullConfig): Config of the running code, the source of the plain "PATH" overrides.
+        overrides (Sequence[Override]): Parsed --override arguments.
 
     Returns:
         FullConfig: Deep copy of *base* with the overrides applied.
@@ -182,63 +337,57 @@ def merge_config(base: FullConfig, current: FullConfig, overrides: Iterable[str]
     Raises:
         ValueError: If a path is protected or an override would change a protected value.
     """
-    merged = copy.deepcopy(base)
-    for path in overrides:
-        segments = _split_path(path)
-
-        protected = _protected_by(path)
+    for override in overrides:
+        protected = _protected_by(override.path)
         if protected is not None:
-            raise ValueError(f"override '{path}' is not allowed: {protected} {PROTECTED_OVERRIDES[protected]}")
-        source_parent = _resolve_parent(current, segments)
-        target_parent = _resolve_parent(merged, segments)
-        value = copy.deepcopy(getattr(source_parent, segments[-1]))
-        setattr(target_parent, segments[-1], value)
-        logger_inst.i_info(f"Resume override: {path} = {value!r}")
+            raise ValueError(f"override '{override.path}' is not allowed: {protected} {PROTECTED_OVERRIDES[protected]}")
+
+    merged = copy.deepcopy(base)
+    apply_overrides(merged, overrides, current=current)
 
     # an override of a parent can still change a protected value underneath it
     for protected, reason in PROTECTED_OVERRIDES.items():
         segments = _split_path(protected)
         if getattr(_resolve_parent(merged, segments), segments[-1]) != getattr(_resolve_parent(base, segments), segments[-1]):
             raise ValueError(f"overrides change '{protected}', which is not allowed: {reason}")
-
-
-    # from_dict skipped __post_init__: recompute derived fields and re-check the compatibility rules
-    _rerun_post_init(merged)
     return merged
 
 
-def override_tag(current: FullConfig, overrides: Iterable[str]) -> str:
+def override_tag(current: FullConfig, overrides: Iterable[Override]) -> str:
     """
     Short hash over the override paths and their values, so different continue settings get different names.
 
     Args:
-        current (FullConfig): Config the overridden values come from.
-        overrides (Iterable[str]): Dotted paths, see merge_config.
+        current (FullConfig): Config the plain "PATH" overrides come from.
+        overrides (Iterable[Override]): Parsed --override arguments.
 
     Returns:
         str: 8 hex characters, "base" when there are no overrides.
     """
     items = []
-    for path in sorted(overrides):
-        segments = _split_path(path)
+    for override in sorted(overrides, key=lambda o: o.path):
+        if override.value is not None:
+            items.append((override.path, override.value))
+            continue
+        segments = _split_path(override.path)
         value = getattr(_resolve_parent(current, segments), segments[-1])
         if dataclasses.is_dataclass(value):
             value = dataclasses.asdict(value)
-        items.append((path, repr(value)))
+        items.append((override.path, repr(value)))
     if not items:
         return "base"
     return hashlib.sha256(repr(items).encode("utf-8")).hexdigest()[:8]
 
 
-def loss_changed(overrides: Iterable[str]) -> bool:
+def loss_changed(overrides: Iterable[Override]) -> bool:
     """
     Args:
-        overrides (Iterable[str]): Dotted paths, see merge_config.
+        overrides (Iterable[Override]): Parsed --override arguments.
 
     Returns:
         bool: True if any override touches the loss config.
     """
-    return any(_split_path(p)[0] == LOSS_OVERRIDE_PREFIX for p in overrides)
+    return any(_split_path(o.path)[0] == LOSS_OVERRIDE_PREFIX for o in overrides)
 
 def override_paths(config: Any, prefix: str = "") -> list[str]:
     """
@@ -311,19 +460,19 @@ def _fold_of(checkpoint: dict[str, Any], path: pathlib.Path) -> int:
 def load_resume_state(
     checkpoint_name: str | pathlib.Path,
     current_config: FullConfig,
-    overrides: Sequence[str] = (),
+    overrides: Sequence[Override] = (),
 ) -> ResumeState:
     """
     Load a checkpoint and prepare the config of the resumed training.
 
-    The checkpoint config is the base; the overrides are taken from *current_config*.
+    The checkpoint config is the base; the overrides are applied on top, see merge_config.
     The name the resume writes its checkpoints under is not part of the config: train.main derives "<name>-resume-<tag>" from
     `checkpoint_base_name` unless --save_model_name is given, so the loaded checkpoint is never overwritten.
 
     Args:
         checkpoint_name (str | pathlib.Path): Checkpoint name or path, see loading.resolve_checkpoint_path.
         current_config (FullConfig): Config of the running code.
-        overrides (Sequence[str]): Dotted paths to take from *current_config*, see merge_config.
+        overrides (Sequence[Override]): Parsed --override arguments, see merge_config.
 
     Returns:
         ResumeState: Checkpoint, merged config, fold, start iteration and naming tag.
