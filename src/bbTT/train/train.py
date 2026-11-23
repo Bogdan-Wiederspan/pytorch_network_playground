@@ -145,6 +145,11 @@ def run_training_loop(
             )
             # monitors 'MonitoredBlocks' reports in Tensorboard
             reporter_inst.report_model_state(model_evaluation_state, global_step=current_iteration)
+        else:
+            # the losses are computed anyway (checkpoint, scheduler), so keep their curves even without metrics
+            if eval_t_loss is not None:
+                tensorboard_writer.log_scalar("Loss", eval_t_loss, step=current_iteration, mode="training")
+            tensorboard_writer.log_scalar("Loss", eval_v_loss, step=current_iteration, mode="validation")
 
         # --- checkpoint criteria checks and saving ---
         is_checkpoint_written = training_components.checkpoint_inst.update(
@@ -209,7 +214,8 @@ def main(
     overrides: Sequence[str] = (),
     ) -> None:
     """
-    Train the configured folds one after another, sharing logger, tensorboard writer and runner.
+    Train the configured folds one after another. The tensorboard run carries the config, every fold writes
+    its curves to its own sub-run ``fold<k>`` below it (see TensorboardLogger.for_fold).
 
     With *resume* the config comes from the checkpoint (plus *overrides* from the code config), only the
     checkpoint's fold is trained, and checkpoints and tensorboard run get a "-resume-<tag>" suffix so the
@@ -271,7 +277,6 @@ def main(
     )
 
 
-    evaluation_runner_inst = EvaluationRunner(tensorboard_writer)
     load_registers()
 
     try:
@@ -305,11 +310,12 @@ def main(
             # --- monitoring state of this fold ---
             # histories grow with the training and are rendered by the reporter. The batch composition history
             # grows with every iteration, so it is only created when requested; without it its plot is skipped.
+            fold_writer = tensorboard_writer.for_fold(current_fold)
             batch_composition_history_inst = BatchCompositionHistory() if full_config.record_config.batch_metrics else None
             reporter_inst = EvaluationReporter(
-                evaluation_runner_inst=evaluation_runner_inst,
+                evaluation_runner_inst=EvaluationRunner(fold_writer),
                 training_monitor_inst=components.training_monitor_inst,
-                tensorboard_writer=tensorboard_writer,
+                tensorboard_writer=fold_writer,
                 record_config=full_config.record_config,
                 target_map=full_config.dataset_config.target_map,
                 default_n_bins=full_config.binning_config.num_bins,
@@ -323,14 +329,17 @@ def main(
                 start_iteration = restore_training_state(components, resume_state)
 
             # --- training ---
-            run_training_loop(
-                full_config=full_config,
-                training_components=components,
-                fold_data=fold_data,
-                reporter_inst=reporter_inst,
-                tensorboard_writer=tensorboard_writer,
-                start_iteration=start_iteration,
-            )
+            try:
+                run_training_loop(
+                    full_config=full_config,
+                    training_components=components,
+                    fold_data=fold_data,
+                    reporter_inst=reporter_inst,
+                    tensorboard_writer=fold_writer,
+                    start_iteration=start_iteration,
+                )
+            finally:
+                fold_writer.close()
     finally:
         tensorboard_writer.close()
 

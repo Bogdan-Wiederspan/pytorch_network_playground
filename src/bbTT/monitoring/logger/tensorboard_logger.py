@@ -21,9 +21,12 @@ class TensorboardLogger:
 
     Quantities with one line per element of the model (per block, per token pair) use the same trick with the
     element as sub-run, see log_lines. Everything without a mode (text, histograms) goes to the main run at ``<path>``.
+
+    A training with several folds uses one logger per fold below the run, see for_fold; the run itself only
+    carries what is common to the folds (the config).
     """
 
-    def __init__(self, name: str | None = None, path: str | None = None):
+    def __init__(self, name: str | None = None, path: str | None = None, run_dir: pathlib.Path | None = None):
         """
         The run directory is ``<TENSORBOARD_DIR>/<path or timestamp>-<name>``: a custom name makes the run easy
         to find, the config hash in ``name`` keeps it unique and lets the hash be resolved in the dashboard.
@@ -31,11 +34,27 @@ class TensorboardLogger:
         Args:
             name (str, optional): Identity of the training, usually the config hash plus a resume suffix.
             path (str, optional): Custom run name given on the command line; replaces the timestamp.
+            run_dir (pathlib.Path, optional): Use this directory as is instead of composing one, see for_fold.
         """
         self.name = name
         self.log_dir = pathlib.Path(os.environ["TENSORBOARD_DIR"])
-        self.path = self.logger_path(prefix=path)
+        self.path = self.logger_path(prefix=path) if run_dir is None else run_dir
         self._writers: dict[str | None, SummaryWriter] = {}
+
+    def for_fold(self, fold: int) -> TensorboardLogger:
+        """
+        Logger of one fold, writing below this run: ``<path>/fold<k>`` with its own mode and line sub-runs.
+
+        Every fold restarts its iterations at 0, so folds sharing a run would overlay each other at the same
+        steps. With one sub-run per fold the run regex ``/fold\\d/validation$`` compares them instead.
+
+        Args:
+            fold (int): Fold index.
+
+        Returns:
+            TensorboardLogger: Logger with its own writers, close it when the fold is done.
+        """
+        return TensorboardLogger(name=self.name, run_dir=self.path / f"fold{fold}")
 
     @property
     def writer(self) -> SummaryWriter:
