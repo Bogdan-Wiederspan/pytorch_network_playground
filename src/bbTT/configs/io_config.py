@@ -158,6 +158,21 @@ class DataConfig:
         """
         return {f: list(FEATURES[f].values) for f in self.categorical_features}
 
+    @property
+    def expected_embedding_groups(self) -> dict[str, dict[str, tuple[int, ...]]]:
+        """
+        Value groups of the configured categorical features that define any, see FeatureSpec.value_groups.
+
+        Returns:
+            dict[str, dict[str, tuple[int, ...]]]: Feature name -> {group name: values}, consumed by the
+                embedding monitoring to sort value pairs into same-group and cross-group.
+        """
+        return {
+            f: dict(FEATURES[f].value_groups)
+            for f in self.categorical_features
+            if FEATURES[f].value_groups is not None
+        }
+
     def prefixed(self, name: str) -> str:
         """
         Actual array column of a name. Registered features resolve through their spec (production

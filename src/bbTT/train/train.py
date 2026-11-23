@@ -81,9 +81,9 @@ def run_training_loop(
 
         # --- batch scalars ---
         if current_iteration % record_config.verbose_interval == 0:
-            tensorboard_writer.log_lr(training_components.optimizer_inst, current_iteration)
+            tensorboard_writer.log_lr(training_components.optimizer_inst, current_iteration, mode="batch")
             batch_loss = batch_result["loss"].item()
-            tensorboard_writer.log_loss({"batch_loss": batch_loss}, step=current_iteration)
+            tensorboard_writer.log_scalar("Loss", batch_loss, step=current_iteration, mode="batch")
             current_lr = training_components.optimizer_inst.param_groups[0]["lr"]
             logger_inst.training(f"T-It: {current_iteration} - LR: {current_lr} - batch loss: {batch_loss:.2E}")
 
@@ -143,6 +143,13 @@ def run_training_loop(
                 "validation", evaluation_validation_result, global_step=current_iteration,
                 model_evaluation_state=model_evaluation_state, loss=eval_v_loss,
             )
+            # monitors 'MonitoredBlocks' reports in Tensorboard
+            reporter_inst.report_model_state(model_evaluation_state, global_step=current_iteration)
+        else:
+            # the losses are computed anyway (checkpoint, scheduler), so keep their curves even without metrics
+            if eval_t_loss is not None:
+                tensorboard_writer.log_scalar("Loss", eval_t_loss, step=current_iteration, mode="training")
+            tensorboard_writer.log_scalar("Loss", eval_v_loss, step=current_iteration, mode="validation")
 
         # --- checkpoint criteria checks and saving ---
         is_checkpoint_written = training_components.checkpoint_inst.update(
@@ -170,6 +177,33 @@ def run_training_loop(
         )
 
 
+def format_config_entry(
+    full_config: FullConfig,
+    run_name: str,
+    tensorboard_name: str | None,
+    resume: str | None,
+) -> str:
+    """
+    Markdown for the tensorboard text tab that resolves a run: its hash, custom name, origin and full config.
+
+    Args:
+        full_config (FullConfig): Configuration of the run.
+        run_name (str): Config hash, with resume suffix when resumed.
+        tensorboard_name (str | None): Custom run name from the command line, None when generated.
+        resume (str | None): Checkpoint the run was resumed from, None for a fresh training.
+
+    Returns:
+        str: Markdown with a header table and the config listing in a code block.
+    """
+    header = [
+        "| | |", "|---|---|",
+        f"| run | `{run_name}` |",
+        f"| name | `{tensorboard_name}` |" if tensorboard_name else "| name | generated |",
+        f"| resumed from | `{resume}` |" if resume else "| resumed from | - |",
+    ]
+    return "\n".join(header) + "\n\n```\n" + format_overrides(full_config) + "\n```"
+
+
 def main(
     tensorboard_name: str,
     save_model_name: str | None,
@@ -180,7 +214,8 @@ def main(
     overrides: Sequence[str] = (),
     ) -> None:
     """
-    Train the configured folds one after another, sharing logger, tensorboard writer and runner.
+    Train the configured folds one after another. The tensorboard run carries the config, every fold writes
+    its curves to its own sub-run ``fold<k>`` below it (see TensorboardLogger.for_fold).
 
     With *resume* the config comes from the checkpoint (plus *overrides* from the code config), only the
     checkpoint's fold is trained, and checkpoints and tensorboard run get a "-resume-<tag>" suffix so the
@@ -229,74 +264,84 @@ def main(
     logger_inst.info(f"DEVICE: {DEVICE}")
 
     # create tensorboard instance to monitor plots for the training
-    # when doing a continue a NEW instance of tensorboard is created, but the name of the previous training is used as suffix
+    # the run directory is "<tensorboard_name or timestamp>-<config hash>"; a resume creates a NEW run whose
+    # hash carries the resume suffix, so it sorts next to the original but keeps its own curves
     run_name = hash_dictionary(dataclasses.asdict(full_config.training_config))
     if resume_state is not None:
         run_name = resume_state.run_name(run_name)
-        tensorboard_name = resume_state.run_name(tensorboard_name) if tensorboard_name is not None else None
     tensorboard_writer = TensorboardLogger(name=run_name, path=tensorboard_name)
+    tensorboard_writer.log_text(
+        tag="Config",
+        text=format_config_entry(full_config, run_name=run_name, tensorboard_name=tensorboard_name, resume=resume),
+        step=0,
+    )
 
 
-    evaluation_runner_inst = EvaluationRunner(tensorboard_writer)
     load_registers()
-    # TODO add LOGGER FILEPATH in same directory of tensorboard
-    logger_inst.i_info(f"Tensorboard logs: {tensorboard_writer.path}")
 
-    # a resume trains only the fold of its checkpoint
-    # mixing folds would mix their data splits (so a complete mess)
-    folds = full_config.training_config.train_folds if resume_state is None else (resume_state.fold,)
-    for current_fold in folds:
-        logger_inst.info(f"Trainings fold: {current_fold}/{full_config.training_config.k_fold - 1}")
+    try:
+        logger_inst.i_info(f"Tensorboard logs: {tensorboard_writer.path}")
 
-        # --- data ---
-        fold_data = prepare_fold_data(
-            full_config=full_config,
-            current_fold=current_fold,
-            rebuild_cache=rebuild_cache,
-            save_cache=save_cache,
-        )
-        # the standardization follows the training split of this fold, so the model config is set per fold
-        full_config.model_building_config.standardization.mean = fold_data.feature_statistic_cache.mean
-        full_config.model_building_config.standardization.std = fold_data.feature_statistic_cache.std
+        # a resume trains only the fold of its checkpoint
+        # mixing folds would mix their data splits (so a complete mess)
+        folds = full_config.training_config.train_folds if resume_state is None else (resume_state.fold,)
+        for current_fold in folds:
+            logger_inst.info(f"Trainings fold: {current_fold}/{full_config.training_config.k_fold - 1}")
 
-        # --- model, optimizer, loss, scheduler, checkpoint, monitor hooks ---
-        components = build_training_components(
-            full_config=full_config,
-            current_fold=current_fold,
-            training_sampler=fold_data.training_sampler,
-            checkpoint_name=save_model_name,
-        )
+            # --- data ---
+            fold_data = prepare_fold_data(
+                full_config=full_config,
+                current_fold=current_fold,
+                rebuild_cache=rebuild_cache,
+                save_cache=save_cache,
+            )
+            # the standardization follows the training split of this fold, so the model config is set per fold
+            full_config.model_building_config.standardization.mean = fold_data.feature_statistic_cache.mean
+            full_config.model_building_config.standardization.std = fold_data.feature_statistic_cache.std
 
-        # --- monitoring state of this fold ---
-        # histories grow with the training and are rendered by the reporter. The batch composition history
-        # grows with every iteration, so it is only created when requested; without it its plot is skipped.
-        batch_composition_history_inst = BatchCompositionHistory() if full_config.record_config.batch_metrics else None
-        reporter_inst = EvaluationReporter(
-            evaluation_runner_inst=evaluation_runner_inst,
-            training_monitor_inst=components.training_monitor_inst,
-            tensorboard_writer=tensorboard_writer,
-            record_config=full_config.record_config,
-            target_map=full_config.dataset_config.target_map,
-            default_n_bins=full_config.binning_config.num_bins,
-            checkpoint_history_inst=CheckpointHistory(),
-            batch_composition_history_inst=batch_composition_history_inst,
-        )
+            # --- model, optimizer, loss, scheduler, checkpoint, monitor hooks ---
+            components = build_training_components(
+                full_config=full_config,
+                current_fold=current_fold,
+                training_sampler=fold_data.training_sampler,
+                checkpoint_name=save_model_name,
+            )
 
-        # --- resume: load the checkpoint into the fresh components ---
-        start_iteration = 0
-        if resume_state is not None:
-            start_iteration = restore_training_state(components, resume_state)
+            # --- monitoring state of this fold ---
+            # histories grow with the training and are rendered by the reporter. The batch composition history
+            # grows with every iteration, so it is only created when requested; without it its plot is skipped.
+            fold_writer = tensorboard_writer.for_fold(current_fold)
+            batch_composition_history_inst = BatchCompositionHistory() if full_config.record_config.batch_metrics else None
+            reporter_inst = EvaluationReporter(
+                evaluation_runner_inst=EvaluationRunner(fold_writer),
+                training_monitor_inst=components.training_monitor_inst,
+                tensorboard_writer=fold_writer,
+                record_config=full_config.record_config,
+                target_map=full_config.dataset_config.target_map,
+                default_n_bins=full_config.binning_config.num_bins,
+                checkpoint_history_inst=CheckpointHistory(),
+                batch_composition_history_inst=batch_composition_history_inst,
+            )
 
-        # --- training ---
-        run_training_loop(
-            full_config=full_config,
-            training_components=components,
-            fold_data=fold_data,
-            reporter_inst=reporter_inst,
-            tensorboard_writer=tensorboard_writer,
-            start_iteration=start_iteration,
-        )
+            # --- resume: load the checkpoint into the fresh components ---
+            start_iteration = 0
+            if resume_state is not None:
+                start_iteration = restore_training_state(components, resume_state)
 
+            # --- training ---
+            try:
+                run_training_loop(
+                    full_config=full_config,
+                    training_components=components,
+                    fold_data=fold_data,
+                    reporter_inst=reporter_inst,
+                    tensorboard_writer=fold_writer,
+                    start_iteration=start_iteration,
+                )
+            finally:
+                fold_writer.close()
+    finally:
+        tensorboard_writer.close()
 
 if __name__ == "__main__":
     from bbTT.utils.parser import ParserBuilder
