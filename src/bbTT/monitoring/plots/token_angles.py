@@ -91,6 +91,8 @@ def _draw_category(ax: Axes, category: str, quantity: dict[str, Any], norm: TwoS
     "token_angles",
     requires=("evaluation_state.monitored_blocks.input_layer",),
     optional=True,
+    # same tag prefix as the pair scalars, so the heatmap card sits next to their curves in the dashboard
+    tag="MonitoredBlocks/input_layer/angle_centered",
 )
 def plot_token_angles(ctx: EvalContext, block: str = "input_layer", **kwargs) -> tuple[Figure, Axes]:
     """
@@ -102,7 +104,8 @@ def plot_token_angles(ctx: EvalContext, block: str = "input_layer", **kwargs) ->
     blocks along the diagonal and the cross-group pairs the rectangle below them.
 
     The scalars ``MonitoredBlocks/<block>/angle_centered_<category>/...`` show *when* an angle moves, this
-    plot shows *which* pair at that step.
+    plot shows *which* pair at that step; it is logged under the same prefix so both sit next to each other.
+    A variant for another block needs its own ``tag`` and ``block`` in register_plot_variant.
 
     Args:
         ctx (EvalContext): Must carry the evaluation state of the block holding the embedding layer.

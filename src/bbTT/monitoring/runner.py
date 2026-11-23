@@ -88,7 +88,8 @@ def run_plot(name, ctx):
 
     for req in spec.requires:
         ensure(ctx, req, providers, requester=name)
-    return spec.fn(ctx)
+    return spec.fn(ctx, **spec.kwargs)
+
 
 
 def run_scalar(name, ctx):
@@ -126,7 +127,7 @@ class EvaluationRunner:
                 fig, ax = run_plot(plot_name, ctx)
                 if self.tensorboard:
                     self.tensorboard.log_figure(
-                        tag=plot_name,
+                        tag=spec.tag or plot_name,
                         figure=fig,
                         step=ctx.global_step,
                         mode=ctx.mode,

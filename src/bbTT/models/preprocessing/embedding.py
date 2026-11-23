@@ -97,7 +97,7 @@ class CatEmbeddingLayer(torch.nn.Module):  # noqa: F811
             (large angle).
             The random values depend on number of categories: k values the random expectation is acos(-1 / (k - 1)), e.g. 120 for k = 3.
 
-        - "offset", one line per category.
+        - "offset_<category>": one value per category, so one panel per category with one line per training.
             Describes the length of the common part (common = mean of all vectors in that category).
             This part is tricky to interpreted, since its the same for every event and carries no information about which value is active.
             For example the bias of the next layer could also do the same job.
@@ -105,7 +105,7 @@ class CatEmbeddingLayer(torch.nn.Module):  # noqa: F811
             norm is shared ballast rather than separation. This affects also <angle_raw_*> since a very offset value will be more narrow by definition.
 
         Returns:
-            dict[str, Any]: See embedding_state, plus "offset" {category: float} and per category
+                dict[str, Any]: See embedding_state, plus "offset_<category>" (float) and per category
                 "distance_<category>", "angle_raw_<category>" and (k >= 3) "angle_centered_<category>", each
                 {"<value a>_vs_<value b>": float}, nested by group for categories with value_groups.
         """
@@ -121,14 +121,14 @@ class CatEmbeddingLayer(torch.nn.Module):  # noqa: F811
             # extract corresponding embedding vectors by token
             values = list(value_to_token)
             pairs = [(i, j) for i in range(len(values)) for j in range(i + 1, len(values))]
-            offsets = {}
 
             vectors = weight[list(value_to_token.values())]  # (k, embedding_dim)
             # vectors can have SAME OFFSET, cosine sim. is sensitive to that
             # this is problematic IF offset is much bigger than directional vector
             mean = vectors.mean(dim=0, keepdim=True)
             centered = vectors - mean
-            offsets[category] = torch.linalg.vector_norm(mean).item()
+            state[f"offset_{category}"] = torch.linalg.vector_norm(mean).item()
+
             # cos sim. makes only sense for PAIRS of the category
             distance = torch.cdist(vectors, vectors)  # (k, k), invariant under centering
             state[f"distance_{category}"] = self._pair_quantity(category, values, pairs, distance)
@@ -140,7 +140,6 @@ class CatEmbeddingLayer(torch.nn.Module):  # noqa: F811
                 angle = torch.rad2deg(torch.acos(cosine.clamp(-1.0, 1.0)))
                 state[f"angle_{name}_{category}"] = self._pair_quantity(category, values, pairs, angle)
 
-        state["offset"] = offsets
         return state
 
     def _pair_quantity(

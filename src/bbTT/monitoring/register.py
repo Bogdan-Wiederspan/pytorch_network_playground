@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import Callable, Set
 
@@ -8,10 +10,20 @@ logger_inst = get_logger(__name__)
 
 @dataclass
 class PlotSpec:
+    """
+    Args:
+        fn (Callable): Plot function, called as fn(ctx, **kwargs).
+        requires (set[str]): Context artifacts the plot needs, resolved through the builders.
+        kwargs (dict): Extra keyword arguments of the plot, the way a variant is parametrised.
+        optional (bool): Skip silently when a requirement cannot be met.
+        tag (str, optional): Tensorboard tag of the figure. None uses the registry name. Set it to place the
+            figure next to related scalars, e.g. "MonitoredBlocks/input_layer/angle_centered".
+    """
     fn: Callable
     requires: Set[str] = None
     kwargs: dict = field(default_factory=dict)
     optional: bool = False
+    tag: str | None = None
 
 
 @dataclass
@@ -60,7 +72,7 @@ def register_builder(name, *, requires=None, provides=None):
     return wrapper
 
 
-def register_plot(name, requires=None, optional=False, **kwargs):
+def register_plot(name, requires=None, optional=False, tag=None, **kwargs):
 
     # kwargs contain extra arguments passed to the decorated function
     def wrapper(fn):
@@ -72,20 +84,23 @@ def register_plot(name, requires=None, optional=False, **kwargs):
             requires=set(requires or []),
             optional=optional,
             kwargs=kwargs,
+            tag=tag,
+
         )
         return fn
 
     return wrapper
 
 
-def register_plot_variant(name, base, optional=None, **kwargs):
+def register_plot_variant(name, base, optional=None, tag=None, **kwargs):
     spec = PLOT_REGISTRY[base]
     PLOT_REGISTRY[name] = PlotSpec(
         fn=spec.fn,
         requires=spec.requires,
         kwargs=kwargs,
-        # variant can override optionality, otherwise inherits from base
+        # variant can override optionality and tag, otherwise inherits from base
         optional=optional if optional is not None else spec.optional,
+        tag=tag if tag is not None else spec.tag,
     )
 
 
