@@ -19,7 +19,8 @@ class TensorboardLogger:
     ``<path>/validation`` under the same tag, e.g. ``Loss``. Colors are assigned per run, so one training keeps
     its colors in every panel and the run regex (``/validation$``) selects one kind of data over all trainings.
 
-    Everything without a mode (text, monitored model blocks, ...) goes to the main run at ``<path>``.
+    Quantities with one line per element of the model (per block, per token pair) use the same trick with the
+    element as sub-run, see log_lines. Everything without a mode (text, histograms) goes to the main run at ``<path>``.
     """
 
     def __init__(self, name: str | None = None, path: str | None = None):
@@ -70,20 +71,23 @@ class TensorboardLogger:
         else:
             writer.add_scalar(tag, value, global_step=step)
 
-    def log_scalars_overlay(self, tag: str, values: dict[str, float], step: int) -> None:
+    def log_lines(self, tag: str, lines: dict[str, float], step: int, run_group: str) -> None:
         """
-        Log several named values as lines of *one* panel of the main run.
+        Log several named values as lines of one panel, one sub-run per line name.
 
-        Tensorboard has no per-line toggle inside a panel, so ``add_scalars`` fakes it by writing every key
-        as its own sub-run ``<path>/<tag>_<key>``. This pollutes the run list with one entry per key and is
-        only worth it where many lines of one training belong in one picture, e.g. one line per model block.
+        Tensorboard draws one line per run, so each name becomes the run ``<path>/<run_group>/<name>``. Unlike
+        ``add_scalars`` the run is shared by every tag that uses the same name: ``blocks/dense_block_3`` carries
+        ``MonitoredBlocks/bias_norm`` and ``MonitoredBlocks/weight_norm`` alike, keeps one color across panels,
+        and the run list grows with the number of distinct names, not with names times tags.
 
         Args:
             tag (str): Tensorboard tag of the panel.
-            values (dict[str, float]): Line name -> value.
+            lines (dict[str, float]): Line name -> value.
             step (int): Global step.
+            run_group (str): Sub-run directory the lines live in, e.g. "blocks" or "lines".
         """
-        self.writer.add_scalars(tag, values, global_step=step)
+        for name, value in lines.items():
+            self.writer_for(f"{run_group}/{name}").add_scalar(tag, value, global_step=step)
 
     def log_lr(self, optimizer: torch.optim.Optimizer, step: int, mode: str | None = None) -> None:
         """

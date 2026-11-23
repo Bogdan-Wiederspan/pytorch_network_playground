@@ -18,6 +18,7 @@ class CatEmbeddingLayer(torch.nn.Module):  # noqa: F811
         embedding_dim: int,
         categories: tuple[str],
         expected_categorical_inputs: dict[str, list[int]] | None = None,
+        value_groups: dict[str, dict[str, tuple[int, ...]]] | None = None,
         category_dims: int | None = None,
         empty: int = 15,
     ):
@@ -35,10 +36,14 @@ class CatEmbeddingLayer(torch.nn.Module):  # noqa: F811
             expected_categorical_inputs (dict[list[int]]): Dictionary where keys are category
                 names and values are lists of integers representing the expected values for
                 each category.
+            value_groups (dict[str, dict[str, tuple[int, ...]]], optional): Category name -> {group name: values}
+                for categories whose values form physics groups (e.g. 1-prong / 3-prong decay modes). Only used by
+                the monitoring, see create_evaluation_state. Categories without an entry have no groups.
             empty (int, optional): Value used to represent missing values in the input tensor.
         """
         super().__init__()
         self.tokenizer = None
+        self.value_groups = value_groups or {}
         self.category_dims = category_dims
         if not self.category_dims and all(x is not None for x in (categories, expected_categorical_inputs)):
             self.tokenizer = CategoricalTokenizer(
@@ -72,6 +77,10 @@ class CatEmbeddingLayer(torch.nn.Module):  # noqa: F811
 
         How to read the plots:
 
+        Pair quantities are {"<a>_vs_<b>": float}; for a category with value_groups they are nested one level
+        deeper: {"<group>": {pair of the same group}, "cross": {pair of different groups}}, so that e.g. the
+        1-prong decay modes can be compared among themselves and against the 3-prong ones.
+
         - "distance_<category>": one line per pair of values.
             They describe how far apart the two vectors are. Larger means the network can separate these two values better.
             As comparison, a random initialization gives about sqrt(2 * embedding_dim).
@@ -98,7 +107,7 @@ class CatEmbeddingLayer(torch.nn.Module):  # noqa: F811
         Returns:
             dict[str, Any]: See embedding_state, plus "offset" {category: float} and per category
                 "distance_<category>", "angle_raw_<category>" and (k >= 3) "angle_centered_<category>", each
-                {"<value a>_vs_<value b>": float}.
+                {"<value a>_vs_<value b>": float}, nested by group for categories with value_groups.
         """
         state = embedding_state(self.embeddings)
         # there will always be a tokenizer in den Pipeline
@@ -122,18 +131,51 @@ class CatEmbeddingLayer(torch.nn.Module):  # noqa: F811
             offsets[category] = torch.linalg.vector_norm(mean).item()
             # cos sim. makes only sense for PAIRS of the category
             distance = torch.cdist(vectors, vectors)  # (k, k), invariant under centering
-            state[f"distance_{category}"] = {f"{values[i]}_vs_{values[j]}": distance[i, j].item() for i, j in pairs}
-
+            state[f"distance_{category}"] = self._pair_quantity(category, values, pairs, distance)
 
             angle_of = [("raw", vectors)] + ([("centered", centered)] if len(values) >= 3 else [])
             for name, vecs in angle_of:
                 cosine = torch.nn.functional.cosine_similarity(vecs[:, None, :], vecs[None, :, :], dim=-1)  # (k, k)
                 # clamp against float error outside [-1, 1], which would give nan in acos
                 angle = torch.rad2deg(torch.acos(cosine.clamp(-1.0, 1.0)))
-                state[f"angle_{name}_{category}"] = {f"{values[i]}_vs_{values[j]}": angle[i, j].item() for i, j in pairs}
+                state[f"angle_{name}_{category}"] = self._pair_quantity(category, values, pairs, angle)
 
         state["offset"] = offsets
         return state
+
+    def _pair_quantity(
+        self,
+        category: str,
+        values: list[int],
+        pairs: list[tuple[int, int]],
+        matrix: torch.Tensor,
+    ) -> dict[str, float] | dict[str, dict[str, float]]:
+        """
+        Read the value pairs of a category out of a (k, k) pair matrix.
+
+        Args:
+            category (str): Category name, looked up in value_groups.
+            values (list[int]): Category values in matrix order.
+            pairs (list[tuple[int, int]]): Index pairs (i, j) with i < j to read.
+            matrix (torch.Tensor): Pairwise quantity of shape (k, k).
+
+        Returns:
+            dict[str, float] | dict[str, dict[str, float]]: {"<a>_vs_<b>": value} without groups; with groups
+                {"<group>": {same-group pairs}, "cross": {cross-group pairs}}, groups in definition order.
+        """
+        groups = self.value_groups.get(category)
+        if groups is None:
+            return {f"{values[i]}_vs_{values[j]}": matrix[i, j].item() for i, j in pairs}
+
+        group_of = {value: name for name, members in groups.items() for value in members}
+        nested: dict[str, dict[str, float]] = {name: {} for name in groups}
+        nested["cross"] = {}
+        for i, j in pairs:
+            a, b = values[i], values[j]
+            name = group_of[a] if group_of[a] == group_of[b] else "cross"
+            nested[name][f"{a}_vs_{b}"] = matrix[i, j].item()
+        # a group with a single value has no pair, so it has nothing to show
+        return {name: members for name, members in nested.items() if members}
 
 
     def forward(self, x: torch.FloatTensor) -> torch.FloatTensor:

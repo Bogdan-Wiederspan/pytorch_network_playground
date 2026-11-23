@@ -212,6 +212,7 @@ class BaseModel(HookableModelMixin, torch.nn.Module):
             categories=self.categorical_features,
             embedding_dim=embedding_cfg.embedding_dim,
             expected_categorical_inputs=self.dataset_config.expected_embedding_inputs,
+            value_groups=self.dataset_config.expected_embedding_groups,
             empty=embedding_cfg.tokenizer_add_unknown_category,
         )
         return embedding_layer

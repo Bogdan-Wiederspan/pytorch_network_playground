@@ -47,6 +47,7 @@ class RecordConfig:
     )
     validation_plots: tuple[str, ...] = (
         "confusion_matrix",
+        "token_angles",
         # "roc",  # roc computation is the long factor (4s)
         "output_score_hh_node",
         "output_score_hh_node_physics",

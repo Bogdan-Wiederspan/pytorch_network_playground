@@ -201,21 +201,24 @@ class EvaluationReporter:
 
     def report_model_state(self, model_evaluation_state: dict[str, Any], global_step: int) -> None:
         """
-        Log the monitored block snapshots of the model: one chart per scalar quantity with a line per block,
-        one histogram per block and tensor quantity, and one chart per block and grouped quantity (a dict of
-        named floats, e.g. cosine similarities of token pairs) with a line per name.
+        Log the monitored block snapshots of the model.
+
+        Per block and quantity: a tensor becomes a histogram of the main run; a float becomes one line of the
+        panel ``MonitoredBlocks/<quantity>`` with the block as sub-run ``blocks/<block>``, so every block keeps
+        its color across quantities; a dict of named floats (e.g. the angle of token pairs) becomes the panel
+        ``MonitoredBlocks/<block>/<quantity>`` with the names as sub-runs ``lines/<name>``, a nested dict
+        (e.g. pairs grouped by prong) one such panel per group, ``.../<quantity>/<group>``.
 
         This is pure model state and independent of any data, so it bypasses the EvalContext and the
         scalar registry. Blocks define their own snapshot, see DenseBlock.create_evaluation_state.
 
         Args:
             model_evaluation_state (dict[str, Any]): Snapshot from Model.evaluation_state(), the key
-                "monitored_blocks" maps block name -> {quantity: float | torch.Tensor | dict[str, float]}.
-
+                "monitored_blocks" maps block name -> {quantity: float | torch.Tensor | dict}.
             global_step (int): Current training iteration, used as tensorboard step.
         """
         block_states: dict[str, dict[str, Any]] = model_evaluation_state.get("monitored_blocks", {})
-        scalars: dict[str, dict[str, float]] = {}
+        scalars_by_quantity: dict[str, dict[str, float]] = {}
         for block_name, state in block_states.items():
             for quantity, value in state.items():
                 if isinstance(value, torch.Tensor) and value.ndim > 0:
@@ -223,10 +226,26 @@ class EvaluationReporter:
                         tag=f"MonitoredBlocks/{block_name}/{quantity}", values=value, step=global_step
                     )
                 elif isinstance(value, dict):
-                    self.tensorboard_writer.log_scalars_overlay(
-                        tag=f"MonitoredBlocks/{block_name}/{quantity}", values=value, step=global_step
-                    )
+                    self._report_lines(tag=f"MonitoredBlocks/{block_name}/{quantity}", value=value, step=global_step)
                 else:
-                    scalars.setdefault(quantity, {})[block_name] = float(value)
-        for quantity, values in scalars.items():
-            self.tensorboard_writer.log_scalars_overlay(tag=f"MonitoredBlocks/{quantity}", values=values, step=global_step)
+                    scalars_by_quantity.setdefault(quantity, {})[block_name] = float(value)
+        for quantity, by_block in scalars_by_quantity.items():
+            self.tensorboard_writer.log_lines(
+                tag=f"MonitoredBlocks/{quantity}", lines=by_block, step=global_step, run_group="blocks"
+            )
+
+    def _report_lines(self, tag: str, value: dict[str, Any], step: int) -> None:
+        """
+        Log a dict quantity as lines; a dict of dicts becomes one panel per key, ``<tag>/<key>``.
+
+        Args:
+            tag (str): Tensorboard tag of the panel.
+            value (dict[str, Any]): Line name -> float, or group name -> such a dict.
+            step (int): Global step.
+        """
+        if all(isinstance(v, dict) for v in value.values()):
+            for key, nested in value.items():
+                self._report_lines(tag=f"{tag}/{key}", value=nested, step=step)
+            return
+        lines = {name: float(v) for name, v in value.items()}
+        self.tensorboard_writer.log_lines(tag=tag, lines=lines, step=step, run_group="lines")

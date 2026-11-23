@@ -19,6 +19,9 @@ class FeatureSpec:
         dummy (float, optional): Marker the upstream pipeline writes when the value is missing,
             e.g. 0.0 for the four-vector of an absent jet. None means the column is never missing.
         values (tuple[int, ...]): Categorical only: every value the column takes in the data.
+        value_groups (dict[str, tuple[int, ...]], optional): Categorical only: a physics grouping of the values,
+            e.g. {"1prong": (0, 1), "3prong": (10, 11)} for decay modes. Monitoring uses it to sort value pairs
+            into "same group" and "cross group". Groups must be disjoint and cover every value.
         column (str, optional): Explicit column name. None means "<production prefix>_<name>".
         jagged (tuple[str, int], optional): (branch, index) when the value is one entry of a jagged
             branch, e.g. the score of the first HH b-jet candidate. The reader splits the branch
@@ -30,6 +33,7 @@ class FeatureSpec:
     kind: FEATURE_KIND
     dummy: Optional[float] = None
     values: tuple[int, ...] = ()
+    value_groups: Optional[dict[str, tuple[int, ...]]] = None
     column: Optional[str] = None
     jagged: Optional[tuple[str, int]] = None
     unavailable_in: frozenset[str] = frozenset()
@@ -39,6 +43,14 @@ class FeatureSpec:
             raise ValueError(f"categorical feature {self.name} needs its values")
         if self.kind == "continuous" and self.values:
             raise ValueError(f"continuous feature {self.name} must not define values")
+        if self.value_groups is not None:
+            grouped = [v for group in self.value_groups.values() for v in group]
+            if self.kind != "categorical":
+                raise ValueError(f"feature {self.name} is continuous and cannot define value_groups")
+            if len(grouped) != len(set(grouped)):
+                raise ValueError(f"value_groups of feature {self.name} overlap")
+            if set(grouped) != set(self.values):
+                raise ValueError(f"value_groups of feature {self.name} must cover exactly its values {self.values}")
 
         if self.jagged is not None:
             if self.column is not None:
@@ -147,8 +159,11 @@ FEATURES: dict[str, FeatureSpec] = _registry(
 
     # --- categorical inputs ---
     FeatureSpec(name="pair_type", kind="categorical", values=(0, 1, 2), column=None),
-    FeatureSpec(name="dm1", kind="categorical", values=(-1, 0, 1, 10, 11), column=None),  # -1 for e/mu
-    FeatureSpec(name="dm2", kind="categorical", values=(0, 1, 10, 11), column=None),
+    # decay modes: 0, 1 = 1-prong (-1 = e/mu in dm1), 10, 11 = 3-prong; the groups sort the embedding monitoring
+    FeatureSpec(name="dm1", kind="categorical", values=(-1, 0, 1, 10, 11), column=None,
+                value_groups={"1prong": (-1, 0, 1), "3prong": (10, 11)}),
+    FeatureSpec(name="dm2", kind="categorical", values=(0, 1, 10, 11), column=None,
+                value_groups={"1prong": (0, 1), "3prong": (10, 11)}),
     FeatureSpec(name="vis_tau1_charge", kind="categorical", values=(-1, 1), column=None),
     FeatureSpec(name="vis_tau2_charge", kind="categorical", values=(-1, 1), column=None),
     FeatureSpec(name="has_jet_pair", kind="categorical", values=(0, 1), column=None),  # whether two or more jets are present
