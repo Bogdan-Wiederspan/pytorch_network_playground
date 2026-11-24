@@ -19,6 +19,10 @@ class OptimizerConfig:
     lr: float = 1e-2  # start learning rate
     optimizer_choice: OPTIMIZER_CHOICE = "adamw"
 
+    # decay rates (beta1, beta2) of the running averages of the gradient and of its square - Marcel: (0.9, 0.98)
+    # torch default is (0.9, 0.999); a smaller beta2 lets the step size adapt faster to a changing gradient scale
+    betas: tuple[float, float] = (0.9, 0.98)
+
     # one sub config per OPTIMIZER_CHOICE, field name equals the choice, so it is overridable
     # (--override optimizer_config.adamw.weight_decay=1e-4) and saved with the checkpoint
     adamw: ADAMWConfig = field(default_factory=ADAMWConfig)
