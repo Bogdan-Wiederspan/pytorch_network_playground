@@ -88,6 +88,11 @@ def run_training_loop(
         # --- batch scalars ---
         if current_iteration % record_config.verbose_interval == 0:
             tensorboard_writer.log_lr(training_components.optimizer_inst, current_iteration, mode="batch")
+
+            # norm before clipping, values above optimizer_config.max_grad_norm were clipped in this step
+            batch_grad_norm = batch_result["grad_norm"].item()
+            tensorboard_writer.log_scalar("GradNorm", batch_grad_norm, step=current_iteration, mode="batch")
+
             batch_loss = batch_result["loss"].item()
             tensorboard_writer.log_scalar("Loss", batch_loss, step=current_iteration, mode="batch")
             current_lr = training_components.optimizer_inst.param_groups[0]["lr"]
