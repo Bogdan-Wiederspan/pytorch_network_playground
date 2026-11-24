@@ -75,13 +75,13 @@ class PaddingConfig:
 @dataclass
 class EmbeddingConfig:
     tokenizer_add_unknown_category: Optional[None] = None  # noqa value added to categories to symbolize unknown category. If None, no extra category is added
-    embedding_dim: int = 10  # dimension of embedding layer - Marcel 10
+    embedding_dim: int = 16  # dimension of embedding layer - Marcel old used 10
 
 
 @dataclass
 class DenseNetworkConfig:
     nodes: int = 128  # base number of nodes of the dense blocks, due to DenseNet connection, increases with more layers
-    activation_functions: str = "elu"  # string of the activation function of DenseBlocks - Marcel DNN: elu
+    activation_functions: str = "gelu"  # string of the activation function of DenseBlocks - Marcel DNN: gelu
     skip_connection_init: float = 1  # init value of the skip connection, 1 = exact copy
     freeze_skip_connection: bool = True  # True = non-learnable skip connection value
     batch_norm_eps: float = 0.001  # epsilon denominator of batch norm - increase stability Marcel: 0.001
