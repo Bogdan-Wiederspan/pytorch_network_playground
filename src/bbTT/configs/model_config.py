@@ -85,6 +85,7 @@ class DenseNetworkConfig:
     skip_connection_init: float = 1  # init value of the skip connection, 1 = exact copy
     freeze_skip_connection: bool = True  # True = non-learnable skip connection value
     batch_norm_eps: float = 0.001  # epsilon denominator of batch norm - increase stability Marcel: 0.001
+    weight_init_nonlinearity: str = "relu"  # gain of the Kaiming init, only used by blocks with Kaiming init (model "fc")
 
     normalize_linear: bool = False  # noqa activate weight normalization of linear layer, TODO currently BUGGED, leave at False
 

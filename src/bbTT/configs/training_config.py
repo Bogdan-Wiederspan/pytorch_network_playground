@@ -5,14 +5,14 @@ from typing import Literal
 
 from bbTT.configs.utils import choice_check
 
-MODEL_CHOICE = Literal["residual", "dense", "lbn_dense", "binned_lbn_dense"]
+MODEL_CHOICE = Literal["residual", "dense", "lbn_dense", "binned_lbn_dense", "fc"]
 SAMPLING_STRATEGY = Literal["largest_remainder", "stochastic"]
 
 
 @dataclass
 class TrainingConfig:
-    model_choice: MODEL_CHOICE = "lbn_dense"
-    max_train_iteration: int = 20_000  # max number of batches
+    model_choice: MODEL_CHOICE = "fc"
+    max_train_iteration: int = 100_000  # max number of batches
     label_smoothing: float = 0.0
     train_folds: tuple[int, ...] = (0,)  # which training folds to use
     k_fold: int = 5
