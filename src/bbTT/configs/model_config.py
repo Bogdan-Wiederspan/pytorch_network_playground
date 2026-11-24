@@ -75,7 +75,7 @@ class PaddingConfig:
 @dataclass
 class EmbeddingConfig:
     tokenizer_add_unknown_category: Optional[None] = None  # noqa value added to categories to symbolize unknown category. If None, no extra category is added
-    embedding_dim: int = 16  # dimension of embedding layer - Marcel old used 10
+    embedding_dim: int = 4  # dimension of embedding layer - Marcel old used 10
 
 
 @dataclass

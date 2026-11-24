@@ -10,7 +10,6 @@ from typing import Literal, Optional, get_args
 from bbTT.data_handling.eras import ERAS, column_prefix, era_order
 from bbTT.data_handling.features import FEATURES
 from bbTT.data_handling.io.find_datasets import cached_find_datasets
-from bbTT.utils.constants import EMPTY_FLOAT
 
 # eras that can be configured chosen from, in chronological order
 # the related data of an era is stored in data_handling/eras.py
@@ -70,9 +69,21 @@ class DataConfig:
     )  # features for the embedding path
 
     dataset_pattern: tuple[str] = (
-        "dy_*",
-        "tt_*",
-        "hh_ggf_hbb_htt_kl1_kt1*",
+        # "dy_*",
+        # "tt_*",
+        # "hh_ggf_hbb_htt_kl1_kt1*",
+
+        "dy_ee_m50toinf_1j_amcatnlo",
+        "dy_ee_m50toinf_2j_amcatnlo",
+        "dy_mumu_m50toinf_1j_amcatnlo",
+        "dy_mumu_m50toinf_2j_amcatnlo",
+        "dy_tautau_m50toinf_1j_amcatnlo",
+        "dy_tautau_m50toinf_2j_amcatnlo",
+        "tt_sl_powheg",
+        "tt_dl_powheg",
+        "hh_ggf_hbb_htt_kl0_kt1_powheg",
+        "hh_ggf_hbb_htt_kl1_kt1_powheg",
+        "hh_ggf_hbb_htt_kl5_kt1_powheg",
     )  # pattern to find datasets
 
     # eras: tuple[ERAS_CHOICE] = ("22pre", "22post", "23pre", "23post",)  # ERAS that are trained on. For each era a separate cache is created
