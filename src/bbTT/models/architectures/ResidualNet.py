@@ -31,10 +31,12 @@ class ResidualNet(BaseModel):
             "normalize": False,  # activate weight normalization on linear layer weights
         }
 
+        # the DenseBlock has no batch norm and no skip connection, so it only takes its own arguments from cfg
         self.transition_dense_1 = DenseBlock(
             input_nodes=self.input_layer.ndim,
             output_nodes=dense_cfg.nodes,
-            **cfg,
+            activation_functions=cfg["activation_functions"],
+            normalize=cfg["normalize"],
         )
         self.resnet_block_1 = ResNetPreactivationBlock(**cfg)
         self.resnet_block_2 = ResNetPreactivationBlock(**cfg)

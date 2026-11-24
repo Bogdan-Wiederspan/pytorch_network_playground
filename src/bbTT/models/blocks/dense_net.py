@@ -15,7 +15,6 @@ class DenseNetBlock(torch.nn.Module):
         skip_connection_init=1.0,
         freeze_skip_connection=False,
         activation_functions="PReLu",
-        eps=1e-5,
         normalize=False,
         *args,
         **kwargs,
@@ -29,7 +28,6 @@ class DenseNetBlock(torch.nn.Module):
             output_nodes=output_nodes,
             activation_functions=activation_functions,
             normalize=normalize,
-            eps=eps,
         )
         self.skip_connection_amplifier = torch.nn.Parameter(torch.ones(1) * skip_connection_init)
         if freeze_skip_connection:
@@ -63,7 +61,7 @@ class DenseBlock(torch.nn.Module):  # noqa: F811
         **kwargs,
     ):
         """
-        DenseBlock is a dense block that consists of a linear layer, batch normalization, and an activation function.
+        DenseBlock is a dense block that consists of a linear layer and an activation function.
 
         Args:
             nodes (int): Number of nodes in the block.
