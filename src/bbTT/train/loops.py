@@ -244,9 +244,10 @@ class TrainingLoop(BaseLoop):
         # CrossEntropy loss has build in softmax
         loss = loss_fn(logits, targets, event_weights=None)
 
+        loss.backward()
+
         grad_norm = self.clip_gradient_norm(model_inst)
 
-        loss.backward()
         optimizer_inst.step()
         return {
             "loss": loss,
