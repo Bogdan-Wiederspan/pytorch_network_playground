@@ -31,7 +31,6 @@ class DenseNet(BaseModel):
             "skip_connection_init": dense_cfg.skip_connection_init,
             "freeze_skip_connection": dense_cfg.freeze_skip_connection,
             "activation_functions": dense_cfg.activation_functions,
-            "eps": dense_cfg.batch_norm_eps,  # increasing eps helps to stabilize training, to counter batch norm and L2 reg counter play when used together
             "normalize": dense_cfg.normalize_linear,  # activate weight normalization on linear layer weights
             "output_nodes": int(dense_cfg.nodes),
         }
@@ -42,7 +41,6 @@ class DenseNet(BaseModel):
             input_nodes=self.input_layer.ndim,
             output_nodes=_dense_config["output_nodes"],
             activation_functions=_dense_config["activation_functions"],
-            eps=_dense_config["eps"],
             normalize=_dense_config["normalize"],
         )
         self.dense_block_1 = DenseNetBlock(input_nodes=self.transition_dense_1.output_dim, **_dense_config)

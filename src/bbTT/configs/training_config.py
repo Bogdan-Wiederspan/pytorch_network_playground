@@ -5,7 +5,7 @@ from typing import Literal
 
 from bbTT.configs.utils import choice_check
 
-MODEL_CHOICE = Literal["residual", "dense", "lbn_dense", "binned_lbn_dense"]
+MODEL_CHOICE = Literal["residual", "dense", "lbn_dense", "binned_lbn_dense", "fc"]
 SAMPLING_STRATEGY = Literal["largest_remainder", "stochastic"]
 
 

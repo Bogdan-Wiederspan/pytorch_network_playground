@@ -39,7 +39,6 @@ class LBNDenseNet(DenseNet):
             input_nodes=(self.input_layer.ndim + self.lbn.ndim),
             output_nodes=dense_cfg.nodes,
             activation_functions=dense_cfg.activation_functions,
-            eps=dense_cfg.batch_norm_eps,
             normalize=dense_cfg.normalize_linear,
         )
 
