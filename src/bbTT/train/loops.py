@@ -50,15 +50,17 @@ class BaseLoop:
             see 'your_model_inst.HEADS' to see get an idea what is available.
 
         4. Return a dict with the keys: "loss", "predictions", "targets", "event_weights" , "composition_weights".
+            Training loops add "grad_norm".
             loss = Value of the chosen Loss Function
             targets = Vector of your target
             event_weights = Product of all Weights on event base
             composition_weights = Transfer weight to convert an unsampled to an sampled version
+            grad_norm = L2 norm of the whole gradient before clipping, see TrainingLoop.clip_gradient_norm
 
         5. Add a rule to FullConfig._compatibility_rules if your loss only works with certain models (heads).
 
     Remarks for each loop type:
-        Training loops: sample one batch, then run: zero_grad -> forward -> loss -> backward -> step.
+        Training loops: sample one batch, then run: zero_grad -> forward -> loss -> backward -> clip -> step.
         Event weights are not part of the training loss, the oversampling takes care of that.
 
         Validation loops: run over all data via collect_from_generators (eval mode, no gradients) and weight the loss.
@@ -193,6 +195,27 @@ class TrainingLoop(BaseLoop):
         if monitor is not None:
             monitor.check_gradient_correctness(expected_names=model_inst.monitored_gradient_names())
 
+    def clip_gradient_norm(self, model_inst: torch.nn.Module) -> torch.Tensor:
+        """
+        Clips the gradient of *model_inst* in place, call it between ``loss.backward()`` and ``optimizer.step()``.
+
+        The gradients of all parameters are treated as one vector $g$. If its L2 norm exceeds
+        ``optimizer_config.max_grad_norm`` ($c$), the whole vector is scaled by $c / \\|g\\|$, so its length
+        becomes $c$ and its direction is kept. With ``max_grad_norm = None`` nothing is clipped, the norm
+        is still computed and returned.
+
+        Args:
+            model_inst (torch.nn.Module): Model whose parameter gradients are clipped.
+
+        Returns:
+            torch.Tensor: L2 norm of the whole gradient BEFORE clipping, scalar tensor.
+        """
+        max_grad_norm = self.full_config.optimizer_config.max_grad_norm
+        # an infinite bound never clips, but still gives the norm for the monitoring
+        max_norm = float("inf") if max_grad_norm is None else max_grad_norm
+        return torch.nn.utils.clip_grad_norm_(model_inst.parameters(), max_norm=max_norm)
+
+
     @register_loop(loss="cross_entropy")
     def cross_entropy_loss(
         self,
@@ -220,10 +243,14 @@ class TrainingLoop(BaseLoop):
         # training does not need event weights. The oversampling algorithm takes care of this
         # CrossEntropy loss has build in softmax
         loss = loss_fn(logits, targets, event_weights=None)
+
+        grad_norm = self.clip_gradient_norm(model_inst)
+
         loss.backward()
         optimizer_inst.step()
         return {
             "loss": loss,
+            "grad_norm": grad_norm,
             "predictions": model_inst.probabilities(logits),
             "targets": targets,
             "event_weights": events["product_of_weights"],
@@ -258,9 +285,13 @@ class TrainingLoop(BaseLoop):
         )
 
         loss.backward()
+
+        grad_norm = self.clip_gradient_norm(model_inst)
+
         optimizer_inst.step()
         return {
             "loss": loss,
+            "grad_norm": grad_norm,
             "predictions": model_inst.probabilities(logits),
             "targets": targets,
             "event_weights": events["product_of_weights"],

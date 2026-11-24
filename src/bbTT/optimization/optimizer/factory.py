@@ -32,7 +32,6 @@ def init_optimizer(full_config, model_inst: torch.nn.Module) -> torch.optim.Opti
         weight_decay = optimizer_cfg.active_config.weight_decay,
         lr = optimizer_cfg.lr,
         decouple_weight_decay_from_lr = optimizer_cfg.active_config.decouple_weight_decay_from_lr,
-        betas=tuple(optimizer_cfg.active_config.betas),
     )
     # each group carries its own weight_decay, the optimizer default below is never used
     parameter_groups = [no_decay_group, decay_group]
@@ -45,6 +44,7 @@ def init_optimizer(full_config, model_inst: torch.nn.Module) -> torch.optim.Opti
         optimizer_inst = torch.optim.AdamW(
             parameter_groups,
             lr=optimizer_cfg.lr,
+            betas=tuple(optimizer_cfg.active_config.betas),
             weight_decay=global_weight_decay_default,
         )
     else:
