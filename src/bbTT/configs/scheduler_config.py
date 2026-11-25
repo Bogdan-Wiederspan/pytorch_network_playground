@@ -66,7 +66,7 @@ class SchedulerConfig:
     # --- WarmUp Config ---
     # warm-up curve, None disables the warm-up. Optional[...] instead of "| None": from_dict evaluates the hints
     warmup_choice: Optional[WARMUP_CHOICE] = "cosine"
-    warmup_iterations: int = 100  # batch steps until the warm-up factor reaches 1 (= base learning rate)
+    warmup_iterations: int = 1500  # batch steps until the warm-up factor reaches 1 (= base learning rate)
     warmup_start_factor: float = 1e-4  # factor of the base learning rate at the first iteration
 
     # --- Main scheduler settings ---

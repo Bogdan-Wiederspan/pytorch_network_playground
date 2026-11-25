@@ -21,7 +21,7 @@ class ADAMWConfig:
 
 @dataclass
 class OptimizerConfig:
-    lr: float = 1e-2  # start learning rate
+    lr: float = 3e-3  # start learning rate
     optimizer_choice: OPTIMIZER_CHOICE = "adamw"
 
 
