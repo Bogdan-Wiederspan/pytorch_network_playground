@@ -99,6 +99,19 @@ class DataConfig:
     # "marcel_without_jets" is for the root production as long as it has no collection of all jets.
     continuous_feature_set: Optional[str] = "marcel"
 
+    # four-vector components of the LBN particles. Those that are not part of the feature set above are
+    # loaded in addition and handed to the model, but only the LBN branch reads them (see ``dense_features``).
+    # Models without LBN ignore them, so "fc" and "lbn_fc" share one data cache.
+    lbn_features: tuple[str, ...] = (
+        "vis_tau1_e", "vis_tau1_px", "vis_tau1_py", "vis_tau1_pz",
+        "vis_tau2_e", "vis_tau2_px", "vis_tau2_py", "vis_tau2_pz",
+        "bjet1_e", "bjet1_px", "bjet1_py", "bjet1_pz",
+        "bjet2_e", "bjet2_px", "bjet2_py", "bjet2_pz",
+        "met_px", "met_py",
+        "nu1_px", "nu1_py", "nu1_pz",
+        "nu2_px", "nu2_py", "nu2_pz",
+    )
+
     # Marcel comparison: channel_id is the only categorical input. The previous list was
     # ("pair_type", "dm1", "dm2", "vis_tau1_charge", "vis_tau2_charge", "has_jet_pair", "has_fatjet")
     categorical_features: tuple[str] = (
@@ -175,12 +188,24 @@ class DataConfig:
     @property
     def continuous_features(self) -> tuple[str, ...]:
         """
-        The continuous features of the configured eras: the entry of ``continuous_features_by_era``
+        Every continuous feature that is loaded and handed to the model, in tensor column order:
+        ``dense_features`` followed by the ``lbn_features`` that are not already among them.
+
+        Returns:
+            tuple[str, ...]: Feature names in tensor column order.
+        """
+        dense = self.dense_features
+        return dense + tuple(f for f in self.lbn_features if f not in dense)
+
+    @property
+    def dense_features(self) -> tuple[str, ...]:
+        """
+        The continuous features the dense branch of a model reads: the entry of ``continuous_features_by_era``
         for the era, "default" for eras without their own. All configured eras must resolve to the same list.
         A set ``continuous_feature_set`` names the entry directly and skips the lookup by era.
 
         Returns:
-            tuple[str, ...]: Feature names in tensor column order.
+            tuple[str, ...]: Feature names, a subset of ``continuous_features`` in the same order.
 
         Raises:
             ValueError: If the configured eras resolve to different feature lists, or if

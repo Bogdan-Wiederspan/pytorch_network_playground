@@ -25,7 +25,7 @@ class RecordConfig:
     log_metrics: bool = True  # log metrics to tensorboard during training
 
     # full pass over the training data is pure monitoring but costs ~4x a validation pass.
-    training_evaluation_interval: int = 5 # 1 = every validation pass, 2 = every second etc.
+    training_evaluation_interval: int = 2 # 1 = every validation pass, 2 = every second etc.
 
     # what plots and scalar should be monitored during training, validation and batch monitoring.
     # PLOTS are defined in PLOT_REGISTRY.

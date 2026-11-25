@@ -57,6 +57,15 @@ class BaseModel(HookableModelMixin, torch.nn.Module):
         return self.dataset_config.continuous_features
 
     @property
+    def dense_features(self) -> tuple[str, ...]:
+        """
+        Returns:
+            tuple[str, ...]: Continuous features the dense branch reads, a subset of ``continuous_features``.
+                Configs written before the split have no such property, there the dense branch reads everything.
+        """
+        return getattr(self.dataset_config, "dense_features", self.dataset_config.continuous_features)
+
+    @property
     def categorical_features(self):
         return self.dataset_config.categorical_features
 
@@ -366,6 +375,7 @@ class BaseModel(HookableModelMixin, torch.nn.Module):
                 rotation_layer=self.init_rotation_layer(),
                 std_layer=self.init_standardization_layer(),
                 padding_continuous_layer=self.init_continuous_padding_layer(),
+                selected_inputs=self.dense_features,
             )
 
         # initialize categorical input layer if categorical features are present

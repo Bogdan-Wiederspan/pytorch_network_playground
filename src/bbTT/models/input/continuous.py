@@ -12,10 +12,11 @@ class ContinuousInputLayer(torch.nn.Module):
         std_layer: torch.nn.Module | None = None,
         rotation_layer: torch.nn.Module | None = None,
         padding_continuous_layer: torch.nn.Module | None = None,
+        selected_inputs: tuple[str, ...] | None = None,
     ):
         """
         Preprocessing branch for continuous features performed in this order:
-            padding → rotation → standardization.
+            padding → rotation → standardization → selection.
 
         The order is fixed:
             - padding replaces dummy markers with raw values first.
@@ -26,14 +27,34 @@ class ContinuousInputLayer(torch.nn.Module):
         Rotation and standardization passed as None are replaced by an identity. The padding layer stays None,
         Since ``sanitize`` needs its mask and skips the padding steps entirely without it.
 
+        Selection:
+        The input tensor may hold more columns than this branch should pass on, e.g. four-vector components that
+        only the LBN branch reads. *selected_inputs* names the columns that are kept; preprocessing still runs
+        on all columns, since rotation and padding address them by position.
+
         Args:
-            continuous_inputs (tuple[str]): Names of the continuous features, defines the output dimension ``ndim``.
+            continuous_inputs (tuple[str]): Names of all columns of the input tensor, in tensor order.
             std_layer (torch.nn.Module | None, optional): Standardization layer. Defaults to None.
             rotation_layer (torch.nn.Module | None, optional): Phi rotation layer. Defaults to None.
             padding_continuous_layer (torch.nn.Module | None, optional): Padding layer for dummy values. Defaults to None.
+            selected_inputs (tuple[str, ...] | None, optional): Names of the columns this branch outputs, defines the
+                output dimension ``ndim``. None keeps all columns. Defaults to None.
+
+        Raises:
+            ValueError: If *selected_inputs* names a column that is not in *continuous_inputs*.
         """
         super().__init__()
-        self.ndim = len(continuous_inputs)
+        selected_inputs = tuple(continuous_inputs) if selected_inputs is None else tuple(selected_inputs)
+        unknown = [name for name in selected_inputs if name not in continuous_inputs]
+        if unknown:
+            raise ValueError(f"selected_inputs are not part of the continuous inputs: {unknown}")
+        self.ndim = len(selected_inputs)
+
+        # positions of the selected columns. Not persistent: it follows from the config, so checkpoints
+        # written before the selection existed still load
+        positions = torch.tensor([list(continuous_inputs).index(name) for name in selected_inputs], dtype=torch.long)
+        self.register_buffer("selection", positions, persistent=False)
+        self.selects_all = selected_inputs == tuple(continuous_inputs)
 
         self.rotation_layer = optional_layer(rotation_layer)
         self.std_layer = optional_layer(std_layer)
@@ -65,11 +86,13 @@ class ContinuousInputLayer(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            x (torch.Tensor): Raw Continuous features of shape (batch, ndim).
+            x (torch.Tensor): Raw continuous features of shape (batch, number of continuous inputs).
 
         Returns:
-            torch.Tensor: Preprocessed features of shape (batch, ndim).
+            torch.Tensor: Preprocessed selected features of shape (batch, ndim).
         """
         x = self.sanitize(x)
         x = self.std_layer(x)
+        if not self.selects_all:
+            x = x[:, self.selection]
         return x

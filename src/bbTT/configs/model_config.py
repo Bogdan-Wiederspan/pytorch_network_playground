@@ -156,7 +156,7 @@ class StandardizationConfig:
 
 @dataclass
 class LorentzBoostNetworkConfig:
-    number_of_particles: int = 10  # number of particles of the lbn network Marcel: 10
+    number_of_particles: int = 5  # M: number of particle and rest frame combinations of the lbn - Marcel: 5 (old: 10)
     weight_init_scale = 1.0
     clip_weights = False
     eps = 1.0e-5

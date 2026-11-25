@@ -9,8 +9,9 @@ The files differ from the root production in three ways, which is why they get t
       b-jet candidates are built from the reconstructed objects (pt, eta, phi, mass)
     - the events are already selected, no cuts are applied
 
-Only derived continuous features (see ``data_handling/derived_features.py``) and bare categorical
-columns such as ``channel_id`` can be read. The result has the same layout as the root reader's.
+Only derived continuous features (see ``data_handling/derived_features.py``), their sources (the
+four-vector components, e.g. for the LBN) and bare columns such as ``channel_id`` can be read.
+The result has the same layout as the root reader's.
 """
 from __future__ import annotations
 
@@ -174,10 +175,10 @@ def load_parquet_and_convert_to_numpy(
         files_path (list[str], str): Parquet files or a single file.
         branches (list[str]): Columns the result must contain: derived features and bare columns.
         era (EraSpec): Era of the files, the path does not tell it. Provides the tagger and its working points.
-        derived (tuple[str, ...]): Names in *branches* that are derived features. Every continuous feature must
-            be one, the files have no regression DNN four-vectors to read them from.
+        derived (tuple[str, ...]): Names in *branches* that are derived features.
         derived_sources (dict[str, str]): Registry name -> array column of the derived feature sources. Only the
             neutrino entries are read as columns, all other sources are built from the reconstructed objects.
+            A source column listed in *branches* is returned as built here, under its array column name.
         row_masks (tuple[str, ...], optional): Boolean columns an event must have set to be kept,
             e.g. ("keep_in_union",). Defaults to ().
 
@@ -191,7 +192,10 @@ def load_parquet_and_convert_to_numpy(
     if isinstance(files_path, str):
         files_path = [files_path]
 
-    bare_columns = [b for b in branches if b not in derived]
+    # array column -> registry name of the sources: such columns are not in the file, they are built below
+    source_columns = {column: name for name, column in derived_sources.items()}
+    bare_columns = [b for b in branches if b not in derived and b not in source_columns]
+    requested_sources = [b for b in branches if b in source_columns]
     neutrino_columns = {name: column for name, column in derived_sources.items() if name.startswith("nu")}
     btag_collection, btag_field = split_branch(era.btag_score_branch)
     medium_wp = era.working_point("medium")
@@ -255,6 +259,8 @@ def load_parquet_and_convert_to_numpy(
 
         derived_features = build_derived_features(source, reductions=reductions)
         columns: dict[str, np.ndarray] = {name: derived_features[name] for name in derived}
+        for column in requested_sources:
+            columns[column] = source[source_columns[column]].astype(np.float32)
         for column in bare_columns:
             columns[column] = ak.to_numpy(events[column])
 

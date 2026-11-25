@@ -32,18 +32,20 @@ class LBNFeatureExtractor(torch.nn.Module):
 
     def find_particles_components_in_features(self):
         # returns dictionary with all indicies of the feature components
-        def find_components(particle):
-            particle_components = {}
-            for idx, s in enumerate(self.continuous_features):
-                if particle in s:
-                    component = s.split("_")[-1]
-                    particle_components[component] = idx
-            return particle_components
+        positions = {name: idx for idx, name in enumerate(self.continuous_features)}
 
-        particles_components = {particle: find_components(particle) for particle in self._particles}
+        def indicies(particle: str, components: tuple[str, ...]) -> list[int]:
+            # exact names "<particle>_<component>": a substring search would also match derived
+            # features such as "log_met_pt" for the particle "met"
+            names = [f"{particle}_{component}" for component in components]
+            missing = [name for name in names if name not in positions]
+            if missing:
+                raise ValueError(
+                    f"the LBN needs the continuous features {missing}, add them to the feature list "
+                    "or to DataConfig.lbn_features"
+                )
+            return [positions[name] for name in names]
 
-        # filter the indices
-        indicies = lambda particle, features: [particles_components[particle][f] for f in features]
         particles = {}
 
         for f in self._particles[:-3]:
