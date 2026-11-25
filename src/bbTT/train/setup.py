@@ -140,6 +140,8 @@ def prepare_fold_data(
         dataset_config=full_config.dataset_config,
         sampler=training_sampler,
         split_fingerprint=fold_split_coordinator.fingerprint(),
+        statistic=full_config.model_building_config.standardization.statistic,
+        statistic_config=full_config.model_building_config.standardization.active_config,
         return_dummy=full_config.debug_config.get_batch_statistic_return_dummy,
         verbose=True,
     )
