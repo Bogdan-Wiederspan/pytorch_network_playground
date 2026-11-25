@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, Optional
 
+from bbTT.data_handling.derived_features import ALWAYS_PRESENT, HHBJET_FEATURES, JET_FEATURES, MISSING, NEEDS_BJETS
 from bbTT.data_handling.eras import ERAS
 
 FEATURE_KIND = Literal["continuous", "categorical"]
@@ -11,7 +12,7 @@ FEATURE_KIND = Literal["continuous", "categorical"]
 @dataclass(frozen=True)
 class FeatureSpec:
     """
-    One input column as the production provides it.
+    One input column, either as the production provides it or derived from such columns.
 
     Args:
         name (str): Short name used in configs, e.g. "bjet1_px".
@@ -26,6 +27,8 @@ class FeatureSpec:
         jagged (tuple[str, int], optional): (branch, index) when the value is one entry of a jagged
             branch, e.g. the score of the first HH b-jet candidate. The reader splits the branch
             into a flat column named like the feature and fills a missing entry with ``dummy``.
+        derived (bool): True when the production has no such column and the reader calculates it from other
+            columns while the cache is built, see ``data_handling/derived_features.py``.
         unavailable_in (frozenset[str]): Eras whose production does not provide the column.
     """
 
@@ -36,6 +39,7 @@ class FeatureSpec:
     value_groups: Optional[dict[str, tuple[int, ...]]] = None
     column: Optional[str] = None
     jagged: Optional[tuple[str, int]] = None
+    derived: bool = False
     unavailable_in: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
@@ -58,6 +62,9 @@ class FeatureSpec:
             if self.dummy is None:
                 raise ValueError(f"feature {self.name} is split from a jagged branch and needs a dummy to fill missing entries")
 
+        if self.derived and (self.column is not None or self.jagged is not None):
+            raise ValueError(f"feature {self.name} is derived and cannot name a column or a jagged branch")
+
     def column_name(self, prefix: str) -> str:
         """
         Actual array column of this feature for a production.
@@ -66,11 +73,12 @@ class FeatureSpec:
             prefix (str): Column prefix of the production, see ``eras.column_prefix``.
 
         Returns:
-            str: Column name, e.g. "reg_dnn_moe_bjet1_px"; the feature name itself for a jagged split.
+            str: Column name, e.g. "reg_dnn_moe_bjet1_px"; the feature name itself for a jagged split
+                or a derived feature.
 
         """
-        # in case of jagged arrays a split happens on the mother column
-        if self.jagged is not None:
+        # in case of jagged arrays a split happens on the mother column, a derived feature is created by the reader
+        if self.jagged is not None or self.derived:
             return self.name
         return self.column if self.column is not None else f"{prefix}_{self.name}"
 
@@ -171,4 +179,13 @@ FEATURES: dict[str, FeatureSpec] = _registry(
     FeatureSpec(name="channel_id", kind="categorical", values=(1, 2, 3), column="channel_id"),  # bare column, not prefixed
     FeatureSpec(name="bjet1_upart_b", kind="continuous", dummy=-1.0, jagged=(ERAS["24"].btag_score_branch, 0), unavailable_in=PNET_ERAS),
     FeatureSpec(name="bjet2_upart_b", kind="continuous", dummy=-1.0, jagged=(ERAS["24"].btag_score_branch, 1), unavailable_in=PNET_ERAS),
+
+    # --- derived inputs, calculated by the reader, see data_handling/derived_features.py ---
+    *(FeatureSpec(name=name, kind="continuous", derived=True) for name in ALWAYS_PRESENT),
+    # these need the b-jet candidates and carry the marker when a candidate is missing
+    *(FeatureSpec(name=name, kind="continuous", derived=True, dummy=MISSING) for name in NEEDS_BJETS),
+    # these need the collection of all jets, which the production does not ship yet
+    *(FeatureSpec(name=name, kind="continuous", derived=True) for name in JET_FEATURES),
+    # stand-in for n_btags from the two HH b-jet candidates only
+    *(FeatureSpec(name=name, kind="continuous", derived=True) for name in HHBJET_FEATURES),
 )

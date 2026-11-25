@@ -35,6 +35,12 @@ def column_prefix(production: str) -> str:
 
 
 
+# collection of all selected jets of an event, the HH b-jet candidates are a subset of it.
+# NOTE: the production does not ship it yet, the names follow the HHBJet branches and are an assumption
+JET_COLLECTION = "Jet"
+JET_PT_BRANCH = f"{JET_COLLECTION}_pt"
+
+
 @dataclass(frozen=True)
 class EraSpec:
     """
@@ -59,6 +65,18 @@ class EraSpec:
     btag_score_branch: str
     transfer_weights: frozenset[str]
     btag_working_points: dict[str, float] = field(default_factory=dict)
+
+    @property
+    def jet_btag_score_branch(self) -> str:
+        """
+        Branch holding the b-tag score of all jets, same tagger as ``btag_score_branch``
+        but for the collection JET_COLLECTION instead of the HH b-jet candidates.
+
+        Returns:
+            str: Branch name, e.g. "Jet_btagUParTAK4B".
+        """
+        _, score_name = self.btag_score_branch.split("_", 1)
+        return f"{JET_COLLECTION}_{score_name}"
 
     def working_point(self, wp_level: str) -> float:
         """

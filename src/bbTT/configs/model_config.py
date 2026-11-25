@@ -56,6 +56,15 @@ class PaddingConfig:
             "nu2_px": ("raw", 0.0), "nu2_py": ("raw", 0.0), "nu2_pz": ("raw", 0.0),
             "bjet1_upart_b": ("raw", -1.0), "bjet2_upart_b": ("raw", -1.0), # only exist for 24
 
+            # derived features that need the b-jet candidates: a missing value is set to the center of the
+            # feature, so it is exactly 0 after the standardization
+            "log_bb_mass": ("std", 0.0), "log_bb_pt": ("std", 0.0), "dr_b1_b2": ("std", 0.0),
+            "deta_bb_ll": ("std", 0.0), "dr_bb_ll": ("std", 0.0), "cos_bb_ll": ("std", 0.0),
+            "log_bbll_mass": ("std", 0.0), "log_bbll_pt": ("std", 0.0), "bbll_eta": ("std", 0.0),
+            "dr_l1_b1": ("std", 0.0), "dr_l1_b2": ("std", 0.0), "dr_l2_b1": ("std", 0.0), "dr_l2_b2": ("std", 0.0),
+            "dr_bb_tt": ("std", 0.0),
+            "log_hh_mass": ("std", 0.0), "log_hh_mass_red": ("std", 0.0), "log_hh_pt": ("std", 0.0),
+            "cos_theta_star": ("std", 0.0),
         }
     )
     # noqa per-feature replacement of the marker with 2 modes: e.g. {"bjet1_e": ("raw", 0.0), "bjet1_tag_b": ("std", -1.0)}

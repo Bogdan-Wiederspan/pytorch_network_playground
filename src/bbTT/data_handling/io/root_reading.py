@@ -4,7 +4,8 @@ from typing import Union
 import awkward as ak
 import uproot
 
-from bbTT.data_handling.eras import ERAS
+from bbTT.data_handling.derived_features import JET_FEATURES, build_derived_features
+from bbTT.data_handling.eras import ERAS, JET_PT_BRANCH
 from bbTT.data_handling.evaluation_phase_space import res1b_and_res2b_phase_space_mask
 from bbTT.monitoring.logger.logger import get_logger
 
@@ -15,6 +16,8 @@ def load_root_and_convert_to_numpy(
     branches: Union[list[str], str, None] = None,
     cut: list[str] = None,
     jagged: Union[dict[str, tuple[str, int, float]], None] = None,
+    derived: tuple[str, ...] = (),
+    derived_sources: Union[dict[str, str], None] = None,
 ) -> ak.Array:
     """
     Load all root files in *files_path* and return them as a single awkward array.
@@ -27,6 +30,10 @@ def load_root_and_convert_to_numpy(
         jagged (dict[str, tuple[str, int, float]], optional): Flat column -> (branch, index, fill): the column is
             created from entry *index* of the jagged *branch*, *fill* is used when the entry is missing.
             Such columns may be listed in *branches*, the branch itself is read instead. Defaults to None.
+        derived (tuple[str, ...], optional): Features that are no branch but calculated from *derived_sources*,
+            see ``data_handling/derived_features.py``. They may be listed in *branches*. Defaults to ().
+        derived_sources (dict[str, str], optional): Registry name -> array column of every column the
+            calculation reads. Read in addition to *branches* and dropped afterwards. Defaults to None.
 
     Returns:
         ak.Array: awkward array containing all data from the root files
@@ -55,7 +62,12 @@ def load_root_and_convert_to_numpy(
     # columns split from jagged branches are not in the tree, their source branch is read instead
     jagged = jagged or {}
     jagged_sources = {branch for branch, _, _ in jagged.values()}
-    all_branches = (set(branches) - set(jagged)).union(meta_fields, mask_fields, jagged_sources)
+    derived_sources = derived_sources or {}
+    # the collection of all jets is only read when a feature asks for it, not every production has it
+    needs_jets = bool(set(derived) & set(JET_FEATURES))
+    all_branches = (set(branches) - set(jagged) - set(derived)).union(
+        meta_fields, mask_fields, jagged_sources, derived_sources.values()
+    )
 
     # handle edge cases for cuts and file paths
     if isinstance(cut, str):
@@ -81,6 +93,8 @@ def load_root_and_convert_to_numpy(
             # e.x. muon_id_weight does not exist in dy datasets
             weights_in_current_file = set(tree.keys()).intersection(era.transfer_weights)
             read_fields = all_branches.union(weights_in_current_file, {era.btag_score_branch})
+            if needs_jets:
+                read_fields = read_fields.union({JET_PT_BRANCH, era.jet_btag_score_branch})
 
             events = tree.arrays(read_fields, library="ak", cut=cut)
 
@@ -89,6 +103,26 @@ def load_root_and_convert_to_numpy(
             for column, (branch, index, fill) in jagged.items():
                 padded = ak.pad_none(events[branch], index + 1, axis=1)
                 events[column] = ak.fill_none(padded[:, index], fill)
+
+            # --- derived features ---
+            # calculated from the source columns, only the requested ones are kept
+            if derived:
+                source = {name: ak.to_numpy(events[column]) for name, column in derived_sources.items()}
+
+                # jagged collections are reduced to one number per event here; branch and
+                # working point of the b-tagger depend on the era
+                medium_wp = era.working_point("medium")
+                reductions = {
+                    "n_btags_hhbjet": ak.to_numpy(ak.sum(events[era.btag_score_branch] >= medium_wp, axis=1)),
+                }
+                if needs_jets:
+                    reductions["ht"] = ak.to_numpy(ak.sum(events[JET_PT_BRANCH], axis=1))
+                    reductions["n_jets"] = ak.to_numpy(ak.num(events[JET_PT_BRANCH], axis=1))
+                    reductions["n_btags"] = ak.to_numpy(ak.sum(events[era.jet_btag_score_branch] >= medium_wp, axis=1))
+
+                derived_features = build_derived_features(source, reductions=reductions)
+                for name in derived:
+                    events[name] = derived_features[name]
 
             # calculate_monte_carlo_weight
             # this weight combines all corrections, but also over-sampling of mc generator

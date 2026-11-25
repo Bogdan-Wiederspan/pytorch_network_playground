@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from string import Formatter
 from typing import Literal, Optional, get_args
 
+from bbTT.data_handling.derived_features import SOURCE_FEATURES
 from bbTT.data_handling.eras import ERAS, column_prefix, era_order
 from bbTT.data_handling.features import FEATURES
 from bbTT.data_handling.io.find_datasets import cached_find_datasets
@@ -55,17 +56,47 @@ class DataConfig:
             "nu1_px", "nu1_py", "nu1_pz",
             "nu2_px", "nu2_py", "nu2_pz",
         ),
+        # Marcel comparison: the 31 high level features of his network in his order, derived from the
+        # four-vectors when the cache is built. log_ht, n_jets and n_btags need the collection of all jets.
+        "marcel": (
+            "log_met_pt", "log_ht",
+            "log_bb_mass", "log_bb_pt", "dr_b1_b2",
+            "log_ll_mass", "dr_l1_l2", "log_ll_pt",
+            "deta_bb_ll", "dr_bb_ll", "cos_bb_ll",
+            "log_bbll_mass", "log_bbll_pt", "bbll_eta",
+            "dphi_ll_met", "log1p_mt_l1_met",
+            "dr_l1_b1", "dr_l1_b2", "dr_l2_b1", "dr_l2_b2",
+            "n_jets", "n_btags",
+            "log_tt_mass", "log_tt_pt", "dr_bb_tt",
+            "log_hh_mass", "log_hh_mass_red", "log_hh_pt",
+            "cos_theta_star", "x1", "x2",
+        ),
+        # the same set for a production without the collection of all jets: no log_ht and n_jets,
+        # and n_btags_hhbjet (counts only the two HH b-jet candidates) instead of n_btags
+        "marcel_without_jets": (
+            "log_met_pt",
+            "log_bb_mass", "log_bb_pt", "dr_b1_b2",
+            "log_ll_mass", "dr_l1_l2", "log_ll_pt",
+            "deta_bb_ll", "dr_bb_ll", "cos_bb_ll",
+            "log_bbll_mass", "log_bbll_pt", "bbll_eta",
+            "dphi_ll_met", "log1p_mt_l1_met",
+            "dr_l1_b1", "dr_l1_b2", "dr_l2_b1", "dr_l2_b2",
+            "n_btags_hhbjet",
+            "log_tt_mass", "log_tt_pt", "dr_bb_tt",
+            "log_hh_mass", "log_hh_mass_red", "log_hh_pt",
+            "cos_theta_star", "x1", "x2",
+        ),
     })
 
+    # key of continuous_features_by_era that is used instead of the lookup by era, None = lookup by era.
+    # Lets a feature set that does not belong to an era (e.g. "marcel") be chosen without touching the era lists.
+    # Switch to "marcel" once the production ships the collection of all jets.
+    continuous_feature_set: Optional[str] = "marcel_without_jets"
+
+    # Marcel comparison: channel_id is the only categorical input. The previous list was
+    # ("pair_type", "dm1", "dm2", "vis_tau1_charge", "vis_tau2_charge", "has_jet_pair", "has_fatjet")
     categorical_features: tuple[str] = (
-        "pair_type",
-        # "_channel_id",
-        "dm1",
-        "dm2",
-        "vis_tau1_charge",
-        "vis_tau2_charge",
-        "has_jet_pair",
-        "has_fatjet",
+        "channel_id",
     )  # features for the embedding path
 
     dataset_pattern: tuple[str] = (
@@ -134,14 +165,23 @@ class DataConfig:
         """
         The continuous features of the configured eras: the entry of ``continuous_features_by_era``
         for the era, "default" for eras without their own. All configured eras must resolve to the same list.
+        A set ``continuous_feature_set`` names the entry directly and skips the lookup by era.
 
         Returns:
             tuple[str, ...]: Feature names in tensor column order.
 
         Raises:
-            ValueError: If the configured eras resolve to different feature lists.
+            ValueError: If the configured eras resolve to different feature lists, or if
+                ``continuous_feature_set`` names no entry of ``continuous_features_by_era``.
         """
         by_era = self.continuous_features_by_era
+        if self.continuous_feature_set is not None:
+            if self.continuous_feature_set not in by_era:
+                raise ValueError(
+                    f"continuous_feature_set {self.continuous_feature_set!r} is no entry of "
+                    f"continuous_features_by_era, known: {sorted(by_era)}"
+                )
+            return tuple(by_era[self.continuous_feature_set])
         keys = {era if era in by_era else "default" for era in self.eras}
         if len(keys) != 1:
             raise ValueError(f"eras {self.eras} resolve to different feature lists {sorted(keys)}")
@@ -300,6 +340,29 @@ class DataConfig:
             for f in self.continuous_features + self.categorical_features
             if FEATURES[f].jagged is not None
         }
+
+    @property
+    def derived_features(self) -> tuple[str, ...]:
+        """
+        Configured continuous features the reader has to calculate, see FeatureSpec.derived.
+
+        Returns:
+            tuple[str, ...]: Feature names, empty when only production columns are configured.
+        """
+        return tuple(f for f in self.continuous_features if FEATURES[f].derived)
+
+    @property
+    def uproot_derived_sources(self) -> dict[str, str]:
+        """
+        Columns the calculation of the derived features reads. They are loaded in addition to the
+        configured features and are not stored in the cache themselves.
+
+        Returns:
+            dict[str, str]: Registry name -> array column, empty when no derived feature is configured.
+        """
+        if not self.derived_features:
+            return {}
+        return {name: self.prefixed(name) for name in SOURCE_FEATURES}
 
     def __post_init__(self):
         if get_args(ERAS_CHOICE) != tuple(ERAS):
