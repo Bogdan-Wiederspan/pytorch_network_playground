@@ -47,6 +47,9 @@ def _load_and_process_era(config, datasets_per_era, era):
         jagged=config.uproot_jagged_columns,
         derived=config.derived_features,
         derived_sources=config.uproot_derived_sources,
+        file_type=config.file_type,
+        era=era,
+        row_masks=config.row_mask_columns,
         flush_threshold_rows=config.flush_threshold,
     )
 

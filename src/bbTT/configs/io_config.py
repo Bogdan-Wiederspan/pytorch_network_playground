@@ -7,14 +7,20 @@ from dataclasses import dataclass, field
 from string import Formatter
 from typing import Literal, Optional, get_args
 
+from bbTT.configs.utils import choice_check
 from bbTT.data_handling.derived_features import SOURCE_FEATURES
 from bbTT.data_handling.eras import ERAS, column_prefix, era_order
 from bbTT.data_handling.features import FEATURES
-from bbTT.data_handling.io.find_datasets import cached_find_datasets
+from bbTT.data_handling.io.find_datasets import cached_find_datasets, cached_find_flat_datasets
 
 # eras that can be configured chosen from, in chronological order
 # the related data of an era is stored in data_handling/eras.py
 ERAS_CHOICE = Literal["22pre", "22post", "23pre", "23post", "24"]
+
+# format and layout of the input files:
+# root: ${INPUT_DATA_DIR}/<era>/<dataset>/*.root, the production of this analysis
+# parquet: ${INPUT_DATA_DIR}/<dataset>/*.parquet, the pre-selected files of Marcel's comparison (one era, no cuts)
+FILE_TYPE = Literal["root", "parquet"]
 
 
 
@@ -90,8 +96,8 @@ class DataConfig:
 
     # key of continuous_features_by_era that is used instead of the lookup by era, None = lookup by era.
     # Lets a feature set that does not belong to an era (e.g. "marcel") be chosen without touching the era lists.
-    # Switch to "marcel" once the production ships the collection of all jets.
-    continuous_feature_set: Optional[str] = "marcel_without_jets"
+    # "marcel_without_jets" is for the root production as long as it has no collection of all jets.
+    continuous_feature_set: Optional[str] = "marcel"
 
     # Marcel comparison: channel_id is the only categorical input. The previous list was
     # ("pair_type", "dm1", "dm2", "vis_tau1_charge", "vis_tau2_charge", "has_jet_pair", "has_fatjet")
@@ -99,22 +105,26 @@ class DataConfig:
         "channel_id",
     )  # features for the embedding path
 
-    dataset_pattern: tuple[str] = (
-        # "dy_*",
-        # "tt_*",
-        # "hh_ggf_hbb_htt_kl1_kt1*",
+    # Marcel comparison: his parquet files replace the root production, see FILE_TYPE
+    file_type: FILE_TYPE = "parquet"
 
-        "dy_ee_m50toinf_1j_amcatnlo",
-        "dy_ee_m50toinf_2j_amcatnlo",
-        "dy_mumu_m50toinf_1j_amcatnlo",
-        "dy_mumu_m50toinf_2j_amcatnlo",
-        "dy_tautau_m50toinf_1j_amcatnlo",
-        "dy_tautau_m50toinf_2j_amcatnlo",
-        "tt_sl_powheg",
-        "tt_dl_powheg",
-        "hh_ggf_hbb_htt_kl0_kt1_powheg",
-        "hh_ggf_hbb_htt_kl1_kt1_powheg",
-        "hh_ggf_hbb_htt_kl5_kt1_powheg",
+    # boolean columns an event must have set to be kept, only used for parquet (the root files are cut by ``cuts``)
+    row_mask_columns: tuple[str, ...] = ()
+
+    # the same selection in the root production is
+    # dy_{ee,mumu,tautau}_m50toinf_{1j,2j}_amcatnlo, tt_{sl,dl}_powheg, hh_ggf_hbb_htt_kl{0,1,5}_kt1_powheg
+    dataset_pattern: tuple[str] = (
+        "dy_ee_1j",
+        "dy_ee_2j",
+        "dy_mumu_1j",
+        "dy_mumu_2j",
+        "dy_tautau_1j",
+        "dy_tautau_2j",
+        "tt_sl",
+        "tt_dl",
+        "hh_kl0",
+        "hh_kl1",
+        "hh_kl5",
     )  # pattern to find datasets
 
     # eras: tuple[ERAS_CHOICE] = ("22pre", "22post", "23pre", "23post",)  # ERAS that are trained on. For each era a separate cache is created
@@ -157,6 +167,8 @@ class DataConfig:
         Returns:
             tuple[str, ...]: Dataset file paths.
         """
+        if self.file_type == "parquet":
+            return cached_find_flat_datasets(tuple(self.dataset_pattern), file_type="parquet")
         return cached_find_datasets(tuple(self.dataset_pattern), tuple(self.eras), file_type="root")
 
 
@@ -304,6 +316,9 @@ class DataConfig:
             "expected_embedding_inputs": self.expected_embedding_inputs,
             "datasets": self.dataset_pattern,
             "cuts": self.cuts,
+            # root and parquet hold different events under possibly equal names
+            "file_type": self.file_type,
+            "row_mask_columns": self.row_mask_columns,
         }
 
     def content_hash(self):
@@ -373,6 +388,10 @@ class DataConfig:
         unknown_eras = set(self.eras) - set(ERAS)
         if unknown_eras:
             raise ValueError(f"Unknown eras {sorted(unknown_eras)}, known: {list(ERAS)}")
+
+        choice_check(self.file_type, FILE_TYPE)
+        if self.file_type == "parquet" and len(self.eras) != 1:
+            raise ValueError(f"the parquet layout has no era level and needs exactly one era, got {self.eras}")
         btaggers = {ERAS[era].btagger for era in self.eras}
         if len(btaggers) > 1:
             raise ValueError(

@@ -2,6 +2,7 @@ from typing import Union
 
 import numpy as np
 
+from bbTT.data_handling.eras import ERAS
 from bbTT.data_handling.io.root_reading import load_root_and_convert_to_numpy
 from bbTT.monitoring.logger.logger import get_logger
 
@@ -22,6 +23,9 @@ def stream_events_by_uid(
     jagged: Union[dict[str, tuple[str, int, float]], None] = None,
     derived: tuple[str, ...] = (),
     derived_sources: Union[dict[str, str], None] = None,
+    file_type: str = "root",
+    era: Union[str, None] = None,
+    row_masks: tuple[str, ...] = (),
 ) -> dict[tuple[str, int], np.typing.ArrayLike]:
     """
     Load root files in *dataset_paths*, extract *columns* with applied *cut* on it.
@@ -37,6 +41,10 @@ def stream_events_by_uid(
         jagged (dict[str, tuple[str, int, float]], optional): Columns to split from jagged branches, see ``load_root_and_convert_to_numpy``. Defaults to None.
         derived (tuple[str, ...], optional): Derived features to calculate, see ``load_root_and_convert_to_numpy``. Defaults to ().
         derived_sources (dict[str, str], optional): Source columns of the derived features, see ``load_root_and_convert_to_numpy``. Defaults to None.
+        file_type (str, optional): "root" or "parquet", picks the reader. For parquet *cut* and *jagged* are ignored,
+            see ``load_parquet_and_convert_to_numpy``. Defaults to "root".
+        era (str, optional): Era of the files, only needed for parquet where the path does not tell it. Defaults to None.
+        row_masks (tuple[str, ...], optional): Boolean columns an event must have set, parquet only. Defaults to ().
 
     Returns:
         dict[tuple[str, int], np.typing.ArrayLike]: Dict of arrays where key is tuple of dataset name and id.
@@ -71,10 +79,19 @@ def stream_events_by_uid(
     num_events_per_dataset = {}
     num_events_per_pid = {}
     for dataset, files in dataset_paths.items():
-        logger_inst.info(f"Start loading and conversion of root files: {dataset}")
-        events_bucket, num_events_of_files = load_root_and_convert_to_numpy(
-            files, branches=columns, cut=cut, jagged=jagged, derived=derived, derived_sources=derived_sources
-        )
+        logger_inst.info(f"Start loading and conversion of {file_type} files: {dataset}")
+        if file_type == "parquet":
+            # imported here: the parquet reader needs pyarrow, which the root workflow does not
+            from bbTT.data_handling.io.parquet_reading import load_parquet_and_convert_to_numpy
+
+            events_bucket, num_events_of_files = load_parquet_and_convert_to_numpy(
+                files, branches=columns, era=ERAS[era], derived=derived,
+                derived_sources=derived_sources or {}, row_masks=row_masks,
+            )
+        else:
+            events_bucket, num_events_of_files = load_root_and_convert_to_numpy(
+                files, branches=columns, cut=cut, jagged=jagged, derived=derived, derived_sources=derived_sources
+            )
         num_events_per_dataset[dataset] = num_events_of_files
         for events in events_bucket:
             for pid, p_array in group_by_process_id(events):
