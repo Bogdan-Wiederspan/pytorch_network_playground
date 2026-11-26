@@ -123,7 +123,7 @@ To evaluate it on either "test", "training" or "validation" set use `evaluate.py
 Scores are saved to `${EVALUATION_DIR}/<save_dst>.pt`.
 
 ```bash
-python src/bbTT/evaluation/evaluate.py --checkpoint_src "${MODELS_DIR}/my_first_run_fold0.pt" --fold 0 --evaluate_on test --batch_size 4096 --save_dst my_first_run
+bbtt-evaluate --checkpoint_src "${MODELS_DIR}/my_first_run_fold0.pt" --fold 0 --evaluate_on test --batch_size 4096 --save_dst my_first_run
 ```
 `--fold` and `--evaluate_on` accept comma separated lists, e.g. `--fold 0,1,2`. `--num_threads` limits the torch
 threads if the machine is shared.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 # standard imports
+import sys
 from typing import Callable, Iterable, Literal
 
 # package imports
@@ -153,7 +154,19 @@ def evaluate_model_on_fold(
         return dnn_scores
 
 
-if __name__ == "__main__":
+def main(argv: list[str] | None = None) -> int:
+    """
+    Command line entry point (``bbtt-evaluate``): run a checkpoint over its test/training/validation data and save the scores.
+
+    Args:
+        argv (list[str] | None): Arguments without the program name, ``None`` reads ``sys.argv``;
+            an empty list prints the help and does nothing (convention of the bbtt-* tools).
+
+    Returns:
+        int: Exit code, 0 on success.
+    """
+    if argv is None:
+        argv = sys.argv[1:]
     parser = ParserBuilder(
         "load_checkpoint",
         "activation_fn",
@@ -165,8 +178,9 @@ if __name__ == "__main__":
         description="Evaluate a model checkpoint on the test, training or validation set of its input data.",
         epilog=(
             "example:\n"
-            '    python src/bbTT/evaluation/evaluate.py --c_src "${MODELS_DIR}/my_first_run_fold0.pt" --fold 0 -bs 4096 -fp my_first_run'
+            '    bbtt-evaluate --c_src "${MODELS_DIR}/my_first_run_fold0.pt" --fold 0 -bs 4096 -fp my_first_run'
         ),
+        argv=argv or ["--help"],
     )
     args = parser.args
     model_name = args.path.stem
@@ -202,3 +216,8 @@ if __name__ == "__main__":
         )
 
         torch.save(evaluated_data, path)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
