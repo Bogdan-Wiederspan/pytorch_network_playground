@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal, Optional, Tuple
 
+from bbTT.configs.utils import choice_check
 from bbTT.data_handling.features import FEATURES
 from bbTT.utils.constants import EMPTY_INT
 
@@ -90,10 +91,58 @@ class DenseNetworkConfig:
     normalize_linear: bool = False  # noqa activate weight normalization of linear layer, TODO currently BUGGED, leave at False
 
 
+STANDARDIZATION_STATISTIC = Literal["mean_std", "quantile"]
+
+
+@dataclass
+class MeanStdStatisticConfig:
+    # weighted mean and standard deviation, has no settings of its own
+    pass
+
+
+@dataclass
+class QuantileStatisticConfig:
+    # center = median, scale = mean distance of the median to the left and right quantile
+    edges: Tuple[float, float] = (0.16, 0.84)  # (left, right) quantile around the median
+
+    def __post_init__(self) -> None:
+        left, right = self.edges
+        if not 0.0 < left < 0.5 < right < 1.0:
+            raise ValueError(f"edges must enclose the median: 0 < left < 0.5 < right < 1, got {self.edges}")
+
+
+STANDARDIZATION_REGISTRY = {
+    "mean_std": MeanStdStatisticConfig,
+    "quantile": QuantileStatisticConfig,
+}
+
+
 @dataclass
 class StandardizationConfig:
     mean: Optional[Any] = None  # these values are determined by your data
     std: Optional[Any] = None
+
+    # how the two numbers of the standardization layer are measured on the training data - Marcel: quantile
+    # The result is always filled into mean and std, the layer itself does not know the difference.
+    statistic: STANDARDIZATION_STATISTIC = "mean_std"
+
+    # one sub config per STANDARDIZATION_STATISTIC, the field name equals the choice. Only the chosen one
+    # is used and only the chosen one enters the fingerprint of the statistics cache, so the settings of
+    # one statistic never invalidate the cache of another.
+    mean_std: MeanStdStatisticConfig = field(default_factory=MeanStdStatisticConfig)
+    quantile: QuantileStatisticConfig = field(default_factory=QuantileStatisticConfig)
+
+    @property
+    def active_config(self) -> Any:
+        """
+        Returns:
+            Any: Sub config of the chosen statistic. Checkpoints written before the sub configs were
+                fields lack the attribute (from_dict skips __init__), then the code default is used.
+        """
+        return getattr(self, self.statistic, None) or STANDARDIZATION_REGISTRY[self.statistic]()
+
+    def __post_init__(self) -> None:
+        choice_check(self.statistic, STANDARDIZATION_STATISTIC)
 
 
 @dataclass
