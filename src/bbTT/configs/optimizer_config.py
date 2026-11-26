@@ -21,13 +21,13 @@ class ADAMWConfig:
 
 @dataclass
 class OptimizerConfig:
-    lr: float = 1e-2  # start learning rate
+    lr: float = 3e-3  # start learning rate
     optimizer_choice: OPTIMIZER_CHOICE = "adamw"
 
     # upper bound of the L2 norm of the whole gradient (all parameters as one vector) - Marcel: 1.5
     # a larger gradient is scaled down to this length, its direction is kept. None disables the clipping.
     # Optional[...] instead of "| None": from_dict evaluates the hints
-    max_grad_norm: Optional[float] = None
+    max_grad_norm: Optional[float] = 1.5
 
     # one sub config per OPTIMIZER_CHOICE, field name equals the choice, so it is overridable
     # (--override optimizer_config.adamw.weight_decay=1e-4) and saved with the checkpoint
