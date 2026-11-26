@@ -135,7 +135,7 @@ This is necessary when running the model with "Columnflow".
 A bare name is looked up in `MODELS_DIR`, but full path is also supported.
 
 ```bash
-python src/bbTT/evaluation/export/pt2.py --checkpoint_src my_first_run --fold 0
+bbtt-export --checkpoint_src my_first_run --fold 0
 ```
 A model's forward always returns logits; the heads it offers (`logits`, `probabilities`, and `binned` for binned
 models, see `BaseModel.HEADS`) are mappings of them. `--head` selects which one the exported graph returns
