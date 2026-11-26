@@ -53,10 +53,18 @@ class LBN(torch.nn.Module):
         self.N = N
         self.M = M
         self.features = list(features)
+        # resolve the feature names once reason behind is that pt2 export is broken when class lvl access is used
+        self.feature_plan: list[tuple[Callable[[torch.Tensor], torch.Tensor] | None, str]] = []
+        for feature in self.features:
+            prefix, base = self.split_feature(feature)
+            self.feature_plan.append((self.TRANSFORMS[prefix] if prefix else None, base))
+
+
         self.weight_init_scale = weight_init_scale
         self.clip_weights = clip_weights
         self.eps = eps
         self.safe_sqrt_eps = safe_sqrt_eps
+
 
         # constants
         self.register_buffer("I4", torch.eye(4, dtype=torch.float32))  # (4, 4)
@@ -237,18 +245,12 @@ class LBN(torch.nn.Module):
         # hook to update boosted vectors if desired
         boosted_vecs = self.update_boosted_vectors(boosted_vecs)
 
-        # cached feature provision
+        # cached provision of base features (no transformation prefix, see feature_plan)
         cache = {}
 
         def get(feature: str) -> torch.Tensor:
             # check cache first
             if feature in cache:
-                return cache[feature]
-
-            # transformed access: resolve the base feature, apply the transformation, cache under the full name
-            prefix, base = self.split_feature(feature)
-            if prefix:
-                cache[feature] = self.TRANSFORMS[prefix](get(base))
                 return cache[feature]
 
             # live feature access
@@ -306,6 +308,10 @@ class LBN(torch.nn.Module):
                 dim=-1,
             )
 
-        # collect and combine features
-        features = torch.cat([get(feature) for feature in self.features], dim=1)  # (B, F)
+        # collect, transform and combine features
+        outputs = []
+        for transform, base in self.feature_plan:
+            f = get(base)
+            outputs.append(transform(f) if transform is not None else f)
+        features = torch.cat(outputs, dim=1)  # (B, F)
         return features
