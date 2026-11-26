@@ -11,7 +11,7 @@ OPTIMIZER_CHOICE = Literal["adamw"]
 @dataclass
 class ADAMWConfig:
     # weight decay lambda as in Loshchilov & Hutter (AdamW): per-step shrink at full learning rate
-    weight_decay: float = 1.83e-5
+    weight_decay: float = 1e-1
     decouple_weight_decay_from_lr: bool = False  # if true, decoupled weight decay with lr, as in AdamW
 
     # decay rates (beta1, beta2) of the running averages of the gradient and of its square - Marcel: (0.9, 0.98)

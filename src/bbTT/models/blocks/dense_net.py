@@ -23,7 +23,7 @@ class DenseNetBlock(torch.nn.Module):
         super().__init__(*args, **kwargs)
         self.input_dim = input_nodes
         self.output_dim = output_nodes + input_nodes
-        self.dense_block = DenseBlock(
+        self.dense_block = self.init_dense_block(
             input_nodes=input_nodes,
             output_nodes=output_nodes,
             activation_functions=activation_functions,
@@ -32,6 +32,33 @@ class DenseNetBlock(torch.nn.Module):
         self.skip_connection_amplifier = torch.nn.Parameter(torch.ones(1) * skip_connection_init)
         if freeze_skip_connection:
             self.skip_connection_amplifier.requires_grad = False
+
+    def init_dense_block(
+        self,
+        input_nodes: int,
+        output_nodes: int,
+        activation_functions: str,
+        normalize: bool,
+    ) -> DenseBlock:
+        """
+        Builds the dense block inside this DenseNet block, called once in ``__init__``.
+        Subclasses override this method to use another kind of dense block, see KaimingDenseNetBlock.
+
+        Args:
+            input_nodes (int): Number of input nodes of the dense block.
+            output_nodes (int): Number of output nodes of the dense block.
+            activation_functions (str): Name of the pytorch activation function, case insensitive.
+            normalize (bool): Weight normalization of the linear layer.
+
+        Returns:
+            DenseBlock: The inner dense block.
+        """
+        return DenseBlock(
+            input_nodes=input_nodes,
+            output_nodes=output_nodes,
+            activation_functions=activation_functions,
+            normalize=normalize,
+        )
 
     def forward(self, x):
         _input = x * self.skip_connection_amplifier
@@ -159,3 +186,70 @@ class KaimingDenseBlock(DenseBlock):
             nonlinearity=self.nonlinearity
             )
         torch.nn.init.zeros_(self.linear.bias)
+
+
+class KaimingDenseNetBlock(DenseNetBlock):
+    def __init__(
+        self,
+        input_nodes: int,
+        output_nodes: int,
+        skip_connection_init: float = 1.0,
+        freeze_skip_connection: bool = False,
+        activation_functions: str = "PReLu",
+        normalize: bool = False,
+        nonlinearity: str = "relu",
+    ) -> None:
+        """
+        DenseNetBlock whose inner dense block is a KaimingDenseBlock: Kaiming normal weights and a zero bias
+        instead of the torch default. The skip connection is unchanged, the block still returns its output
+        concatenated with its input, so ``output_dim = output_nodes + input_nodes``.
+
+        Args:
+            input_nodes (int): Number of input nodes of the block (fan in of its linear layer).
+            output_nodes (int): Number of nodes the dense block adds.
+            skip_connection_init (float, optional): Start value of the factor on the skipped input. Defaults to 1.0.
+            freeze_skip_connection (bool, optional): True keeps the skip factor fixed. Defaults to False.
+            activation_functions (str, optional): Name of the pytorch activation function, case insensitive.
+                Defaults to "PReLu".
+            normalize (bool, optional): Weight normalization of the linear layer, not supported by the
+                Kaiming block. Defaults to False.
+            nonlinearity (str, optional): Name of the nonlinearity the gain is calculated for, see
+                ``torch.nn.init.calculate_gain``. Defaults to "relu".
+        """
+        # needs to be set before super().__init__, since the parent builds the dense block there
+        self.nonlinearity = nonlinearity
+        super().__init__(
+            input_nodes=input_nodes,
+            output_nodes=output_nodes,
+            skip_connection_init=skip_connection_init,
+            freeze_skip_connection=freeze_skip_connection,
+            activation_functions=activation_functions,
+            normalize=normalize,
+        )
+
+    def init_dense_block(
+        self,
+        input_nodes: int,
+        output_nodes: int,
+        activation_functions: str,
+        normalize: bool,
+    ) -> KaimingDenseBlock:
+        """
+        Builds the inner dense block with Kaiming initialization.
+
+        Args:
+            input_nodes (int): Number of input nodes of the dense block.
+            output_nodes (int): Number of output nodes of the dense block.
+            activation_functions (str): Name of the pytorch activation function, case insensitive.
+            normalize (bool): Weight normalization of the linear layer, must be False.
+
+        Returns:
+            KaimingDenseBlock: The inner dense block.
+        """
+        return KaimingDenseBlock(
+            input_nodes=input_nodes,
+            output_nodes=output_nodes,
+            activation_functions=activation_functions,
+            normalize=normalize,
+            nonlinearity=self.nonlinearity,
+        )
