@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import sys
 from collections.abc import Sequence
 
 import numpy as np
@@ -215,7 +216,7 @@ def format_config_entry(
     return "\n".join(header) + "\n\n```\n" + format_overrides(full_config) + "\n```"
 
 
-def main(
+def train(
     tensorboard_name: str,
     save_model_name: str | None,
     checkpoint_suffix: str | None,
@@ -356,9 +357,21 @@ def main(
     finally:
         tensorboard_writer.close()
 
-if __name__ == "__main__":
+def main(argv: list[str] | None = None) -> int:
+    """
+    Command line entry point (``bbtt-train``): parse the arguments and run :func:`train`.
+
+    Args:
+        argv (list[str] | None): Arguments without the program name, ``None`` reads ``sys.argv``;
+            an empty list prints the help and does nothing (convention of the bbtt-* tools).
+
+    Returns:
+        int: Exit code, 0 on success.
+    """
     from bbTT.utils.parser import ParserBuilder
 
+    if argv is None:
+        argv = sys.argv[1:]
     parser = ParserBuilder(
         "tensorboard",
         "save_model_name",
@@ -367,21 +380,20 @@ if __name__ == "__main__":
         description="Train the HH -> bbtautau DNN with the configuration in bbTT/configs.",
         epilog=(
             "examples:\n"
-            "  python src/bbTT/train/train.py -tn my_first_run -sn my_first_run -rc\n"
-            "  python src/bbTT/train/train.py -tn my_first_run -r my_first_run_fold0 -o training_config.max_train_iteration"
-            " -cs longer\n"
-            "  python src/bbTT/train/train.py -tn scan_lr3e-3 -sn scan_lr3e-3 -o optimizer_config.lr=3e-3"
-            " scheduler_config.half_cosine.T_max=19900"
+            "  bbtt-train -tn my_first_run -sn my_first_run -rc\n"
+            "  bbtt-train -tn my_first_run -r my_first_run_fold0 -o training_config.max_train_iteration -cs longer\n"
+            "  bbtt-train -tn scan_lr3e-3 -sn scan_lr3e-3 -o optimizer_config.lr=3e-3 scheduler_config.half_cosine.T_max=19900"
             "\nto see all overwrite add --list-overrides"
-            ),
-        )
+        ),
+        argv=argv or ["--help"],
+    )
 
     # print every possible overwrite option
     if parser.args.list_overrides:
         print(format_overrides(FullConfig()))
-        raise SystemExit(0)
+        return 0
 
-    main(
+    train(
         rebuild_cache=parser.args.rebuild_cache,
         save_cache=parser.args.save_cache,
         tensorboard_name=parser.args.tensorboard_name,
@@ -390,3 +402,8 @@ if __name__ == "__main__":
         resume=parser.args.resume,
         overrides=parser.args.overrides,
     )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

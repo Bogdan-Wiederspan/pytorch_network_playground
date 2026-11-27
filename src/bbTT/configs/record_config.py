@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 @dataclass
 class RecordConfig:
     verbose_interval: int = 5  # interval between two logger training status print outs
-    validation_interval: int = 200  # interval between two validation passes / plots are done during validation
+    validation_interval: int = 500  # interval between two validation passes / plots are done during validation
 
     # Checkpoint settings, evaluated once per validation pass
     # A checkpoint is written when the validation loss beats the best confirmed loss by more than `checkpoint_delta`.

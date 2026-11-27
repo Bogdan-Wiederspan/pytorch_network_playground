@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import os
 import pathlib
@@ -16,13 +18,15 @@ class ParserBuilder:
     """
 
 
-    def __init__(self, *groups: str, description: str = "", epilog: str = "") -> None:
+    def __init__(self, *groups: str, description: str = "", epilog: str = "", argv: list[str] | None = None) -> None:
         """
         Args:
             *groups (str): names of argument groups to add, e.g. "tensorboard", "cache".
             description (str, optional): shown at the top of --help. Defaults to "".
             epilog (str, optional): shown at the bottom of --help, line breaks are kept; use it
                 for a minimal usage example. Defaults to "".
+            argv (list[str] | None, optional): arguments to parse instead of ``sys.argv``, lets a
+                ``main(argv)`` entry point be called from code. Defaults to None.
         """
         self.parser = argparse.ArgumentParser(
             description=description,
@@ -30,7 +34,7 @@ class ParserBuilder:
             formatter_class=argparse.RawDescriptionHelpFormatter,
         )
         self.build(groups)
-        self.args = self.parser.parse_args()
+        self.args = self.parser.parse_args(argv)
 
     def build(self, groups: tuple[str, ...]) -> None:
         """Adds all requested argument groups to the parser.
@@ -119,9 +123,9 @@ class ParserBuilder:
             "--fold",
             "-f",
             dest="fold",
-            default=0,
+            default=[0],
             type=self.comma_separated(int),
-            help="Comma separated list of folds, e.g. '0' or '0,1,2'. Each fold on its respective test data.",
+            help="Comma separated list of folds, e.g. '0' or '0,1,2'. Each fold on its respective test data. (default: 0)",
         )
 
     def add_activation_fn(self):

@@ -67,7 +67,7 @@ Configure the model hyperparameters in `src/bbTT/configs/`.
 Checkpoints are written to `${MODELS_DIR}/<save_model_name>_fold<k>.pt`, logs to `TENSORBOARD_DIR`.
 ```bash
 cd ${DNN_ROOT}
-python src/bbTT/train/train.py -tn my_first_run -sn my_first_run -rc
+bbtt-train -tn my_first_run -sn my_first_run -rc
 ```
 `-tn` names the tensorboard run,
 `-sn` the checkpoints (required, both are run names and not part of the config),
@@ -94,7 +94,7 @@ share one definition of "improvement".
 A training can be continued from its checkpoint. Only the fold of the checkpoint is trained and the checkpoint
 config is used, not the one in the code:
 ```bash
-python src/bbTT/train/train.py -tn my_first_run -r my_first_run_fold0
+bbtt-train -tn my_first_run -r my_first_run_fold0
 ```
 `-r` takes a name looked up in `MODELS_DIR` or a full path.
 
@@ -107,9 +107,9 @@ To take single values from the current code config instead of the checkpoint, na
 paths. A whole sub config works as well:
 ```bash
 # train longer than the checkpoint config says
-python src/bbTT/train/train.py -tn my_first_run -r my_first_run_fold0 -o training_config.max_train_iteration
+bbtt-train -tn my_first_run -r my_first_run_fold0 -o training_config.max_train_iteration
 # replace the whole monitoring settings
-python src/bbTT/train/train.py -tn my_first_run -r my_first_run_fold0 -o record_config
+bbtt-train -tn my_first_run -r my_first_run_fold0 -o record_config
 ```
 `--list-overrides` prints every path `-o` accepts together with its current code value and exits.
 Some paths are protected and cannot be overridden: `model_building_config` defines the architecture the
@@ -119,11 +119,11 @@ checkpoint are dropped and start fresh.
 
 ### Evaluate your model
 A trained model is saved in a checkpoint.
-To evaluate it on either "test", "training" or "validation" set use `evaluate.py`.
+To evaluate it on either "test", "training" or "validation" set use `bbtt-evaluate`.
 Scores are saved to `${EVALUATION_DIR}/<save_dst>.pt`.
 
 ```bash
-python src/bbTT/evaluation/evaluate.py --checkpoint_src "${MODELS_DIR}/my_first_run_fold0.pt" --fold 0 --evaluate_on test --batch_size 4096 --save_dst my_first_run
+bbtt-evaluate --checkpoint_src "${MODELS_DIR}/my_first_run_fold0.pt" --fold 0 --evaluate_on test --batch_size 4096 --save_dst my_first_run
 ```
 `--fold` and `--evaluate_on` accept comma separated lists, e.g. `--fold 0,1,2`. `--num_threads` limits the torch
 threads if the machine is shared.
@@ -135,12 +135,12 @@ This is necessary when running the model with "Columnflow".
 A bare name is looked up in `MODELS_DIR`, but full path is also supported.
 
 ```bash
-python src/bbTT/evaluation/export/pt2.py --checkpoint_src my_first_run --fold 0
+bbtt-export --checkpoint_src my_first_run --fold 0
 ```
 A model's forward always returns logits; the heads it offers (`logits`, `probabilities`, and `binned` for binned
 models, see `BaseModel.HEADS`) are mappings of them. `--head` selects which one the exported graph returns
 (default `probabilities`), `--add_activation` appends an extra activation on top, which only makes sense on the
-`logits` head and is logged as warning otherwise. The same `--head` option exists for `evaluate.py`.
+`logits` head and is logged as warning otherwise. The same `--head` option exists for `bbtt-evaluate`.
 
 ### Tensorboard
 All plots created in the training can be looked up with "Tensorboard".

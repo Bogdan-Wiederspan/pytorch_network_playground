@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import sys
 
 import torch
 
@@ -134,15 +135,27 @@ def resolve_models_path(path: pathlib.Path, folds) -> tuple[pathlib.Path, pathli
     return paths
 
 
-if __name__ == "__main__":
+def main(argv: list[str] | None = None) -> int:
+    """
+    Command line entry point (``bbtt-export``): export the checkpoints of the given folds to .pt2.
+
+    Args:
+        argv (list[str] | None): Arguments without the program name, ``None`` reads ``sys.argv``;
+            an empty list prints the help and does nothing (convention of the bbtt-* tools).
+
+    Returns:
+        int: Exit code, 0 on success.
+    """
+    if argv is None:
+        argv = sys.argv[1:]
     parser = ParserBuilder(
         "load_checkpoint",
         "head",
         "activation_fn",
         description="Export a model checkpoint to torch-export (.pt2) with a dynamic batch dimension.",
-        epilog="example:\n  python src/bbTT/evaluation/export/pt2.py --checkpoint_src my_first_run --fold 0",
+        epilog="example:\n  bbtt-export --checkpoint_src my_first_run --fold 0",
+        argv=argv or ["--help"],
     )
-
     args = parser.args
 
     paths = resolve_models_path(args.path, args.fold)
@@ -152,11 +165,16 @@ if __name__ == "__main__":
         logger_inst.info(f"Export fold {fold} with model checkpoint from {path}")
         model_inst, full_cfg = rebuild_checkpoint_information(path.with_suffix(".pt"))
 
-        export_pt2(
+        dst = export_pt2(
             model_inst,
             name=args.path.stem,
             fold=fold,
             head=args.head,
             add_activation=args.add_activation,
         )
-    logger_inst.info(f"Finished exporting models for folds {args.fold} with name {args.path.stem}")
+    logger_inst.info(f"Finished exporting models for folds {args.fold} with name {dst}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
