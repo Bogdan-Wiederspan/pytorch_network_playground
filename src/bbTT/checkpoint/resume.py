@@ -470,7 +470,7 @@ def load_resume_state(
     Load a checkpoint and prepare the config of the resumed training.
 
     The checkpoint config is the base; the overrides are applied on top, see merge_config.
-    The name the resume writes its checkpoints under is not part of the config: train.main derives "<name>-resume-<tag>" from
+    The name the resume writes its checkpoints under is not part of the config: train.train derives "<name>-resume-<tag>" from
     `checkpoint_base_name` unless --save_model_name is given, so the loaded checkpoint is never overwritten.
 
     Args:
