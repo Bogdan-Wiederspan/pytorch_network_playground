@@ -11,17 +11,18 @@ from bbTT.monitoring.register import register_plot
     requires=None,
     optional=False,
 )
-def plot_confusion_matrix(ctx, sample_weight=None, normalize="true", cmap="Blues", **kwargs) -> tuple[Figure, Axes]:
+def plot_confusion_matrix(ctx, normalize="true", cmap="Blues", **kwargs) -> tuple[Figure, Axes]:
+
     """
     Plot a confusion matrix comparing true and predicted classes.
 
     Reads predictions, targets and class-name mapping directly from *ctx*, which are always present.
+    Events are weighted on the composition axis, so a full pass shows the class mixture the network
+    is trained on (see EvalContext.weights).
 
     Args:
         ctx (EvalContext): Must expose `predictions`, `targets`, and
             `target_map` (dict mapping class name to index).
-        sample_weight (torch.Tensor, optional): Per-event weights used
-            when computing the confusion matrix. Defaults to None.
         normalized (str, optional): Normalization mode forwarded to
             sklearn's confusion_matrix as `normalize`. One of "true",
             "pred", "all", or None. Defaults to "true".
@@ -42,7 +43,7 @@ def plot_confusion_matrix(ctx, sample_weight=None, normalize="true", cmap="Blues
         y_true,
         y_pred,
         labels=list(target_map.values()),
-        sample_weight=sample_weight,
+        sample_weight=ctx.weights("composition"),
         normalize=normalize,  # normalize to get probabilities
     )
     disp = ConfusionMatrixDisplay(

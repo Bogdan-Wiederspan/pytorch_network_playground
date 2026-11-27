@@ -454,7 +454,7 @@ def create_sampler(
         sample_ratio=(full_config.sampler_config.sample_ratio or {"dy": 0.25, "tt": 0.25, "hh": 0.5}),
         target_map=full_config.dataset_config.target_map,
         weight_aggregator_inst=weight_aggregator_inst,
-        sub_sample_ratio=full_config.sampler_config.sub_process_ratios,
+        sub_sample_ratio=full_config.sampler_config.sub_process_ratio_map,
         bs_allocator=batch_size_allocator,
         seed=full_config.training_config.seed,
         kind=kind,

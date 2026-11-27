@@ -1,79 +1,62 @@
 from __future__ import annotations
 
-import functools
 import hashlib
 import os
 import pathlib
 from dataclasses import dataclass, field
 from string import Formatter
-from typing import Any, Literal, Optional, get_args
+from typing import Literal, Optional, get_args
 
+from bbTT.data_handling.eras import ERAS, column_prefix, era_order
+from bbTT.data_handling.features import FEATURES
 from bbTT.data_handling.io.find_datasets import cached_find_datasets
-from bbTT.utils.utils import EMPTY_FLOAT
+from bbTT.utils.constants import EMPTY_FLOAT
 
-ERAS_CHOICE = Literal["22pre", "22post", "23pre", "23post"]
+# eras that can be configured chosen from, in chronological order
+# the related data of an era is stored in data_handling/eras.py
+ERAS_CHOICE = Literal["22pre", "22post", "23pre", "23post", "24"]
+
+
 
 @dataclass
 class DataConfig:
     target_map: dict[str, int] = field(default_factory=lambda: {"hh": 0, "tt": 1, "dy": 2})  # node: index
 
-    continuous_features: tuple[str] = (
-        "met_px",
-        "met_py",
-        "met_cov00",
-        "met_cov01",
-        "met_cov11",
-        "vis_tau1_px",
-        "vis_tau1_py",
-        "vis_tau1_pz",
-        "vis_tau1_e",
-        "vis_tau2_px",
-        "vis_tau2_py",
-        "vis_tau2_pz",
-        "vis_tau2_e",
-        "bjet1_px",
-        "bjet1_py",
-        "bjet1_pz",
-        "bjet1_e",
-        "bjet1_tag_b",
-        "bjet1_tag_cvsb",
-        "bjet1_tag_cvsl",
-        "bjet1_hhbtag",
-        "bjet2_px",
-        "bjet2_py",
-        "bjet2_pz",
-        "bjet2_e",
-        "bjet2_tag_b",
-        "bjet2_tag_cvsb",
-        "bjet2_tag_cvsl",
-        "bjet2_hhbtag",
-        "fatjet_px",
-        "fatjet_py",
-        "fatjet_pz",
-        "fatjet_e",
-        "htt_e",
-        "htt_px",
-        "htt_py",
-        "htt_pz",
-        "hbb_e",
-        "hbb_px",
-        "hbb_py",
-        "hbb_pz",
-        "htthbb_e",
-        "htthbb_px",
-        "htthbb_py",
-        "htthbb_pz",
-        "httfatjet_e",
-        "httfatjet_px",
-        "httfatjet_py",
-        "httfatjet_pz",
-        "nu1_px",
-        "nu1_py",
-        "nu1_pz",
-        "nu2_px",
-        "nu2_py",
-        "nu2_pz",
-    )  # features for the standardization layer path
+    # features for the standardization layer path, one list per era that needs its own ("default" for all
+    # others); which list applies follows from ``eras``, see ``continuous_features``
+    continuous_features_by_era: dict[str, tuple[str, ...]] = field(default_factory=lambda: {
+        "default": (
+            "met_px", "met_py",
+            "met_cov00", "met_cov01", "met_cov11",
+            "vis_tau1_px", "vis_tau1_py", "vis_tau1_pz", "vis_tau1_e",
+            "vis_tau2_px", "vis_tau2_py", "vis_tau2_pz", "vis_tau2_e",
+            "bjet1_px", "bjet1_py", "bjet1_pz", "bjet1_e", "bjet1_tag_b", "bjet1_tag_cvsb", "bjet1_tag_cvsl", "bjet1_hhbtag",
+            "bjet2_px", "bjet2_py", "bjet2_pz", "bjet2_e", "bjet2_tag_b", "bjet2_tag_cvsb", "bjet2_tag_cvsl", "bjet2_hhbtag",
+            "fatjet_px", "fatjet_py", "fatjet_pz", "fatjet_e",
+            "htt_e", "htt_px", "htt_py", "htt_pz",
+            "hbb_e", "hbb_px", "hbb_py", "hbb_pz",
+            "htthbb_e", "htthbb_px", "htthbb_py", "htthbb_pz",
+            "httfatjet_e", "httfatjet_px", "httfatjet_py", "httfatjet_pz",
+            "nu1_px", "nu1_py", "nu1_pz",
+            "nu2_px", "nu2_py", "nu2_pz",
+        ),
+        # 24: the ParticleNet tagger scores are replaced by the UParT b score split from the jagged candidate branch
+        "24": (
+            "met_px", "met_py",
+            "met_cov00", "met_cov01", "met_cov11",
+            "vis_tau1_px", "vis_tau1_py", "vis_tau1_pz", "vis_tau1_e",
+            "vis_tau2_px", "vis_tau2_py", "vis_tau2_pz", "vis_tau2_e",
+            "bjet1_px", "bjet1_py", "bjet1_pz", "bjet1_e", "bjet1_upart_b", "bjet1_hhbtag",
+            "bjet2_px", "bjet2_py", "bjet2_pz", "bjet2_e", "bjet2_upart_b", "bjet2_hhbtag",
+            "fatjet_px", "fatjet_py", "fatjet_pz", "fatjet_e",
+            "htt_e", "htt_px", "htt_py", "htt_pz",
+            "hbb_e", "hbb_px", "hbb_py", "hbb_pz",
+            "htthbb_e", "htthbb_px", "htthbb_py", "htthbb_pz",
+            "httfatjet_e", "httfatjet_px", "httfatjet_py", "httfatjet_pz",
+            "nu1_px", "nu1_py", "nu1_pz",
+            "nu2_px", "nu2_py", "nu2_pz",
+        ),
+    })
 
     categorical_features: tuple[str] = (
         "pair_type",
@@ -86,33 +69,18 @@ class DataConfig:
         "has_fatjet",
     )  # features for the embedding path
 
-    expected_embedding_inputs: dict[str, list[Any]] = field(
-        default_factory=lambda: {
-            "pair_type": [0, 1, 2],  # see mapping below
-            "dm1": [-1, 0, 1, 10, 11],  # -1 for e/mu
-            "dm2": [0, 1, 10, 11],
-            "vis_tau1_charge": [-1, 1],
-            "vis_tau2_charge": [-1, 1],
-            "has_fatjet": [0, 1],  # whether a selected fatjet is present
-            "has_jet_pair": [0, 1],  # whether two or more jets are present
-            "year_flag": [0, 1, 2, 3, 4, 5, 6, 7, 8],  # noqa 0: 2016APV, 1: 2016, 2: 2017, 3: 2018, 4: 2022preEE, 5: 2022postEE, 6: 2023pre, 7: 2023post, 8: 24
-            "channel_id": [1, 2, 3],
-        }
-    )  # expected inputs for the embedding, raises an error when a wrong input exist
-
     dataset_pattern: tuple[str] = (
         "dy_*",
         "tt_*",
         "hh_ggf_hbb_htt_kl1_kt1*",
     )  # pattern to find datasets
 
-    eras: tuple[ERAS_CHOICE] = ("22pre", "22post", "23pre", "23post",)  # ERAS that are trained on. For each era a separate cache is created
-    # eras: tuple[ERAS_CHOICE] = ("22pre",)  # ERAS that are trained on. For each era a separate cache is created
+    # eras: tuple[ERAS_CHOICE] = ("22pre", "22post", "23pre", "23post",)  # ERAS that are trained on. For each era a separate cache is created
+    eras: tuple[ERAS_CHOICE] = ("24",)  # ERAS that are trained on. For each era a separate cache is created
 
     flush_threshold: int = 1_000_000  # number of rows before a flush is initiated when creating the cache, reduce when memory issues are a problem
     statistics_chunk_rows: int = 1_000_000  # rows per chunk when computing feature mean/std; bounds the transient memory, does not change the result
 
-    datasets: Optional[list[str]] = field(init=False)
     cuts: Optional[tuple[str]] = (
         # "({tau2_isolated} == 1)", # exist only for <prod28
         # "(({channel_id} == 1) | ({channel_id} == 2) | ({channel_id} == 3) )", # < prod 28
@@ -121,177 +89,147 @@ class DataConfig:
         "(({vis_tau1_charge} == 1) | ({vis_tau1_charge} == -1))",
         "(({vis_tau2_charge} == 1) | ({vis_tau2_charge} == -1))",
         "({vbf_dnn_moe_hh_vbf} < 0.5)",
-    )  # derived in __post_init__: cuts with placeholders resolved to actual array column names
+    )  # templates, {name} is resolved to the array column by uproot_cuts
 
-    dummy_values: dict[str, float] = field(default_factory = lambda : {
-        "bjet1_px": 0.0,
-        "bjet1_py": 0.0,
-        "bjet1_pz": 0.0,
-        "bjet1_e": 0.0,
-        "bjet2_px": 0.0,
-        "bjet2_py": 0.0,
-        "bjet2_pz": 0.0,
-        "bjet2_e": 0.0,
-        "fatjet_px": 0.0,
-        "fatjet_py": 0.0,
-        "fatjet_pz": 0.0,
-        "fatjet_e": 0.0,
-        "hbb_px": 0.0,
-        "hbb_py": 0.0,
-        "hbb_pz": 0.0,
-        "hbb_e": 0.0,
-        "htthbb_px": 0.0,
-        "htthbb_py": 0.0,
-        "htthbb_pz": 0.0,
-        "htthbb_e": 0.0,
-        "httfatjet_px": 0.0,
-        "httfatjet_py": 0.0,
-        "httfatjet_pz": 0.0,
-        "httfatjet_e": 0.0,
-        "bjet1_tag_b": -1.0,
-        "bjet1_tag_cvsb": -1.0,
-        "bjet1_tag_cvsl": -1.0,
-        "bjet1_hhbtag": -1.0,
-        "bjet2_tag_b": -1.0,
-        "bjet2_tag_cvsb": -1.0,
-        "bjet2_tag_cvsl": -1.0,
-        "bjet2_hhbtag": -1.0
-    }) # noqa per-feature marker of a missing value, e.g. {"bjet1_tag_b": -1.0}; means that the missing value is marked by -1
-    dummy_default: float = EMPTY_FLOAT  # marker of a missing value for every continuous feature not listed in dummy_values
-    data_prefix: Optional[str] = field(init=False)  # prefix for features, e.g. "res_dnn_pnet" or "reg_dnn_moe"
 
     # --- Helpers ---
 
     @property
-    def continuous_dummy_values(self) -> tuple[float, ...]:
+    def data_prefix(self) -> str:
         """
-        Marker of a missing value per continuous feature, in the order of ``continuous_features``.
-        Features not listed in ``dummy_values`` fall back to ``dummy_default``.
+        Prefix of the feature columns for the current production, e.g. "res_dnn_pnet" or "reg_dnn_moe".
+        Derived on access from the production in INPUT_DATA_DIR (see data_handling/eras.py).
 
         Returns:
-            tuple[float, ...]: One marker per continuous feature, JSON-serializable.
+            str: Column prefix.
         """
-        return tuple(
-            float(self.dummy_values.get(f, self.dummy_default))
-            for f in self.continuous_features
-            )
+        return column_prefix(pathlib.Path(os.environ["INPUT_DATA_DIR"]).stem)
 
-
-    def _prefix_map(self) -> str:
+    @property
+    def datasets(self) -> tuple[str, ...]:
         """
-        Helper to get correct stem for data. Specific productions has sometimes name changes.
-        By default the 'default_stem' is used.
+        All dataset file paths matching ``dataset_pattern`` for the configured ``eras``.
+        Derived on access through the memoized ``cached_find_datasets``, so it always follows the current
+        ``eras`` (e.g. after a resume override) and is never stored in a checkpoint.
 
         Returns:
-            str: Stem for used production line. By default 'reg_dnn_moe'.
+            tuple[str, ...]: Dataset file paths.
         """
-        stem = pathlib.Path(os.environ["INPUT_DATA_DIR"]).stem
-        default_stem = "reg_dnn_moe"
-        stem_to_prefix = {
-            "prod14": "res_dnn_pnet",
-            "prod19": "res_dnn_pnet",
-        }
-        return stem_to_prefix.get(stem, default_stem)
+        return cached_find_datasets(tuple(self.dataset_pattern), tuple(self.eras), file_type="root")
 
-    def prefixed(self, string):
-        """
-        Return the actual array column name for a feature, e.g. "res_dnn_pnet_bjet1_px" for "bjet1_px"
-        """
-        return self.column_map.get(string, string)
 
-    @functools.cached_property
-    def column_map(self) -> dict[str, str]:
-        """plain name -> actual array column name, for every feature this config knows about."""
+    @property
+    def continuous_features(self) -> tuple[str, ...]:
+        """
+        The continuous features of the configured eras: the entry of ``continuous_features_by_era``
+        for the era, "default" for eras without their own. All configured eras must resolve to the same list.
+
+        Returns:
+            tuple[str, ...]: Feature names in tensor column order.
+
+        Raises:
+            ValueError: If the configured eras resolve to different feature lists.
+        """
+        by_era = self.continuous_features_by_era
+        keys = {era if era in by_era else "default" for era in self.eras}
+        if len(keys) != 1:
+            raise ValueError(f"eras {self.eras} resolve to different feature lists {sorted(keys)}")
+        return tuple(by_era[keys.pop()])
+
+    @property
+    def dummy_values(self) -> dict[str, float]:
+        """
+        Marker of a missing value per configured continuous feature that has one, from the feature
+        registry. Features that are never missing are not listed; consumers that need one value per
+        tensor column use ``data_handling.utils.markers_by_position``.
+
+        Returns:
+            dict[str, float]: Feature name -> marker.
+        """
+        return {f: FEATURES[f].dummy for f in self.continuous_features if FEATURES[f].dummy is not None}
+
+    @property
+    def expected_embedding_inputs(self) -> dict[str, list[int]]:
+        """
+        Values every configured categorical feature takes in the data, from the feature registry.
+
+        Returns:
+            dict[str, list[int]]: Feature name -> values, consumed by the tokenizer.
+        """
+        return {f: list(FEATURES[f].values) for f in self.categorical_features}
+
+    @property
+    def expected_embedding_groups(self) -> dict[str, dict[str, tuple[int, ...]]]:
+        """
+        Value groups of the configured categorical features that define any, see FeatureSpec.value_groups.
+
+        Returns:
+            dict[str, dict[str, tuple[int, ...]]]: Feature name -> {group name: values}, consumed by the
+                embedding monitoring to sort value pairs into same-group and cross-group.
+        """
         return {
-            # scores of normal network
-            "score_dy": "run3_dnn_moe_dy",
-            "score_hh": "run3_dnn_moe_hh",
-            "score_tt": "run3_dnn_moe_tt",
-            # inputs used of normale network
-            "bjet1_e": f"{self.data_prefix}_bjet1_e",
-            "bjet1_hhbtag": f"{self.data_prefix}_bjet1_hhbtag",
-            "bjet1_px": f"{self.data_prefix}_bjet1_px",
-            "bjet1_py": f"{self.data_prefix}_bjet1_py",
-            "bjet1_pz": f"{self.data_prefix}_bjet1_pz",
-            "bjet1_tag_b": f"{self.data_prefix}_bjet1_tag_b",
-            "bjet1_tag_cvsb": f"{self.data_prefix}_bjet1_tag_cvsb",
-            "bjet1_tag_cvsl": f"{self.data_prefix}_bjet1_tag_cvsl",
-            "bjet2_e": f"{self.data_prefix}_bjet2_e",
-            "bjet2_hhbtag": f"{self.data_prefix}_bjet2_hhbtag",
-            "bjet2_px": f"{self.data_prefix}_bjet2_px",
-            "bjet2_py": f"{self.data_prefix}_bjet2_py",
-            "bjet2_pz": f"{self.data_prefix}_bjet2_pz",
-            "bjet2_tag_b": f"{self.data_prefix}_bjet2_tag_b",
-            "bjet2_tag_cvsb": f"{self.data_prefix}_bjet2_tag_cvsb",
-            "bjet2_tag_cvsl": f"{self.data_prefix}_bjet2_tag_cvsl",
-            "dm1": f"{self.data_prefix}_dm1",
-            "dm2": f"{self.data_prefix}_dm2",
-            "fatjet_e": f"{self.data_prefix}_fatjet_e",
-            "fatjet_px": f"{self.data_prefix}_fatjet_px",
-            "fatjet_py": f"{self.data_prefix}_fatjet_py",
-            "fatjet_pz": f"{self.data_prefix}_fatjet_pz",
-            "has_fatjet": f"{self.data_prefix}_has_fatjet",
-            "has_jet_pair": f"{self.data_prefix}_has_jet_pair",
-            "hbb_e": f"{self.data_prefix}_hbb_e",
-            "hbb_px": f"{self.data_prefix}_hbb_px",
-            "hbb_py": f"{self.data_prefix}_hbb_py",
-            "hbb_pz": f"{self.data_prefix}_hbb_pz",
-            "htt_e": f"{self.data_prefix}_htt_e",
-            "htt_px": f"{self.data_prefix}_htt_px",
-            "htt_py": f"{self.data_prefix}_htt_py",
-            "htt_pz": f"{self.data_prefix}_htt_pz",
-            "httfatjet_e": f"{self.data_prefix}_httfatjet_e",
-            "httfatjet_px": f"{self.data_prefix}_httfatjet_px",
-            "httfatjet_py": f"{self.data_prefix}_httfatjet_py",
-            "httfatjet_pz": f"{self.data_prefix}_httfatjet_pz",
-            "htthbb_e": f"{self.data_prefix}_htthbb_e",
-            "htthbb_px": f"{self.data_prefix}_htthbb_px",
-            "htthbb_py": f"{self.data_prefix}_htthbb_py",
-            "htthbb_pz": f"{self.data_prefix}_htthbb_pz",
-            "met_cov00": f"{self.data_prefix}_met_cov00",
-            "met_cov01": f"{self.data_prefix}_met_cov01",
-            "met_cov11": f"{self.data_prefix}_met_cov11",
-            "met_px": f"{self.data_prefix}_met_px",
-            "met_py": f"{self.data_prefix}_met_py",
-            "nu1_px": f"{self.data_prefix}_nu1_px",
-            "nu1_py": f"{self.data_prefix}_nu1_py",
-            "nu1_pz": f"{self.data_prefix}_nu1_pz",
-            "nu2_px": f"{self.data_prefix}_nu2_px",
-            "nu2_py": f"{self.data_prefix}_nu2_py",
-            "nu2_pz": f"{self.data_prefix}_nu2_pz",
-            "pair_type": f"{self.data_prefix}_pair_type",
-            "vis_tau1_charge": f"{self.data_prefix}_vis_tau1_charge",
-            "vis_tau1_e": f"{self.data_prefix}_vis_tau1_e",
-            "vis_tau1_px": f"{self.data_prefix}_vis_tau1_px",
-            "vis_tau1_py": f"{self.data_prefix}_vis_tau1_py",
-            "vis_tau1_pz": f"{self.data_prefix}_vis_tau1_pz",
-            "vis_tau2_charge": f"{self.data_prefix}_vis_tau2_charge",
-            "vis_tau2_e": f"{self.data_prefix}_vis_tau2_e",
-            "vis_tau2_px": f"{self.data_prefix}_vis_tau2_px",
-            "vis_tau2_py": f"{self.data_prefix}_vis_tau2_py",
-            "vis_tau2_pz": f"{self.data_prefix}_vis_tau2_pz",
+            f: dict(FEATURES[f].value_groups)
+            for f in self.categorical_features
+            if FEATURES[f].value_groups is not None
         }
+
+    def prefixed(self, name: str) -> str:
+        """
+        Actual array column of a name. Registered features resolve through their spec (production
+        prefix or explicit column); any other name, e.g. a cut field such as "leptons_os", is returned unchanged.
+
+        Args:
+            name (str): Feature name or bare column name.
+
+        Returns:
+            str: Column name, e.g. "reg_dnn_moe_bjet1_px".
+        """
+        spec = FEATURES.get(name)
+        return spec.column_name(self.data_prefix) if spec is not None else name
 
     @property
     def uproot_continuous_columns(self) -> list[str]:
-        return [self.column_map[f] for f in self.continuous_features]
+        """
+        Array columns of ``continuous_features``, in config order.
+
+        Returns:
+            list[str]: Column names.
+        """
+        return [self.prefixed(f) for f in self.continuous_features]
 
     @property
     def uproot_categorical_columns(self) -> list[str]:
-        return [self.column_map[f] for f in self.categorical_features]
+        """
+        Array columns of ``categorical_features``, in config order.
+
+        Returns:
+            list[str]: Column names.
+        """
+        return [self.prefixed(f) for f in self.categorical_features]
 
     def resolve_template(self, template: str) -> str:
+        """
+        Replace every {name} placeholder of a cut template by its array column.
+
+        Args:
+            template (str): Cut with placeholders, e.g. "({vis_tau1_charge} == 1)".
+
+        Returns:
+            str: Cut with column names.
+        """
         formatter = Formatter()
         for _, field_name, _, _ in formatter.parse(template):
             if field_name is not None:
-                resolved_name = self.prefixed(field_name)
-                template = template.replace(f"{{{field_name}}}", resolved_name)
+                template = template.replace(f"{{{field_name}}}", self.prefixed(field_name))
         return template
 
     @property
-    def uproot_cuts(self):
+    def uproot_cuts(self) -> list[str]:
         """
-        Return the cuts with placeholders resolved to actual array column names.
+        The cuts with placeholders resolved to array columns.
+
+        Returns:
+            list[str]: Resolved cuts.
         """
         return [self.resolve_template(cut) for cut in self.cuts]
 
@@ -326,19 +264,6 @@ class DataConfig:
         h = tuple(hashable_dict)
         return hashlib.sha256(str(h).encode("utf-8")).hexdigest()[:10]
 
-    def luminosity(self, era=None):
-        size = {
-            "22pre": 7.9,
-            "22post": 26.6,
-            "23pre": 18,
-            "23post": 9.6,
-            "24": 110,
-        }
-        if era is None:
-            return size
-        return size[era]
-
-
     @property
     def ordered_eras(self) -> tuple[str, ...]:
         """
@@ -349,15 +274,48 @@ class DataConfig:
         Returns:
             tuple[str, ...]: Sorted copy of ``eras``.
         """
-        return tuple(sorted(self.eras, key=get_args(ERAS_CHOICE).index))
+        return tuple(sorted(self.eras, key=era_order))
 
+    @property
+    def uproot_jagged_columns(self) -> dict[str, tuple[str, int, float]]:
+        """
+        Configured features that are one entry of a jagged branch, for the root reader to split.
+
+        Returns:
+            dict[str, tuple[str, int, float]]: Flat column name -> (branch, index, fill value for a missing entry).
+        """
+        return {
+            self.prefixed(f): (*FEATURES[f].jagged, FEATURES[f].dummy)
+            for f in self.continuous_features + self.categorical_features
+            if FEATURES[f].jagged is not None
+        }
 
     def __post_init__(self):
-        # dummy value warning in case a feature is written wrong or does not exist
-        unknown = set(self.dummy_values) - set(self.continuous_features)
-        if unknown:
-            raise ValueError(f"dummy_values refer to unknown continuous features: {sorted(unknown)}")
+        if get_args(ERAS_CHOICE) != tuple(ERAS):
+            raise RuntimeError(f"ERAS_CHOICE {get_args(ERAS_CHOICE)} does not match the eras known in data_handling/eras.py {tuple(ERAS)}")
 
-        # a dictionary of all files corresponding to a certain dataset
-        self.data_prefix = self._prefix_map()
-        self.datasets = cached_find_datasets(self.dataset_pattern, self.eras, file_type="root")
+        # eras must be known and share one b-tagger: tag scores of different taggers are not comparable,
+        # so e.g. 24 (UParT) can never be cached and trained together with 22/23 (ParticleNet)
+        unknown_eras = set(self.eras) - set(ERAS)
+        if unknown_eras:
+            raise ValueError(f"Unknown eras {sorted(unknown_eras)}, known: {list(ERAS)}")
+        btaggers = {ERAS[era].btagger for era in self.eras}
+        if len(btaggers) > 1:
+            raise ValueError(
+                f"eras {self.eras} mix b-taggers {sorted(btaggers)}; "
+                "only eras with the same b-tagger can be trained together"
+            )
+
+        # every configured feature must be registered with the right kind and exist in every configured era;
+        # the lists are never trimmed here, continuous_features_by_era holds one per era that differs
+        for kind, names in (("continuous", self.continuous_features), ("categorical", self.categorical_features)):
+            unknown = [f for f in names if f not in FEATURES]
+            if unknown:
+                raise ValueError(f"{kind}_features not in the feature registry: {unknown}")
+            wrong_kind = [f for f in names if FEATURES[f].kind != kind]
+            if wrong_kind:
+                raise ValueError(f"{kind}_features contains features of another kind: {wrong_kind}")
+            for era in self.eras:
+                missing = [f for f in names if not FEATURES[f].is_available(era)]
+                if missing:
+                    raise ValueError(f"{kind}_features {missing} are not available in era {era}")

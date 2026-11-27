@@ -38,6 +38,8 @@ class RecordConfig:
         "confusion_matrix",
         # "roc",  # roc computation is the long factor (14s)
         "output_score_hh_node",
+        "output_score_hh_node_physics",
+
         "output_score_hh_node_untransformed",
         "kernels_monitor",
         "score_correlation_matrix",
@@ -45,23 +47,22 @@ class RecordConfig:
     )
     validation_plots: tuple[str, ...] = (
         "confusion_matrix",
+        "token_angles",
         # "roc",  # roc computation is the long factor (4s)
         "output_score_hh_node",
+        "output_score_hh_node_physics",
+
         "output_score_hh_node_untransformed",
         "kernels_monitor",
         "score_correlation_matrix",
         # "precision_recall",  # deactivated takes 12s to use
     )
-    # needs to be dict due to how tensorboard handles scalars
-    training_scalars: dict[str, str] = field(
+    # tensorboard tag -> scalar artifact, logged for the evaluation of training and validation data.
+    # Both go to their own sub-run, so the same tag puts training and validation into one panel.
+    evaluation_scalars: dict[str, str] = field(
         default_factory=lambda: {
-            "CrossEntropy/Evaluation Training": "cross_entropy",
-            "Loss/Evaluation Training Loss": "loss",
-        }
-    )
-    validation_scalars: dict[str, str] = field(
-        default_factory=lambda: {
-            "CrossEntropy/Evaluation Validation": "cross_entropy",
-            "Loss/Validation VLoss": "loss",
+            "Loss": "loss",
+            "CrossEntropy": "cross_entropy",
+            "CrossEntropy_per_class": "cross_entropy_per_class",
         }
     )

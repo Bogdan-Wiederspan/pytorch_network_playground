@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import os
 import pathlib
-from typing import Literal
 
 import torch
 
 from bbTT.checkpoint.loading import rebuild_checkpoint_information
-from bbTT.models.utils.append_layers import ACTIVATION_CHOICE, AddActFnToModel
+from bbTT.models.utils.append_layers import ACTIVATION_CHOICE, HEAD_CHOICE, AddActFnToModel, SelectHead
 from bbTT.monitoring.logger.logger import get_logger
 from bbTT.utils.parser import ParserBuilder
 
@@ -19,48 +18,38 @@ def export_pt2(
     name: str,
     fold: str,
     base_dir: str | None = None,
-    model_activation: Literal["on", "off", "from_checkpoint"] = "from_checkpoint",
+    head: HEAD_CHOICE = "probabilities",
     add_activation: ACTIVATION_CHOICE = "identity",
 ) -> pathlib.Path:
     """
     Takes *model_inst* and export it to pt2 format, with dynamic batch dimension.
     The exported model is stored as ``<base_dir>/<name>_fold<fold>.pt2``.
 
-    Two activations can become part of the exported graph, independently of each other:
-    the activation defined inside the model (controlled by ``use_last_activation``, see *model_activation*)
-    and an extra activation wrapped on top of the model output (*add_activation*). The latter is helpful
-    when a model is trained on logits (e.g. with BCEWithLogitsLoss), but probabilities are wanted at inference.
-    Stacking both is allowed, but logged as warning since it is rarely intended.
+    The model's forward returns logits; the exported graph returns the selected *head* (see BaseModel.HEADS).
+    An extra activation can be wrapped on top of that head (*add_activation*), which only makes sense on the
+    "logits" head. Stacking it on an activated head is allowed, but logged as warning since it is rarely intended.
 
     Args:
         model_inst (torch.nn.Module): PyTorch model instance, no path.
         name (str): Name of the model, used to name the result.
         fold (str): Current fold of the model. Is part of the naming scheme
         base_dir (str | None, optional): Directory where model is stored, if None take from MODELS_DIR environment. Defaults to None.
-        model_activation (Literal["on", "off", "from_checkpoint"], optional): "on"/"off" set the model's own
-            last activation explicitly, "from_checkpoint" keeps the value the model was rebuilt with. Defaults to "from_checkpoint".
-        add_activation (ACTIVATION_CHOICE, optional): Extra activation applied on top of the model output,
-            "identity" adds nothing. Defaults to "identity".
+        head (HEAD_CHOICE, optional): Head the exported model returns. Defaults to "probabilities".
+        add_activation (ACTIVATION_CHOICE, optional): Extra activation applied on top of the selected head, "identity" adds nothing.
+            Defaults to "identity".
     Returns:
         pathlib.Path: Path to exported pt2 model.
     """
     # by default set CPU device, to enable most compatible export.
     DEVICE = torch.device("cpu")
 
-    # check if model already applies its last activation, and if so, warn if user tries to add another activation on top
-    if model_activation != "from_checkpoint":
-        if model_activation == "on":
-            model_inst.use_last_activation = True
-        elif model_activation == "off":
-            model_inst.use_last_activation = False
-        else:
-            raise ValueError(f"Unknown model_activation value: {model_activation}. Must be 'on', 'off' or 'from_checkpoint'.")
-
-    if model_inst.use_last_activation and add_activation != "identity":
+    if head != "logits" and add_activation != "identity":
         logger_inst.warning(
-            f"Model applies its own last activation: {model_inst.use_last_activation}. "
-            f"Adding another activation on top: {add_activation}. This may lead to unexpected results."
+            f"Head {head!r} is already activated, adding another activation on top: {add_activation}. "
+            "This may lead to unexpected results."
             )
+
+    model_inst = SelectHead(model_inst, head)
 
     if add_activation != "identity":
         model_inst = AddActFnToModel(model_inst, add_activation)
@@ -148,7 +137,7 @@ def resolve_models_path(path: pathlib.Path, folds) -> tuple[pathlib.Path, pathli
 if __name__ == "__main__":
     parser = ParserBuilder(
         "load_checkpoint",
-        "model_activation",
+        "head",
         "activation_fn",
         description="Export a model checkpoint to torch-export (.pt2) with a dynamic batch dimension.",
         epilog="example:\n  python src/bbTT/evaluation/export/pt2.py --checkpoint_src my_first_run --fold 0",
@@ -167,7 +156,7 @@ if __name__ == "__main__":
             model_inst,
             name=args.path.stem,
             fold=fold,
-            model_activation=args.model_activation,
+            head=args.head,
             add_activation=args.add_activation,
         )
     logger_inst.info(f"Finished exporting models for folds {args.fold} with name {args.path.stem}")

@@ -12,6 +12,7 @@ from bbTT.checkpoint.loading import rebuild_checkpoint_information
 # personal imports
 from bbTT.data_handling import io
 from bbTT.data_handling.preprocessing import k_fold
+from bbTT.models.utils.append_layers import HEAD_CHOICE
 from bbTT.monitoring.logger.logger import get_logger
 from bbTT.utils.parser import ParserBuilder
 
@@ -50,6 +51,7 @@ def evaluate_model_on_fold(
     full_config: Literal["DataClass"],
     folds: Iterable[int],
     evaluate_on: str,
+    head: HEAD_CHOICE = "probabilities",
     last_activation_fn: Literal["sigmoid", "softmax", "identity"] = "identity",
     batch_size=1,
 ) -> torch.tensor:
@@ -63,9 +65,14 @@ def evaluate_model_on_fold(
         full_config (Literal[&quot;DataClass&quot;]): Dataclass containing all other configs, is also located in the checkpoint and describes the network when it was trained.
         folds (Iterable[int]): Iterable of folds to evaluate on. Careful: Network should match the fold it was trained on, no check is performed.
         evaluate_on (Iterable[str]): Iterable containing: "test", "training" or "validation", defines which indices are used of the input data used for training.
+        head (HEAD_CHOICE, optional): Head of the model that is evaluated, see BaseModel.HEADS. Defaults to "probabilities".
+        last_activation_fn (Literal["sigmoid", "softmax", "identity"], optional): Extra activation on top of the
+            selected head, only allowed on the "logits" head. Defaults to "identity".
+        batch_size (int, optional): Events per model call. Defaults to 1.
 
     Raises:
-        ValueError: When wrong value in evaluate_on is used.
+        ValueError: When wrong value in evaluate_on is used, the model has no such head, or an extra activation
+            is requested on an already activated head.
 
     Returns:
         torch.Tensor: Tensor with output scores of the network.
@@ -83,14 +90,13 @@ def evaluate_model_on_fold(
 
         num_targets = len(full_config.dataset_config.target_map.values())
         last_fn = last_fn_picker(last_activation_fn)
-        # the model applies its own last activation when use_last_activation is set
-        # adding another one on top would silently produce wrong scores
-        # throw error when user tries to add another activation on top of the model's last activation
-        if model_inst.use_last_activation and last_activation_fn != "identity":
+        if head not in model_inst.HEADS:
+            raise ValueError(f"Model {type(model_inst).__name__} has no head {head!r}, available: {model_inst.HEADS}")
+        # an activation on top of an already activated head would silently produce wrong scores
+        if head != "logits" and last_activation_fn != "identity":
             raise ValueError(
-                f"Model already applies its last activation (use_last_activation=True), but "
-                f"last_activation_fn='{last_activation_fn}' was requested. Use 'identity' or disable the "
-                "activation inside the model to avoid a double activation."
+                f"Head {head!r} is already activated, but last_activation_fn='{last_activation_fn}' was requested. "
+                "Use 'identity' or the 'logits' head to avoid a double activation."
             )
 
         dnn_scores = {}
@@ -115,8 +121,8 @@ def evaluate_model_on_fold(
                 if total_n == 0:
                     continue
 
-                out_shape = (total_n, num_targets)
-                uid_scores = torch.empty(out_shape, dtype=torch.float32)
+                # the binned head carries a leading bin axis, so the output shape is fixed after the first batch
+                uid_scores = None
 
                 for start_idx in range(0, total_n, batch_size):
                     end_idx = min(start_idx + batch_size, total_n)
@@ -125,14 +131,14 @@ def evaluate_model_on_fold(
                     continuous_inputs = events[uid]["continuous"][batch_idx]
                     categorical_inputs = events[uid]["categorical"][batch_idx]
 
-                    scores = model_inst(categorical_inputs=categorical_inputs, continuous_inputs=continuous_inputs)
+                    logits = model_inst(categorical_inputs=categorical_inputs, continuous_inputs=continuous_inputs)
+                    scores = last_fn(model_inst.head(head, logits))
 
-                    # in multi-head networks the first output is always the normal prediction
-                    if model_inst.is_binned:
-                        scores = scores[0]
-
-                    scores = last_fn(scores)
-                    uid_scores[start_idx:end_idx] = scores.detach().cpu()
+                    if uid_scores is None:
+                        # event axis is always the second last one: [event, node] or [bin, event, node]
+                        out_shape = (*scores.shape[:-2], total_n, num_targets)
+                        uid_scores = torch.empty(out_shape, dtype=torch.float32)
+                    uid_scores[..., start_idx:end_idx, :] = scores.detach().cpu()
 
                 dnn_scores[fold][uid] = {
                     "scores": uid_scores,
@@ -151,6 +157,7 @@ if __name__ == "__main__":
     parser = ParserBuilder(
         "load_checkpoint",
         "activation_fn",
+        "head",
         "save_path",
         "evaluate_choices",
         "batching",
@@ -187,6 +194,7 @@ if __name__ == "__main__":
             model_inst=model_inst,
             full_config=full_config,
             folds=args.fold,
+            head=args.head,
             evaluate_on=evaluate_on,
             last_activation_fn=args.add_activation,
             events=events,

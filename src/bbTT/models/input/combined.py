@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import torch
 
 
@@ -38,6 +40,19 @@ class InputLayer(torch.nn.Module):
             tuple[torch.nn.Module, ...]: The branches that exist, in concatenation order (continuous, categorical).
         """
         return tuple(layer for layer in (self.continuous_layer, self.categorical_layer) if layer is not None)
+
+    def create_evaluation_state(self) -> dict[str, Any]:
+        """
+        Snapshot of the categorical branch; the continuous branch (standardization, rotation, padding) holds no
+        learnable state.
+
+        Returns:
+            dict[str, Any]: See CategoricalInputLayer.create_evaluation_state, empty without a categorical branch.
+        """
+        if self.categorical_layer is None:
+            return {}
+        return self.categorical_layer.create_evaluation_state()
+
 
     def forward(
         self,

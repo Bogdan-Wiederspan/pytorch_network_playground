@@ -106,6 +106,21 @@ class CategoricalTokenizer(torch.nn.Module):  # noqa: F811
             _str.append(f"{category}: {expected_value} -> {output_per_feature[ind][: len(expected_value)].tolist()}")
         return "\n".join(_str)
 
+    def tokens_per_category(self) -> dict[str, dict[int, int]]:
+        """
+        The learned vocabulary as data: which token index each expected value of each category maps to.
+        Same translation as __repr__ shows as text.
+
+        Returns:
+            dict[str, dict[int, int]]: Category name -> {expected value: token index}, in the order of the categories.
+        """
+        padded = self.pad_to_longest().transpose(0, 1).to(device=self.map.device)
+        token_per_feature = self.map[self.indices, padded - self.min].transpose(0, 1)
+        return {
+            category: dict(zip(values, token_per_feature[idx][: len(values)].tolist()))
+            for idx, (category, values) in enumerate(self._expected_inputs.items())
+        }
+
     def check_for_values_outside_range(self, input_tensor: torch.FloatTensor):
         """
         Helper function checks *input_tensor* for values the tokenizer does not expect but found.

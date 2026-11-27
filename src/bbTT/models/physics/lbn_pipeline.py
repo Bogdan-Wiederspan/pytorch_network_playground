@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from typing import Any
+
 import torch
 
-from bbTT.models.utils.layer_utils import optional_layer
+from bbTT.models.utils.layer_utils import batch_norm_state, optional_layer
 
 from . import LBN, LBNFeatureExtractor
 
@@ -78,6 +80,16 @@ class LBNPipeline(torch.nn.Module):
         x = self.rotation_layer(x)
         x = self.padding_layer.replace(x, mask)
         return x
+
+    def create_evaluation_state(self) -> dict[str, Any]:
+        """
+        Snapshot of the LBN combination weights and the running statistics of the batch norm on its features;
+        padding, rotation and feature extraction hold no learnable state.
+
+        Returns:
+            dict[str, Any]: See LBN.create_evaluation_state and batch_norm_state.
+        """
+        return {**self.lbn.create_evaluation_state(), **batch_norm_state(self.lbn_batch_norm)}
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """

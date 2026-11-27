@@ -1,5 +1,4 @@
 import matplotlib.pyplot as plt
-import numpy as np
 import torch
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
@@ -7,6 +6,72 @@ from matplotlib.figure import Figure
 import bbTT.utils.transformations as fn
 from bbTT.monitoring.register import register_plot
 from bbTT.monitoring.utils.plotting import append_text_to_legend
+
+
+def _histogram_weights(ctx, normalize: bool, axis: str = "composition") -> torch.Tensor:
+    """
+    Per-event weights of one weighting axis, prepared for histogramming the output scores.
+
+    The node-score plots split events by true class, so the relative weight of the processes
+    inside a class (and between classes) depends on the question asked, see EvalContext.weights:
+    "composition" shows the classes as the training sees them, "physics" as the analysis and
+    the Asimov loss see them, i.e. every process with its expected yield.
+
+    Args:
+        ctx (EvalContext): Context holding the weights.
+        normalize (bool): True if every histogram is later normalized to unit sum per
+            class (weights are then used as they are). False keeps a count-like y-axis:
+            on the composition axis the weights are rescaled to sum to the number of events
+            ("effective events", the total still matches ``len(predictions)``); on the physics
+            axis they are kept, the y-axis then reads expected events.
+        axis (str, optional): "composition" or "physics". Defaults to "composition".
+
+    Returns:
+        torch.Tensor: Weights of shape (num_events,).
+    """
+    weights = ctx.weights(axis)
+    if normalize or axis == "physics":
+        return weights
+    return weights * (weights.shape[0] / weights.sum())
+
+
+def _per_class_weights(weights: torch.Tensor, mask: torch.Tensor, normalize: bool) -> torch.Tensor:
+    """
+    Weights of one class, optionally normalized to unit sum so shapes are comparable.
+
+    Args:
+        weights (torch.Tensor): Weights of all events, shape (num_events,).
+        mask (torch.Tensor): Boolean mask selecting the class, shape (num_events,).
+        normalize (bool): Divide by the sum over the selected events.
+
+    Returns:
+        torch.Tensor: Weights of the selected events.
+    """
+    class_weights = weights[mask]
+    if normalize:
+        class_weights = class_weights / class_weights.sum()
+    return class_weights
+
+
+def _y_label(normalize: bool, weight_axis: str) -> str:
+    """
+    Y-axis label matching the weighting of the histogram.
+
+    Args:
+        normalize (bool): Whether every histogram is normalized to unit sum.
+        weight_axis (str): "composition" or "physics".
+
+    Returns:
+        str: Axis label.
+    """
+    if normalize:
+        return f"frequency (normalized, {weight_axis} weights)"
+    if weight_axis == "physics":
+        return "expected events"
+    return "effective events (composition weights)"
+
+
+
 
 # TODO general transformation passing: ctx does not currently track which
 # transformation (if any) a given set of bin edges lives in. The logit transform
@@ -43,7 +108,7 @@ def plot_network_predictions(
         "alpha": kwargs.get("alpha", 0.7),
     }
 
-    weight = None
+    weights = _histogram_weights(ctx, normalize=normalize)
     # for each node, histogram the predictions of every true class
     for node, node_idx in target_map.items():
         for data_cls, data_idx in target_map.items():
@@ -65,13 +130,10 @@ def plot_network_predictions(
             correct_cls_mask = y_true[:, data_idx] == 1
             filtered_predictions = y_pred[correct_cls_mask][:, node_idx]
 
-            if normalize:
-                weight = np.full(filtered_predictions.shape, 1 / len(filtered_predictions))
-
             _ = axes[node_idx].hist(
                 filtered_predictions,
                 label=data_cls,
-                weights=weight,
+                weights=_per_class_weights(weights, correct_cls_mask, normalize=normalize),
                 **hist_cfg,
             )
         if not single_legend:
@@ -102,6 +164,7 @@ def _plot_signal_node_scores(
     transform=None,
     signal: str = "hh",
     normalize: bool = True,
+    weight_axis: str = "composition",
     **kwargs,
 ) -> tuple[Figure, Axes]:
     """
@@ -117,8 +180,11 @@ def _plot_signal_node_scores(
         transform (callable | None): applied to predictions before
             histogramming, e.g. `fn.logit.forward`; None leaves raw scores.
         signal (str): name of the signal class in `target_map`. Defaults "hh".
-        normalize (bool): weight each process by 1/n_events so shapes are
-            comparable rather than raw counts. Defaults True.
+        normalize (bool): normalize every process (and the combined background)
+            to unit sum so shapes are comparable rather than counts. Defaults True.
+        weight_axis (str): "composition" (training view) or "physics" (expected
+            yields, what the Asimov loss sees), see _histogram_weights. Decides how
+            the processes are mixed in the combined background. Defaults "composition".
         **kwargs: optional "title" (str), "histtype" (str, default "step"),
             "alpha" (float, default 0.7). Other keys are ignored.
 
@@ -134,12 +200,12 @@ def _plot_signal_node_scores(
 
     # TRUTH masks -> signal-node score per process
     masks = {name: (y_true[:, idx] == 1) for name, idx in target_map.items()}
-    node = {name: y_pred[masks[name]][:, signal_idx] for name in target_map}
-    node["background"] = torch.cat([node[name] for name in background_names], dim=0)
 
-    weights = {name: None for name in node}
-    if normalize:
-        weights = {name: np.full(value.shape, 1 / len(value)) for name, value in node.items()}
+    masks["background"] = torch.stack([masks[name] for name in background_names], dim=0).any(dim=0)
+    node = {name: y_pred[mask][:, signal_idx] for name, mask in masks.items()}
+
+    all_weights = _histogram_weights(ctx, normalize=normalize, axis=weight_axis)
+    weights = {name: _per_class_weights(all_weights, mask, normalize=normalize) for name, mask in masks.items()}
 
     hist_cfg = {
         "histtype": kwargs.get("histtype", "step"),
@@ -174,7 +240,11 @@ def _plot_signal_node_scores(
     for ax in axes:
         append_text_to_legend(ax, counts_text)
         ax.set_xlabel(f"{signal} node", size=20)
-        ax.set_ylabel("frequency" + (" (normalized)" if normalize else ""), size=20)
+        ax.set_ylabel(_y_label(normalize=normalize, weight_axis=weight_axis), size=20)
+
+        if weight_axis == "physics" and not normalize:
+            ax.set_yscale("log")  # signal yield is orders of magnitude below the background
+
         ax.set_xlim((left_bound, right_bound))
         ax.grid()
     return fig, axes
@@ -214,5 +284,24 @@ def plot_signal_node_scores_binned(ctx, **kwargs) -> tuple[Figure, Axes]:
         ctx,
         edges_key="evaluation_state.binning_edges",
         transform=fn.logit.forward,
+        **kwargs,
+    )
+
+@register_plot(
+    "output_score_hh_node_physics",
+    requires={"evaluation_state.binning_edges"},
+)
+def plot_signal_node_scores_binned_physics(ctx, **kwargs) -> tuple[Figure, Axes]:
+    """
+    Same as output_score_hh_node, but in expected events: every process enters with its physics
+    weight and nothing is normalized. The combined background panel is b(x), the signal s(x), i.e.
+    the histograms the Asimov significance is computed from.
+    """
+    return _plot_signal_node_scores(
+        ctx,
+        edges_key="evaluation_state.binning_edges",
+        transform=fn.logit.forward,
+        normalize=False,
+        weight_axis="physics",
         **kwargs,
     )

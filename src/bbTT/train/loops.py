@@ -12,11 +12,19 @@ if TYPE_CHECKING:
 logger_inst = get_logger(__name__)
 
 
-def register_loop(name):
-    # add markers to function for later registration in loop registry
+
+def register_loop(loss: str):
+    """
+    Marks a loop method as the loop that belongs to the loss *loss* (a LossConfig.loss_fn value).
+    A loop exists only because its loss needs certain columns and a certain call signature, so the loss
+    name is the key of the registry: the loop is picked by LossConfig.loss_fn, there is no separate loop choice.
+
+    Args:
+        loss (str): Name of the loss this loop belongs to, must be a LOSS_CHOICE value.
+    """
     def decorator(fn):
         fn._is_loop_method = True
-        fn._loop_name = name
+        fn._loss_name = loss
         return fn
 
     return decorator
@@ -29,24 +37,30 @@ class BaseLoop:
     The registry is used to check if a given loop function exists and to call the correct function in the training script.
 
     How to add a new loop (use the *cross_entropy* loops as reference, since they are the most basic implementation):
-        1. Add a method to TrainingLoop (or ValidationLoop) and decorate it with @register_loop(name="my_loop").
-            The name must match TrainingConfig.training_fn (or validation_fn).
+
+        1. Add a method to TrainingLoop (or ValidationLoop) and decorate it with @register_loop(loss="my_loss").
+            The name must match the LossConfig.loss_fn value of the loss the loop is written for.
 
         2. Use the argument names of the mode you are in. They differ on purpose-historically:
             training  -> loss_fn, sampler
             validation -> loss_fn_inst, sampler_inst
             Everything else (monitor, model_inst, optimizer_inst, ...) is passed by __call__ as keyword.
 
-        3. Always get predictions via self.separate_prediction(pred, model_inst=model_inst):
-            - first value (probabilities) goes to the returned dict, the monitor expects probabilities
-            - second value (raw head) goes to the loss
+        3. The model returns logits via its forward pass. Apply the head your loss needs via model_inst.head(name, <what you want>),
+            see 'your_model_inst.HEADS' to see get an idea what is available.
 
-        4. Return a dict with the keys: "loss", "predictions", "targets", "event_weights".
+        4. Return a dict with the keys: "loss", "predictions", "targets", "event_weights" , "composition_weights".
+            Training loops add "grad_norm".
+            loss = Value of the chosen Loss Function
+            targets = Vector of your target
+            event_weights = Product of all Weights on event base
+            composition_weights = Transfer weight to convert an unsampled to an sampled version
+            grad_norm = L2 norm of the whole gradient before clipping, see TrainingLoop.clip_gradient_norm
 
-        5. Add a rule to FullConfig._compatibility_rules if your loss only works with certain loops or activations.
+        5. Add a rule to FullConfig._compatibility_rules if your loss only works with certain models (heads).
 
     Remarks for each loop type:
-        Training loops: sample one batch, then run: zero_grad -> forward -> loss -> backward -> step.
+        Training loops: sample one batch, then run: zero_grad -> forward -> loss -> backward -> clip -> step.
         Event weights are not part of the training loss, the oversampling takes care of that.
 
         Validation loops: run over all data via collect_from_generators (eval mode, no gradients) and weight the loss.
@@ -62,11 +76,12 @@ class BaseLoop:
         *args,
         **kwargs):
         self.full_config = full_config
-        self.which_fn = (
-            self.full_config.training_config.training_fn
-            if self.MODE == "training"
-            else self.full_config.training_config.validation_fn
-        )
+
+
+        self.loss_name = self.full_config.loss_config.loss_fn
+        # resolve once at construction, so a loss without a loop fails in setup and not in the first iteration
+        self.loop_fn = self.registered_loop(self.loss_name)
+
         # these column are always necessary for the loops
         self.necessary_columns = (
             {"continuous", "categorical", "targets"} if necessary_columns is None else necessary_columns
@@ -86,54 +101,43 @@ class BaseLoop:
             # only add methods if is part of self
             if getattr(fn, "_is_loop_method", False):
                 cls.REGISTERED_LOOPS.setdefault(cls.MODE, {})  # make sure that dict for mode exists
-                cls.REGISTERED_LOOPS[cls.MODE][fn._loop_name] = fn
+                cls.REGISTERED_LOOPS[cls.MODE][fn._loss_name] = fn
 
-    def separate_prediction(
-        self,
-        pred: torch.Tensor | tuple[torch.Tensor, torch.Tensor],
-        model_inst: torch.nn.Module,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    @classmethod
+    def registered_loop(cls, loss_name: str):
         """
-        Depending on the network architecture the output can either be a tuple of prediction and binned prediction
-        or just the prediction. To have a uniform interface the singular output uses a dummy value.
+        Looks up the loop of this mode (training or validation) that belongs to *loss_name*.
 
         Args:
-            pred (torch.Tensor | tuple[torch.Tensor, torch.Tensor]): Raw model output.
-            model_inst (torch.nn.Module): Model, needed to convert the logging head to probabilities.
+            loss_name (str): LossConfig.loss_fn value.
 
         Returns:
-            tuple[torch.Tensor, torch.Tensor]: Returns a tuple of (monitoring_pred, optimization_pred).
-                Monitoring_pred is always a probability.
-                Optimization_pred is the raw head the loss expects.
-                In case of non binned output both derive from the same output, so monitoring and optimization is the same.
-        """
-        # TODO maybe replace with dictionary?
-        is_binned = isinstance(pred, tuple)
-        if is_binned:
-            logging_pred, optimization_pred = pred
-        else:
-            logging_pred, optimization_pred = pred, pred
-        # only the logging head is converted, the loss must see the raw optimization head
-        return self.as_probabilities(logging_pred, model_inst), optimization_pred
+            Callable: The unbound loop method.
 
-    def as_probabilities(self, prediction: torch.Tensor, model_inst: torch.nn.Module) -> torch.Tensor:
+        Raises:
+            KeyError: If no loop of this mode is registered for the loss.
         """
-        Turns a raw model output into class probabilities, for monitoring.
+        loops = cls.REGISTERED_LOOPS.get(cls.MODE, {})
+        if loss_name not in loops:
+            raise KeyError(
+                f"No {cls.MODE} loop registered for loss {loss_name!r}, available: {tuple(loops)}. "
+                f"Decorate a {cls.__name__} method with @register_loop(loss={loss_name!r})."
+            )
+        return loops[loss_name]
+
+    @staticmethod
+    def yield_head_name(model_inst: torch.nn.Module) -> str:
+        """
+        Name of the head a yield based loss (Asimov) works on: binned when the model offers it, otherwise
+        the plain probabilities. SignalEfficiency accepts both shapes.
 
         Args:
-            prediction (torch.Tensor): Output of the model, either logits or already activated.
-            model_inst (torch.nn.Module): Model that knows its own last activation layer.
+            model_inst (torch.nn.Module): Model with a ``HEADS`` declaration.
 
         Returns:
-            torch.Tensor: Class probabilities. The activation is applied at most once.
+            str:  "binned" or "probability"
         """
-        # model already applied its activation in forward, applying it again would double it
-        if model_inst.use_last_activation:
-            return prediction
-        # raw logits: use exactly the layer the model would have used itself (Softmax or Sigmoid)
-        # the model defines its own last activation function, so we can use it here to ensure consistency
-        return model_inst.last_activation_fn(prediction)
-
+        return "binned" if "binned" in model_inst.HEADS else "probabilities"
 
     def setup(self, monitor=None, model_inst=None, kind_of_data="batch"):
         if monitor is not None:
@@ -157,8 +161,10 @@ class BaseLoop:
         # bound by passing self as first argument
         self.setup(monitor=monitor, model_inst=model_inst, kind_of_data=kind_of_data)
         try:
-            fn = self.REGISTERED_LOOPS[self.MODE][self.which_fn]
-            result = fn(self, *args, monitor=monitor, model_inst=model_inst, optimizer_inst=optimizer_inst, **kwargs)
+            result = self.loop_fn(
+                self, *args, monitor=monitor, model_inst=model_inst, optimizer_inst=optimizer_inst, **kwargs
+            )
+
         finally:
             self.cleanup(
                 monitor=monitor,
@@ -183,13 +189,34 @@ class TrainingLoop(BaseLoop):
     def cleanup(self, monitor=None, model_inst=None, optimizer_inst=None, scheduler_handler_inst=None, **kwargs):
         super().cleanup(monitor=monitor, model_inst=model_inst)
         if scheduler_handler_inst is not None:
-            scheduler_handler_inst.step(model_inst=model_inst, optimizer_inst=optimizer_inst, metric=None)
+            scheduler_handler_inst.step_batch()
 
         model_inst.disable_gradient_hooks()
         if monitor is not None:
             monitor.check_gradient_correctness(expected_names=model_inst.monitored_gradient_names())
 
-    @register_loop(name="cross_entropy")
+    def clip_gradient_norm(self, model_inst: torch.nn.Module) -> torch.Tensor:
+        """
+        Clips the gradient of *model_inst* in place, call it between ``loss.backward()`` and ``optimizer.step()``.
+
+        The gradients of all parameters are treated as one vector $g$. If its L2 norm exceeds
+        ``optimizer_config.max_grad_norm`` ($c$), the whole vector is scaled by $c / \\|g\\|$, so its length
+        becomes $c$ and its direction is kept. With ``max_grad_norm = None`` nothing is clipped, the norm
+        is still computed and returned.
+
+        Args:
+            model_inst (torch.nn.Module): Model whose parameter gradients are clipped.
+
+        Returns:
+            torch.Tensor: L2 norm of the whole gradient BEFORE clipping, scalar tensor.
+        """
+        max_grad_norm = self.full_config.optimizer_config.max_grad_norm
+        # an infinite bound never clips, but still gives the norm for the monitoring
+        max_norm = float("inf") if max_grad_norm is None else max_grad_norm
+        return torch.nn.utils.clip_grad_norm_(model_inst.parameters(), max_norm=max_norm)
+
+
+    @register_loop(loss="cross_entropy")
     def cross_entropy_loss(
         self,
         model_inst,
@@ -211,22 +238,27 @@ class TrainingLoop(BaseLoop):
         categorical, continuous = events.get("categorical"), events.get("continuous")
         targets = events["targets"].reshape(self.target_shape)
 
-        pred = model_inst(categorical_inputs=categorical, continuous_inputs=continuous)
-        # loss gets the raw logits (CE has softmax built in), monitor gets probabilities
-        predictions, optimization_predictions = self.separate_prediction(pred, model_inst=model_inst)
+        logits = model_inst(categorical_inputs=categorical, continuous_inputs=continuous)
 
         # training does not need event weights. The oversampling algorithm takes care of this
-        loss = loss_fn(optimization_predictions, targets, event_weights=None)
+        # CrossEntropy loss has build in softmax
+        loss = loss_fn(logits, targets, event_weights=None)
+
         loss.backward()
+
+        grad_norm = self.clip_gradient_norm(model_inst)
+
         optimizer_inst.step()
         return {
             "loss": loss,
-            "predictions": predictions,
+            "grad_norm": grad_norm,
+            "predictions": model_inst.probabilities(logits),
             "targets": targets,
             "event_weights": events["product_of_weights"],
+            "composition_weights": None, # training loops do not need composition weight, since their are already in sampled space
         }
 
-    @register_loop(name="signal_efficiency")
+    @register_loop(loss="signal_efficiency")
     def signal_efficiency_loop(
         self,
         model_inst,
@@ -243,28 +275,28 @@ class TrainingLoop(BaseLoop):
         categorical, continuous = events.get("categorical"), events.get("continuous")
         targets = events["targets"].reshape(self.target_shape)
 
-        pred = model_inst(
-            categorical_inputs=categorical,
-            continuous_inputs=continuous,
-        )
+        logits = model_inst(categorical_inputs=categorical, continuous_inputs=continuous)
 
-        # loss expect softmax binned output , monitor is unbinnet prediction
-        predictions, optimization_predictions = self.separate_prediction(pred=pred, model_inst=model_inst)
-
+        # loss expects binned probabilities, monitor expect unbinned probabilities
         loss = loss_fn(
-            prediction=optimization_predictions,
+            prediction=model_inst.head(self.yield_head_name(model_inst), logits),
             truth=targets,
             product_of_weights=events["product_of_weights"],
             evaluation_mask=events["evaluation_space_mask"],
         )
 
         loss.backward()
+
+        grad_norm = self.clip_gradient_norm(model_inst)
+
         optimizer_inst.step()
         return {
             "loss": loss,
-            "predictions": predictions,
+            "grad_norm": grad_norm,
+            "predictions": model_inst.probabilities(logits),
             "targets": targets,
             "event_weights": events["product_of_weights"],
+            "composition_weights": None, # training loops do not need composition weight, since their are already in sampled space
         }
 
 
@@ -299,6 +331,8 @@ class ValidationLoop(BaseLoop):
         Which column is aggregated over all datasets is defined in *sample_columns*.
         In the end a concatenation is done over the event axis. If this step should be skipped for
         certain columns (e.g. to maintain the shape), add the name in *skip_concatenate_columns*.
+        Only the logits are collected under "logits". The heads (probabilities, binned) act per event,
+        so the caller applies them once on the concatenated logits instead of once per batch.
 
         Args:
             model_inst (torch.nn.Module): Your neural network model.
@@ -308,17 +342,16 @@ class ValidationLoop(BaseLoop):
             device (torch.device, optional): Device everything should run on. Defaults to torch.device("cpu").
 
         Returns:
-            dict[torch.tensors]: Dictonary with all aggregated tensors.
+            dict[str, torch.tensors]: Dictonary with all aggregated tensors.
         """
         device = torch.device(device) if isinstance(device, str) else device
 
         collected_data = {
-            "class_predictions": [],
             "targets": [],
             "sample_weights": [],
-            "loss_predictions": [],
             "post_relative_weights": [],
             "process_id": [],
+            "logits": []
         }
 
         dynamic_data = {dynamic_d: [] for dynamic_d in tuple(sample_columns - self.necessary_columns)}
@@ -331,13 +364,9 @@ class ValidationLoop(BaseLoop):
             ):
                 # hold data for current dataset, saved in loop to avoid memory issues
                 current_process = sampler_inst.registry[uid]
-                pred = model_inst(
-                    categorical_inputs=events.pop("categorical"), continuous_inputs=events.pop("continuous")
-                )
-                # network can output either binned or non binned predictions
-                # depending on model architecture, separate_prediction gives us a uniform interface to handle both cases
-                # this separation also guarantee that class_pred are probabilities and loss_pred is in the form that the loss needs it
-                class_pred, loss_pred = self.separate_prediction(pred, model_inst=model_inst)
+                logits = model_inst(categorical_inputs=events.pop("categorical"), continuous_inputs=events.pop("continuous"))
+
+                num_events = logits.shape[0]
 
                 # -- collect data that is always done --
 
@@ -347,18 +376,15 @@ class ValidationLoop(BaseLoop):
                 # batch share divided by process size: summed over the full pass each process
                 # weighs exactly as much as in a training batch, see Process.per_event_composition_weight
                 collected_data["post_relative_weights"].append(
-                    current_process.per_event_composition_weight(class_pred.shape[0], denominator=len(current_process)
+                    current_process.per_event_composition_weight(num_events, denominator=len(current_process)
                     ).to(device)
                 )
 
                 collected_data["process_id"].append(
-                    torch.full((class_pred.shape[0], 1), uid[1], device=device)
+                    torch.full((num_events, 1), uid[1], device=device)
                     )
 
-                collected_data["class_predictions"].append(class_pred)
-
-                # for loss calculation, can be the same as class_prediction e.g. crossentropy
-                collected_data["loss_predictions"].append(loss_pred)
+                collected_data["logits"].append(logits)
 
                 # -- collect dynamic data --
                 for k in dynamic_data.keys():
@@ -377,7 +403,7 @@ class ValidationLoop(BaseLoop):
                 collected_data[k] = value
         return collected_data
 
-    @register_loop(name="cross_entropy")
+    @register_loop(loss="cross_entropy")
     def cross_entropy_loop(
         self,
         model_inst,
@@ -404,18 +430,19 @@ class ValidationLoop(BaseLoop):
         # validation runs on unsampled data: weighted by batch share / process size so the
         # loss reproduces the training batch composition and is comparable to the batch loss
         loss = loss_fn_inst(
-            tensors["loss_predictions"],
+            tensors["logits"],
             tensors["targets"],
             tensors["post_relative_weights"],
         )
         return {
             "loss": loss,
-            "predictions": tensors["class_predictions"],
+            "predictions": model_inst.probabilities(tensors["logits"]),
             "targets": tensors["targets"],
             "event_weights": tensors["product_of_weights"],
+            "composition_weights": tensors["post_relative_weights"],
         }
 
-    @register_loop(name="signal_efficiency")
+    @register_loop(loss="signal_efficiency")
     def signal_efficiency_loop(
         self,
         model_inst,
@@ -438,8 +465,9 @@ class ValidationLoop(BaseLoop):
             device=device,
         )
 
+        # heads are applied once on the full pass, logits were collected without gradients
         loss = loss_fn_inst(
-            tensors["loss_predictions"],
+            model_inst.head(self.yield_head_name(model_inst), tensors["logits"]),
             tensors["targets"].reshape(self.target_shape),
             tensors["product_of_weights"],
             tensors["evaluation_space_mask"],
@@ -447,7 +475,8 @@ class ValidationLoop(BaseLoop):
         )
         return {
             "loss": loss,
-            "predictions": tensors["class_predictions"],
+            "predictions": model_inst.probabilities(tensors["logits"]),
             "targets": tensors["targets"],
             "event_weights": tensors["sample_weights"],
+            "composition_weights": tensors["post_relative_weights"],
         }

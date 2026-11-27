@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import fnmatch
-from typing import Any
+from typing import Any, Literal
 
 import torch
 
@@ -16,6 +16,7 @@ class EvalContext:
         event_weights: torch.Tensor,
         global_step: int,
         mode: str,
+        composition_weights: torch.Tensor | None = None,
         **kwargs,
     ):
         """
@@ -32,7 +33,9 @@ class EvalContext:
             event_weights (torch.Tensor): Product of alle weights, unique per event
             global_step (int): Meta Data describing the current batch step
             mode (str): Meta Data describing to which kind of data this context belongs
-
+            composition_weights (torch.Tensor | None, optional): Weights that map a full pass onto the training batch
+                composition (the "composition" axis), see Process.per_event_composition_weight. None for a sampled
+                batch, which already has that composition. Defaults to None.
         """
         # core state of the model. Model it self create this state
         # model_state is detached from live model!
@@ -43,6 +46,7 @@ class EvalContext:
         self.targets = targets.detach().cpu()
         self.target_map = target_map
         self.event_weights = event_weights.detach().cpu()
+        self.composition_weights = None if composition_weights is None else composition_weights.detach().cpu()
         # meta data
         self.global_step = global_step  # current batch iteration
         self.mode = mode  # batch, train oder valid, influences the meta tag
@@ -106,7 +110,37 @@ class EvalContext:
             "event_weights": self.event_weights,
             "global_step": self.global_step,
             "mode": self.mode,
+            "composition_weights": self.composition_weights,
         }
+
+    def weights(self, axis: Literal["composition", "physics"]) -> torch.Tensor:
+        """
+        Per-event weights of one weighting axis, flattened to shape (num_events,).
+
+        Two axes exist and answer different questions:
+            - "composition": how the network sees the data during training. On a full pass these are
+              the composition weights, on a sampled batch (where they are None) uniform ones, since the
+              batch already has the training composition.
+            - "physics": the physical expectation, i.e. ``event_weights``.
+
+        Args:
+            axis (Literal["composition", "physics"]): Which weighting axis to return.
+
+        Returns:
+            torch.Tensor: Weights of shape (num_events,), never None.
+
+        Raises:
+            ValueError: For an unknown axis.
+        """
+        if axis == "physics":
+            return self.event_weights.reshape(-1)
+        if axis == "composition":
+            if self.composition_weights is None:
+                return torch.ones(self.targets.shape[0])
+            return self.composition_weights.reshape(-1)
+        raise ValueError(f"Unknown weight axis {axis!r}, expected 'composition' or 'physics'.")
+
+
 
     def _has_nested(self, obj, parts):
         for part in parts:

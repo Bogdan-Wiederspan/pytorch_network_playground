@@ -1,3 +1,5 @@
+from collections.abc import Iterable
+
 from bbTT.monitoring.logger.logger import get_logger
 from bbTT.monitoring.register import BUILDER_REGISTRY, PLOT_REGISTRY
 
@@ -86,7 +88,8 @@ def run_plot(name, ctx):
 
     for req in spec.requires:
         ensure(ctx, req, providers, requester=name)
-    return spec.fn(ctx)
+    return spec.fn(ctx, **spec.kwargs)
+
 
 
 def run_scalar(name, ctx):
@@ -110,7 +113,7 @@ class EvaluationRunner:
             set()
         )  # plots skipped due to being optional or not registered, second str is the mode
 
-    def run_plots(self, ctx, plots: list[str]):
+    def run_plots(self, ctx, plots: Iterable[str]):
         for plot_name in plots:
             plot_is_not_skipped = (plot_name, ctx.mode) not in self._skipped_plots
             if plot_name not in PLOT_REGISTRY:
@@ -124,9 +127,10 @@ class EvaluationRunner:
                 fig, ax = run_plot(plot_name, ctx)
                 if self.tensorboard:
                     self.tensorboard.log_figure(
-                        tag=f"{ctx.mode}/{plot_name}",
+                        tag=spec.tag or plot_name,
                         figure=fig,
                         step=ctx.global_step,
+                        mode=ctx.mode,
                     )
             except RequirementNotMet as e:
                 if spec.optional:
@@ -140,17 +144,19 @@ class EvaluationRunner:
                         f"Mark it optional=True in register_plot if this is expected."
                     ) from e
 
-    def run_scalars(self, ctx, artifact_names):
+    def run_scalars(self, ctx, artifact_names: dict[str, str]) -> None:
+        """
+        Compute scalar artifacts of the context and log them to the run of the context mode.
 
-        for full_name, artifact_name in artifact_names.items():
-            # separate full name in to tag and name of the scalar
-            tag, name = full_name.split("/")
+        A dict-valued artifact (e.g. one value per class) becomes one tag per key, ``<tag>/<key>``.
+
+        Args:
+            ctx (EvalContext): Context holding the data, its mode selects the tensorboard run.
+            artifact_names (dict[str, str]): Tensorboard tag -> name of the scalar artifact to compute.
+        """
+        for tag, artifact_name in artifact_names.items():
             value = run_scalar(ctx=ctx, name=artifact_name)
-            self.tensorboard.log_scalar(
-                name=tag,
-                values={name: value},
-                step=ctx.global_step,
-            )
+            self.tensorboard.log_scalar(tag=tag, value=value, step=ctx.global_step, mode=ctx.mode)
 
 
 class RequirementNotMet(Exception):

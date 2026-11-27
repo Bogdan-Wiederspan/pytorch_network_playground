@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any, Literal, Optional
 
 from bbTT.configs.utils import choice_check
 
-SCHEDULER_CHOICE = Literal["linear", "cosine_annealing", "reduce_on_plateau", "step", "exponential"]
+SCHEDULER_CHOICE = Literal["cosine_annealing", "half_cosine", "reduce_on_plateau", "step", "exponential"] # main scheduler choices
 
+WARMUP_CHOICE = Literal["linear", "cosine"] # warm-up curves, implemented in bbTT.optimization.scheduler.warmup.WARMUP_REGISTRY
 
 @dataclass
 class StepLRConfig:  # used by marcel
@@ -18,6 +19,12 @@ class StepLRConfig:  # used by marcel
 class CosineAnnealingLRConfig:
     T_max: int = 5000  # maximum number of iterations
     eta_min: float = 1e-9  # minimum learning rate
+
+@dataclass
+class HalfCosineLRConfig:
+    # modification of cosine annealing, cosine decay that stays at eta_min instead of rising again
+    T_max: int = 16500  # iterations of the half wave, counted from the end of the warm-up
+    eta_min: float = 1e-5  # absolute learning rate reached after T_max and kept from then on
 
 
 @dataclass
@@ -36,13 +43,6 @@ class ReduceLROnPlateauConfig:
 
 
 @dataclass
-class LinearLRConfig:
-    start_factor: float = 1e-4  # the initial learning rate will be the start_factor times the base learning rate
-    end_factor: float = 1.0  # the final learning rate will be the end_factor times the base learning rate
-    total_iters: int = 1000  # number of iterations over which the multiplier increases from start_factor to end_factor
-
-
-@dataclass
 class ExponentialLRConfig:
     gamma: float = 0.9  # Multiplicative factor of learning rate decay.
     last_epoch: int = -1  # The index of last epoch. Default: -1.
@@ -50,8 +50,8 @@ class ExponentialLRConfig:
 
 SCHEDULER_REGISTRY = {
     "cosine_annealing": (CosineAnnealingLRConfig, "CosineAnnealingLR"),
+    "half_cosine": (HalfCosineLRConfig, "HalfCosineLR"),
     "reduce_on_plateau": (ReduceLROnPlateauConfig, "ReduceLROnPlateau"),
-    "linear": (LinearLRConfig, "LinearLR"),
     "step": (StepLRConfig, "StepLR"),
     "exponential": (ExponentialLRConfig, "ExponentialLR"),
 }
@@ -59,21 +59,55 @@ SCHEDULER_REGISTRY = {
 
 @dataclass
 class SchedulerConfig:
-    scheduler_chain: tuple[SCHEDULER_CHOICE, ...] = ("reduce_on_plateau",) # schedulers used in chain
-    # scheduler_chain: tuple[SCHEDULER_CHOICE, ...] = ("linear", "reduce_on_plateau")  # schedulers used in chain
-    milestones: tuple[int, ...] = (1000,)  # intervals after which the LR scheduler is swapped
-    config_chain: Optional[tuple[Any, ...]] = (
-        None  # list of configs corresponding to the schedulers in the scheduler chain
-    )
-    scheduler_cls_chain: Optional[tuple[Any, ...]] = None # noqa list of scheduler classes corresponding to the schedulers in the scheduler chain
+    # --- Main Config ---
+    # main scheduler, takes over after the warm-up (or from the start without one)
+    scheduler_choice: SCHEDULER_CHOICE = "half_cosine"
+
+    # --- WarmUp Config ---
+    # warm-up curve, None disables the warm-up. Optional[...] instead of "| None": from_dict evaluates the hints
+    warmup_choice: Optional[WARMUP_CHOICE] = "cosine"
+    warmup_iterations: int = 1500  # batch steps until the warm-up factor reaches 1 (= base learning rate)
+    warmup_start_factor: float = 1e-3  # factor of the base learning rate at the first iteration
+
+    # --- Main scheduler settings ---
+    # one sub config per SCHEDULER_CHOICE, the field name equals the choice. Only the chosen one is used,
+    # but all are fields so they are overridable (--override scheduler_config.half_cosine.T_max=19900)
+    # and saved with the checkpoint.
+    cosine_annealing: CosineAnnealingLRConfig = field(default_factory=CosineAnnealingLRConfig)
+    half_cosine: HalfCosineLRConfig = field(default_factory=HalfCosineLRConfig)
+    reduce_on_plateau: ReduceLROnPlateauConfig = field(default_factory=ReduceLROnPlateauConfig)
+    step: StepLRConfig = field(default_factory=StepLRConfig)
+    exponential: ExponentialLRConfig = field(default_factory=ExponentialLRConfig)
+
+    @property
+    def active_config(self) -> Any:
+        """
+        Returns:
+            Any: Sub config of the chosen main scheduler. Checkpoints written before the sub configs were
+                fields lack the attribute (from_dict skips __init__), then the code default is used.
+        """
+        default_cls = SCHEDULER_REGISTRY[self.scheduler_choice][0]
+        return getattr(self, self.scheduler_choice, None) or default_cls()
+
+    @property
+    def scheduler_kwargs(self) -> dict[str, Any]:
+        """
+        Returns:
+            dict[str, Any]: Keyword arguments of the main scheduler, taken from ``active_config``.
+        """
+        return asdict(self.active_config)
+
+    @property
+    def scheduler_cls(self) -> str:
+        """
+        Returns:
+            str: Class name of the main scheduler, resolved to the class when the scheduler is built.
+        """
+        return SCHEDULER_REGISTRY[self.scheduler_choice][1]
 
     def __post_init__(self):
-        scheduler_configs = []
-        scheduler_cls_chain = []
-        for choice in self.scheduler_chain:
-            config, scheduler_cls = SCHEDULER_REGISTRY[choice]
-            scheduler_configs.append(asdict(config()))
-            scheduler_cls_chain.append(scheduler_cls)  # init is done in the training
-            choice_check(choice, SCHEDULER_CHOICE)
-        self.config_chain = tuple(scheduler_configs)
-        self.scheduler_cls_chain = tuple(scheduler_cls_chain)
+        choice_check(self.scheduler_choice, SCHEDULER_CHOICE)
+        if self.warmup_choice is not None:
+            choice_check(self.warmup_choice, WARMUP_CHOICE)
+            if self.warmup_iterations <= 0:
+                raise ValueError(f"warmup_iterations must be positive, got {self.warmup_iterations}")

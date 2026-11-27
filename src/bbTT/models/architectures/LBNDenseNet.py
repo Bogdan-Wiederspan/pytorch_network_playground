@@ -10,6 +10,8 @@ from bbTT.models.register import register_model
 
 @register_model("lbn_dense")
 class LBNDenseNet(DenseNet):
+    monitored_blocks: tuple[str, ...] = DenseNet.monitored_blocks + ("lbn",)
+
     def __init__(self, full_config, *args, **kwargs):
         # has same init as DenseNet
         super().__init__(full_config, *args, **kwargs)
@@ -37,7 +39,6 @@ class LBNDenseNet(DenseNet):
             input_nodes=(self.input_layer.ndim + self.lbn.ndim),
             output_nodes=dense_cfg.nodes,
             activation_functions=dense_cfg.activation_functions,
-            eps=dense_cfg.batch_norm_eps,
             normalize=dense_cfg.normalize_linear,
         )
 
@@ -58,6 +59,4 @@ class LBNDenseNet(DenseNet):
         x = self.dense_block_4(x)
         x = self.dense_block_5(x)
         x = self.last_linear(x)
-        if self.use_last_activation:
-            x = self.last_activation_fn(x)
         return x

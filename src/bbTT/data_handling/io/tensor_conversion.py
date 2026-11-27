@@ -43,7 +43,7 @@ def filter_and_convert_to_torch(events: np.array, continuous_features: list[str]
         categorical_tensor = struct_to_group_tensor(arr, categorical_features, dtype=torch.float32)
 
         # extract evaluation masks
-        masks_tensor = struct_to_group_tensor(arr, ["bjet_mask", "di_tau_mask", "di_bjet_mask"], torch.bool)
+        masks_tensor = struct_to_group_tensor(arr, ["at_least_1_bjet_mask", "at_least_2_bjet_mask", "di_tau_mask", "di_bjet_mask"], torch.bool)
         final_mask = masks_tensor[:, 0] & masks_tensor[:, 1] & masks_tensor[:, 2]
 
         # extract weights
@@ -68,9 +68,10 @@ def filter_and_convert_to_torch(events: np.array, continuous_features: list[str]
             "total_normalization_weights": sum_of_normalization_weights,
             "total_evaluation_weight": total_evaluation_weight,
             "evaluation_mask": final_mask,
-            "mask_bjet": masks_tensor[:, 0],
-            "mask_di_tau": masks_tensor[:, 1],
-            "mask_di_bjet": masks_tensor[:, 2],
+            "mask_at_least_1_bjet": masks_tensor[:, 0],
+            "mask_at_least_2_bjet": masks_tensor[:, 1],
+            "mask_di_tau": masks_tensor[:, 2],
+            "mask_di_bjet": masks_tensor[:, 3],
             }
         del arr
     return events

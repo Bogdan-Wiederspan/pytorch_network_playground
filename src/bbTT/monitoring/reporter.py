@@ -27,10 +27,10 @@ class MonitoringMode:
     Everything that distinguishes one kind of monitored data from another.
 
     Args:
-        context_mode (str): Mode of the EvalContext, becomes the tensorboard tag prefix ("batch", "training", ...).
+        context_mode (str): Mode of the EvalContext, becomes the tensorboard sub-run ("batch", "training", ...).
         monitor_mode (str): Key under which the TrainingMonitor captured tensors for this data.
         plots (tuple[str, ...]): Plot names from PLOT_REGISTRY to run.
-        scalars (dict[str, str]): Tensorboard "tag/name" -> context artifact to log, see EvaluationRunner.run_scalars.
+        scalars (dict[str, str]): Tensorboard tag -> context artifact to log, see EvaluationRunner.run_scalars.
         with_gradients (bool): Also attach the captured gradients, only the training batch has them.
     """
 
@@ -93,13 +93,13 @@ class EvaluationReporter:
                 context_mode="training",
                 monitor_mode=MONITOR_MODE_TRAINING,
                 plots=tuple(record_config.training_plots),
-                scalars=dict(record_config.training_scalars),
+                scalars=dict(record_config.evaluation_scalars),
             ),
             "validation": MonitoringMode(
                 context_mode="validation",
                 monitor_mode=MONITOR_MODE_VALIDATION,
                 plots=tuple(record_config.validation_plots),
-                scalars=dict(record_config.validation_scalars),
+                scalars=dict(record_config.evaluation_scalars),
             ),
         }
 
@@ -137,7 +137,7 @@ class EvaluationReporter:
 
         Args:
             mode (str): One of the keys in `self.modes`: "batch", "training" or "validation".
-            result (dict[str, torch.Tensor]): Loop result with "predictions", "targets" and "event_weights".
+            result (dict[str, torch.Tensor]): Loop result with "predictions", "targets", "event_weights" and "composition_weights" (None for a sampled batch).
             global_step (int): Current training iteration.
             model_evaluation_state (dict[str, Any]): Snapshot from Model.evaluation_state().
             loss (float | None): Loss of this data, added as feature "loss" when given.
@@ -152,6 +152,8 @@ class EvaluationReporter:
             predictions=result["predictions"],
             targets=result["targets"],
             event_weights=result["event_weights"],
+            composition_weights=result.get("composition_weights"), # for sampled batches its none (so inside Training Loop)
+
             **self._shared_meta(global_step=global_step, model_evaluation_state=model_evaluation_state),
         )
         ctx.add_features(*self.training_monitor_inst.get_plot_tensors(monitoring_mode.monitor_mode))
@@ -177,13 +179,15 @@ class EvaluationReporter:
 
     def record_checkpoint(self, name: str, iteration: int, loss: float, step: int) -> None:
         """
-        Record a written checkpoint and re-log the complete history as tensorboard text.
+        Record a written checkpoint: re-log the complete history as tensorboard text and mark the
+        checkpoint in the validation run as ``Loss_checkpoint``, a sparse curve next to ``Loss`` that
+        only has a point where a checkpoint was written.
 
         Args:
             name (str): File stem of the checkpoint, see CheckPoint.save_path.
             iteration (int): Iteration whose state was written; can differ from `step` with confirmation enabled.
             loss (float): Validation loss of the written state.
-            step (int): Current training iteration, used as tensorboard step.
+            step (int): Current training iteration, used as tensorboard step of the text entry.
         """
         self.checkpoint_history_inst.record(name=name, iteration=iteration, loss=loss)
         # tensorboard only keeps a sample of text entries per tag, so the whole table is written every time
@@ -192,3 +196,56 @@ class EvaluationReporter:
             text=self.checkpoint_history_inst.to_markdown(),
             step=step,
         )
+        # the point sits at the iteration the loss belongs to, not at the step the checkpoint was confirmed
+        self.tensorboard_writer.log_scalar("Loss_checkpoint", loss, step=iteration, mode="validation")
+
+    def report_model_state(self, model_evaluation_state: dict[str, Any], global_step: int) -> None:
+        """
+        Log the monitored block snapshots of the model.
+
+        Per block and quantity: a tensor becomes a histogram of the main run; a float becomes one line of the
+        panel ``MonitoredBlocks/<quantity>`` with the block as sub-run ``blocks/<block>``, so every block keeps
+        its color across quantities; a dict of named floats (e.g. the angle of token pairs) becomes the panel
+        ``MonitoredBlocks/<block>/<quantity>`` with the names as sub-runs ``lines/<name>``, a nested dict
+        (e.g. pairs grouped by prong) one such panel per group, ``.../<quantity>/<group>``.
+
+        This is pure model state and independent of any data, so it bypasses the EvalContext and the
+        scalar registry. Blocks define their own snapshot, see DenseBlock.create_evaluation_state.
+
+        Args:
+            model_evaluation_state (dict[str, Any]): Snapshot from Model.evaluation_state(), the key
+                "monitored_blocks" maps block name -> {quantity: float | torch.Tensor | dict}.
+            global_step (int): Current training iteration, used as tensorboard step.
+        """
+        block_states: dict[str, dict[str, Any]] = model_evaluation_state.get("monitored_blocks", {})
+        scalars_by_quantity: dict[str, dict[str, float]] = {}
+        for block_name, state in block_states.items():
+            for quantity, value in state.items():
+                if isinstance(value, torch.Tensor) and value.ndim > 0:
+                    self.tensorboard_writer.log_histogram(
+                        tag=f"MonitoredBlocks/{block_name}/{quantity}", values=value, step=global_step
+                    )
+                elif isinstance(value, dict):
+                    self._report_lines(tag=f"MonitoredBlocks/{block_name}/{quantity}", value=value, step=global_step)
+                else:
+                    scalars_by_quantity.setdefault(quantity, {})[block_name] = float(value)
+        for quantity, by_block in scalars_by_quantity.items():
+            self.tensorboard_writer.log_lines(
+                tag=f"MonitoredBlocks/{quantity}", lines=by_block, step=global_step, run_group="blocks"
+            )
+
+    def _report_lines(self, tag: str, value: dict[str, Any], step: int) -> None:
+        """
+        Log a dict quantity as lines; a dict of dicts becomes one panel per key, ``<tag>/<key>``.
+
+        Args:
+            tag (str): Tensorboard tag of the panel.
+            value (dict[str, Any]): Line name -> float, or group name -> such a dict.
+            step (int): Global step.
+        """
+        if all(isinstance(v, dict) for v in value.values()):
+            for key, nested in value.items():
+                self._report_lines(tag=f"{tag}/{key}", value=nested, step=step)
+            return
+        lines = {name: float(v) for name, v in value.items()}
+        self.tensorboard_writer.log_lines(tag=tag, lines=lines, step=step, run_group="lines")

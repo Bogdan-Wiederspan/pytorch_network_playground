@@ -30,20 +30,31 @@ class LBNFeatureExtractor(torch.nn.Module):
     def _particles(self):
         return ("vis_tau1", "vis_tau2", "bjet1", "bjet2", "met", "nu1", "nu2")
 
-    def find_particles_components_in_features(self):
-        # returns dictionary with all indicies of the feature components
-        def find_components(particle):
-            particle_components = {}
-            for idx, s in enumerate(self.continuous_features):
-                if particle in s:
-                    component = s.split("_")[-1]
-                    particle_components[component] = idx
-            return particle_components
+    def find_particles_components_in_features(self) -> dict[str, list[int]]:
+        """
+        Locates the components of every LBN particle in the continuous features.
 
-        particles_components = {particle: find_components(particle) for particle in self._particles}
+        A component is found by its exact feature name ``<particle>_<component>``, e.g. "bjet1_px".
+        A search for the particle name as substring would also pick up unrelated features (for the
+        particle "met" e.g. "met_cov00"), and a feature ending in "_px" could silently replace the
+        real component.
 
-        # filter the indices
-        indicies = lambda particle, features: [particles_components[particle][f] for f in features]
+        Returns:
+            dict[str, list[int]]: Particle name -> column positions of its components, in the order
+                (e, px, py, pz) for the visible particles, (px, py) for met and (px, py, pz) for the neutrinos.
+
+        Raises:
+            ValueError: If a component of a particle is not among the continuous features.
+        """
+        positions = {name: idx for idx, name in enumerate(self.continuous_features)}
+
+        def indicies(particle: str, components: tuple[str, ...]) -> list[int]:
+            names = [f"{particle}_{component}" for component in components]
+            missing = [name for name in names if name not in positions]
+            if missing:
+                raise ValueError(f"the LBN needs the continuous features {missing}, they are not configured")
+            return [positions[name] for name in names]
+
         particles = {}
 
         for f in self._particles[:-3]:

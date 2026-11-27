@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from typing import Any
+
 import torch
+from torch.nn.utils import parametrize
 
 from bbTT.models.register import MODEL_REGISTRY
 from bbTT.monitoring.logger.logger import get_logger
@@ -25,6 +28,67 @@ class WeightNormalizedLinear(torch.nn.Linear):  # noqa: F811
         if normalize:
             self = torch.nn.utils.parametrizations.weight_norm(self, name="weight", dim=0)
 
+
+def linear_state(layer: torch.nn.Linear) -> dict[str, Any]:
+    """
+    Monitoring snapshot of a linear layer, torch layers have no state method of their own.
+
+    For a weight normalized layer (torch parametrization) the norm of the direction parameter `v` is added;
+    the magnitude `g` is skipped since its norm equals the weight norm.
+
+    Args:
+        layer (torch.nn.Linear): Linear layer, also subclasses and weight normalized layers.
+
+    Returns:
+        dict[str, Any]: "weight_norm" (float), "bias_norm" (float, only with bias), "direction_norm" (float,
+            only when weight normalized); all Frobenius norms.
+    """
+
+    # layer.weight is the effective weight, also under a parametrization
+    weight = layer.weight.detach()
+
+    state: dict[str, Any] = {
+        "weight_norm": torch.linalg.vector_norm(weight).item(),
+        "weights": weight.flatten().cpu(),
+    }
+    if layer.bias is not None:
+        state["bias_norm"] = torch.linalg.vector_norm(layer.bias.detach()).item()
+    if parametrize.is_parametrized(layer, "weight"):
+        # weight_norm stores g as original0 and v as original1
+        direction = layer.parametrizations.weight.original1
+        state["direction_norm"] = torch.linalg.vector_norm(direction.detach()).item()
+    return state
+
+
+def batch_norm_state(layer: torch.nn.BatchNorm1d) -> dict[str, Any]:
+    """
+    Monitoring snapshot of a batch norm layer, torch layers have no state method of their own.
+
+    Args:
+        layer (torch.nn.BatchNorm1d): Batch norm layer with running statistics.
+
+    Returns:
+        dict[str, Any]: "running_mean" and "running_var" as detached cpu tensors of shape (num_features,).
+    """
+    return {
+        "running_mean": layer.running_mean.detach().cpu(),
+        "running_var": layer.running_var.detach().cpu(),
+    }
+
+def embedding_state(layer: torch.nn.Embedding) -> dict[str, Any]:
+    """
+    Args:
+        layer (torch.nn.Embedding): Embedding table of shape (num_embeddings, embedding_dim).
+
+    Returns:
+        dict[str, Any]: "weight_norm" (float) of the whole table and "token_norms" (torch.Tensor of shape
+            (num_embeddings,)), the L2 norm of each token's embedding vector.
+    """
+    weight = layer.weight.detach()
+    return {
+        "weight_norm": torch.linalg.vector_norm(weight).item(),
+        "token_norms": torch.linalg.vector_norm(weight, dim=1).cpu(),
+    }
 
 def optional_layer(layer: torch.nn.Module | None) -> torch.nn.Module:
     if layer is None:
