@@ -484,6 +484,25 @@ class ProcessSampler(t_data.Sampler):
         """
         return self._aggregate_batch(cursor_method="peek", sample_from=sample_from, device=device)
 
+    def peek_process_ids(self) -> torch.Tensor:
+        """
+        Process id of every event of the last batch produced by sample_batch(), in the same
+        order as the events returned by peek_batch().
+
+        Raises:
+            RuntimeError: If sample_batch() hasn't been called yet for some process.
+
+        Returns:
+            torch.Tensor: Tensor of shape (num_events,) with the process id per event.
+        """
+        process_ids = []
+        for uid in self.sorted_pid_registry():
+            last_idx = self.cursors[uid].last_idx
+            if last_idx is None:
+                raise RuntimeError("No batch has been sampled yet. Call sample_batch() before peek_process_ids().")
+            process_ids.append(torch.full((len(last_idx),), uid[1], dtype=torch.int64))
+        return torch.cat(process_ids)
+
     def full_pass(self, sample_from: list[str], batch_size: int = -1, device: torch.device = CPU_DEVICE):
         """
         Walk through every registered process's full data exactly once, process by

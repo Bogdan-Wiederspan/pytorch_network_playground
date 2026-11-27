@@ -15,7 +15,7 @@ from bbTT.checkpoint.resume import (
     restore_training_state,
 )
 from bbTT.configs.full_config import FullConfig
-from bbTT.data_handling.utils import hash_dictionary
+from bbTT.data_handling.utils import hash_dictionary, markers_by_position
 from bbTT.monitoring import (
     MONITOR_MODE_BATCH,
     MONITOR_MODE_TRAINING,
@@ -26,6 +26,7 @@ from bbTT.monitoring import (
 )
 from bbTT.monitoring.context.batch_composition_context import BatchCompositionHistory
 from bbTT.monitoring.context.checkpoint_history import CheckpointHistory
+from bbTT.monitoring.context.eval_context import EvalContext
 from bbTT.monitoring.logger.logger import get_logger
 from bbTT.monitoring.logger.tensorboard_logger import TensorboardLogger
 from bbTT.train.setup import FoldData, TrainingComponents, build_training_components, prepare_fold_data
@@ -85,6 +86,42 @@ def run_training_loop(
             optimizer_inst=training_components.optimizer_inst,
         )
         reporter_inst.record_batch_composition(step=current_iteration, cursors=fold_data.training_sampler.cursors)
+
+        # histograms of all inputs exactly as they entered the network in the first batch
+        # peek_batch returns the batch that was just sampled, including physics parameters
+        if current_iteration == start_iteration and record_config.plot_input_features:
+            training_sampler = fold_data.training_sampler
+            first_batch = training_sampler.peek_batch(sample_from=("continuous", "categorical", "targets"))
+            dataset_config = full_config.dataset_config
+            ctx_inputs = EvalContext(
+                model_evaluation_state=training_components.model_inst.evaluation_state(),
+                predictions=batch_result["predictions"],
+                targets=first_batch["targets"],
+                target_map=dataset_config.target_map,
+                event_weights=batch_result["event_weights"],
+                global_step=current_iteration,
+                mode="batch",
+            )
+            ctx_inputs.add_feature(
+                "batch_inputs",
+                {
+                    "continuous": first_batch["continuous"],
+                    "categorical": first_batch["categorical"],
+                    "physics_parameters": first_batch.get("physics_parameters"),
+                    "process_ids": training_sampler.peek_process_ids(),
+                    "signal_kl": dataset_config.physics_parameters.get("kl", {}),
+                    "names": {
+                        "continuous": dataset_config.continuous_features,
+                        "categorical": dataset_config.categorical_features,
+                        "physics_parameters": dataset_config.physics_parameter_names,
+                    },
+                    # per-feature marker of a missing value, e.g. 0 for missing jets
+                    "missing_markers": {
+                        "continuous": markers_by_position(dataset_config.continuous_features, dataset_config.dummy_values),
+                    },
+                },
+            )
+            reporter_inst.evaluation_runner_inst.run_plots(ctx_inputs, plots=["input_features"])
 
         # --- batch scalars ---
         if current_iteration % record_config.verbose_interval == 0:

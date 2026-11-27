@@ -26,6 +26,7 @@ class RecordConfig:
 
     # full pass over the training data is pure monitoring but costs ~4x a validation pass.
     training_evaluation_interval: int = 5 # 1 = every validation pass, 2 = every second etc.
+    plot_input_features: bool = True  # plot signal and background histograms of all inputs of the first training batch
 
     # what plots and scalar should be monitored during training, validation and batch monitoring.
     # PLOTS are defined in PLOT_REGISTRY.
