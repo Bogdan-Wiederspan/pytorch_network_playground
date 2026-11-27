@@ -238,7 +238,11 @@ class TrainingLoop(BaseLoop):
         categorical, continuous = events.get("categorical"), events.get("continuous")
         targets = events["targets"].reshape(self.target_shape)
 
-        logits = model_inst(categorical_inputs=categorical, continuous_inputs=continuous)
+        logits = model_inst(
+            categorical_inputs=categorical,
+            continuous_inputs=continuous,
+            physics_parameters=events.get("physics_parameters"),
+        )
 
         # training does not need event weights. The oversampling algorithm takes care of this
         # CrossEntropy loss has build in softmax
@@ -275,7 +279,11 @@ class TrainingLoop(BaseLoop):
         categorical, continuous = events.get("categorical"), events.get("continuous")
         targets = events["targets"].reshape(self.target_shape)
 
-        logits = model_inst(categorical_inputs=categorical, continuous_inputs=continuous)
+        logits = model_inst(
+            categorical_inputs=categorical,
+            continuous_inputs=continuous,
+            physics_parameters=events.get("physics_parameters"),
+        )
 
         # loss expects binned probabilities, monitor expect unbinned probabilities
         loss = loss_fn(
@@ -364,7 +372,12 @@ class ValidationLoop(BaseLoop):
             ):
                 # hold data for current dataset, saved in loop to avoid memory issues
                 current_process = sampler_inst.registry[uid]
-                logits = model_inst(categorical_inputs=events.pop("categorical"), continuous_inputs=events.pop("continuous"))
+                physics_parameters = events.pop("physics_parameters", None)
+                logits = model_inst(
+                    categorical_inputs=events.pop("categorical"),
+                    continuous_inputs=events.pop("continuous"),
+                    physics_parameters=physics_parameters,
+                )
 
                 num_events = logits.shape[0]
 
@@ -385,6 +398,10 @@ class ValidationLoop(BaseLoop):
                     )
 
                 collected_data["logits"].append(logits)
+
+                # physics parameters the events were evaluated with, e.g. for metrics per kappa lambda
+                if physics_parameters is not None:
+                    collected_data.setdefault("physics_parameters", []).append(physics_parameters)
 
                 # -- collect dynamic data --
                 for k in dynamic_data.keys():

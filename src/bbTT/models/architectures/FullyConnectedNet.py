@@ -39,6 +39,10 @@ class FullyConnectedNet(BaseModel):
         Defines all layers of the model. The hidden layers are written out one by one,
         so the depth is visible here and each layer can be listed in ``monitored_blocks``.
         """
+        if self.has_physics_parameters:
+            raise NotImplementedError(
+                "FullyConnectedNet does not support physics parameters yet, set DataConfig.physics_parameters = {}"
+            )
         dense_cfg = self.model_config.dense_network
         nodes = int(dense_cfg.nodes)
         _dense_config = {
@@ -62,11 +66,17 @@ class FullyConnectedNet(BaseModel):
         # can only be sigmoid or softmax, uses only dim as configuration
         self.last_activation_fn = self.init_last_activation_layer()
 
-    def forward(self, categorical_inputs: torch.Tensor, continuous_inputs: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        categorical_inputs: torch.Tensor,
+        continuous_inputs: torch.Tensor,
+        physics_parameters: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         """
         Args:
             categorical_inputs (torch.Tensor): Categorical features, shape ``[event, num_categorical_features]``.
             continuous_inputs (torch.Tensor): Continuous features, shape ``[event, num_continuous_features]``.
+            physics_parameters (torch.Tensor, optional): Not supported, see init_layers. Defaults to None.
 
         Returns:
             torch.Tensor: Logits, shape ``[event, node]``.

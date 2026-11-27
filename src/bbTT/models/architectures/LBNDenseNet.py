@@ -36,27 +36,37 @@ class LBNDenseNet(DenseNet):
         )
         dense_cfg = self.model_config.dense_network
         self.transition_dense_1 = DenseBlock(
-            input_nodes=(self.input_layer.ndim + self.lbn.ndim),
+            input_nodes=(self.input_layer.ndim + self.lbn.ndim + self.num_physics_parameters),
             output_nodes=dense_cfg.nodes,
             activation_functions=dense_cfg.activation_functions,
             normalize=dense_cfg.normalize_linear,
         )
 
-    def forward(self, categorical_inputs: torch.Tensor, continuous_inputs: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        categorical_inputs: torch.Tensor,
+        continuous_inputs: torch.Tensor,
+        physics_parameters: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        physics_parameters = self.scale_physics_parameters(physics_parameters)
         normal_inputs = self.input_layer(categorical_inputs=categorical_inputs, continuous_inputs=continuous_inputs)
         # lbn needs padding sanitized values, but not standardized. Reason for this is that physics has scale dependency
+        # physics parameters do not enter the lbn
         lbn_outputs = self.lbn(continuous_inputs)
 
         x = torch.concatenate(
             (normal_inputs, lbn_outputs),
             axis=1,
         )
+        # scaled physics parameters are concatenated to the input of the dense part and fed into every dense block
+        if physics_parameters is not None:
+            x = torch.concatenate((x, physics_parameters), dim=1)
         # dnn
         x = self.transition_dense_1(x)
-        x = self.dense_block_1(x)
-        x = self.dense_block_2(x)
-        x = self.dense_block_3(x)
-        x = self.dense_block_4(x)
-        x = self.dense_block_5(x)
+        x = self.dense_block_1(x, physics_parameters)
+        x = self.dense_block_2(x, physics_parameters)
+        x = self.dense_block_3(x, physics_parameters)
+        x = self.dense_block_4(x, physics_parameters)
+        x = self.dense_block_5(x, physics_parameters)
         x = self.last_linear(x)
         return x

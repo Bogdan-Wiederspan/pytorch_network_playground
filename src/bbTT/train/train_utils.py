@@ -28,7 +28,8 @@ def calibrate_batch_norms(
         mu_k = mu_{k-1} + (mu_batch - mu_{k-1}) / k
 
     The sampler is restored to its state before the calibration, so the first training batch is the
-    same with and without it. Parameters are not touched. Does nothing for num_batches <= 0.
+    same with and without it (only the background physics parameters differ, they are drawn with the
+    global torch generator). Parameters are not touched. Does nothing for num_batches <= 0.
 
     Args:
         model_inst (torch.nn.Module): Model whose BatchNorm modules are calibrated.
@@ -57,7 +58,11 @@ def calibrate_batch_norms(
     with torch.no_grad():
         for _ in range(num_batches):
             events = sampler.sample_batch(sample_from=sample_columns, device=device)
-            model_inst(categorical_inputs=events.get("categorical"), continuous_inputs=events.get("continuous"))
+            model_inst(
+                categorical_inputs=events.get("categorical"),
+                continuous_inputs=events.get("continuous"),
+                physics_parameters=events.get("physics_parameters"),
+            )
 
     model_inst.train(was_training)
     sampler.load_state_dict(sampler_state)

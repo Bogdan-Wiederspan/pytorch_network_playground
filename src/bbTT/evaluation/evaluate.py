@@ -2,7 +2,7 @@ from __future__ import annotations
 
 # standard imports
 import sys
-from typing import Callable, Iterable, Literal
+from typing import Callable, Iterable, Literal, Sequence
 
 # package imports
 import numpy as np
@@ -46,6 +46,44 @@ def last_fn_picker(last_fn: str) -> Callable[[torch.Tensor], torch.Tensor]:
     return choices[last_fn]
 
 
+def physics_parameter_hypotheses(
+    dataset_config: Literal["DataClass"],
+    values: Sequence[float] | None = None,
+) -> list[tuple[float, ...]] | None:
+    """
+    Hypotheses of the physics parameters (e.g. kappa lambda) a network is evaluated at.
+    If *values* is None, the values the network was trained on are used.
+
+    Args:
+        dataset_config (Literal["DataClass"]): DataConfig of the network, describes the physics parameters.
+        values (Sequence[float] | None, optional): Explicit hypotheses, only possible for a single physics parameter.
+
+    Returns:
+        list[tuple[float, ...]] | None: Sorted hypotheses or None if the network has no physics parameters.
+
+    Raises:
+        ValueError: If *values* are given for a network without exactly one physics parameter.
+    """
+    if not dataset_config.has_physics_parameters:
+        if values:
+            raise ValueError("Physics parameter values are given, but the network has no physics parameters")
+        return None
+
+    if values:
+        if dataset_config.num_physics_parameters != 1:
+            raise ValueError("Explicit physics parameter values are only supported for a single physics parameter")
+        return sorted((float(v),) for v in set(values))
+
+    # every process id that has values for all physics parameters is a training point
+    pids = set.intersection(*(set(v) for v in dataset_config.physics_parameters.values()))
+    return sorted({dataset_config.physics_parameter_values(pid) for pid in pids})
+
+
+def hypothesis_key(hypothesis: tuple[float, ...]) -> float | tuple[float, ...]:
+    # single physics parameter: use the plain value as key, e.g. scores[1.0]
+    return hypothesis[0] if len(hypothesis) == 1 else hypothesis
+
+
 def evaluate_model_on_fold(
     events: dict[torch.Tensor],
     model_inst: torch.nn.Module,
@@ -55,11 +93,15 @@ def evaluate_model_on_fold(
     head: HEAD_CHOICE = "probabilities",
     last_activation_fn: Literal["sigmoid", "softmax", "identity"] = "identity",
     batch_size=1,
+    physics_parameter_values: Sequence[float] | None = None,
 ) -> torch.tensor:
     """
     Function to evaluate *folds* with given *model_inst*.
     The configuration if handled by *full_config* and describes the network when it was trained.
     By default only the test set it evaluated, but *evaluate_on* can be extended to also evaluate training and validation set again.
+
+    If the network has physics parameters (e.g. kappa lambda), every event is evaluated once per hypothesis,
+    where all events (signal and background) get the same value. "scores" is then a dict: hypothesis -> scores.
 
     Args:
         model_inst (torch.nn.Module): Loaded model instance, that is used to evaluate the data.
@@ -70,6 +112,8 @@ def evaluate_model_on_fold(
         last_activation_fn (Literal["sigmoid", "softmax", "identity"], optional): Extra activation on top of the
             selected head, only allowed on the "logits" head. Defaults to "identity".
         batch_size (int, optional): Events per model call. Defaults to 1.
+        physics_parameter_values (Sequence[float], optional): Hypotheses of the physics parameter, only for networks
+            with a single physics parameter. Defaults to None, which uses the values the network was trained on.
 
     Raises:
         ValueError: When wrong value in evaluate_on is used, the model has no such head, or an extra activation
@@ -99,6 +143,12 @@ def evaluate_model_on_fold(
                 f"Head {head!r} is already activated, but last_activation_fn='{last_activation_fn}' was requested. "
                 "Use 'identity' or the 'logits' head to avoid a double activation."
             )
+        hypotheses = physics_parameter_hypotheses(full_config.dataset_config, physics_parameter_values)
+        if hypotheses is not None:
+            logger_inst.info(
+                f"Evaluate physics parameters {full_config.dataset_config.physics_parameter_names} "
+                f"at hypotheses: {[hypothesis_key(h) for h in hypotheses]}"
+            )
 
         dnn_scores = {}
         for fold in folds:
@@ -122,24 +172,40 @@ def evaluate_model_on_fold(
                 if total_n == 0:
                     continue
 
-                # the binned head carries a leading bin axis, so the output shape is fixed after the first batch
-                uid_scores = None
+                def score_events(hypothesis: tuple[float, ...] | None) -> torch.Tensor:
+                    # all events are evaluated with the same physics parameter values *hypothesis*
+                    # the binned head carries a leading bin axis, so the output shape is fixed after the first batch
+                    uid_scores = None
 
-                for start_idx in range(0, total_n, batch_size):
-                    end_idx = min(start_idx + batch_size, total_n)
-                    batch_idx = idx[start_idx:end_idx]
+                    for start_idx in range(0, total_n, batch_size):
+                        end_idx = min(start_idx + batch_size, total_n)
+                        batch_idx = idx[start_idx:end_idx]
 
-                    continuous_inputs = events[uid]["continuous"][batch_idx]
-                    categorical_inputs = events[uid]["categorical"][batch_idx]
+                        continuous_inputs = events[uid]["continuous"][batch_idx]
+                        categorical_inputs = events[uid]["categorical"][batch_idx]
+                        physics_parameters = None
+                        if hypothesis is not None:
+                            physics_parameters = torch.tensor(hypothesis, dtype=torch.float32).expand(len(batch_idx), -1)
 
-                    logits = model_inst(categorical_inputs=categorical_inputs, continuous_inputs=continuous_inputs)
-                    scores = last_fn(model_inst.head(head, logits))
+                        logits = model_inst(
+                            categorical_inputs=categorical_inputs,
+                            continuous_inputs=continuous_inputs,
+                            physics_parameters=physics_parameters,
+                        )
+                        scores = last_fn(model_inst.head(head, logits))
 
-                    if uid_scores is None:
-                        # event axis is always the second last one: [event, node] or [bin, event, node]
-                        out_shape = (*scores.shape[:-2], total_n, num_targets)
-                        uid_scores = torch.empty(out_shape, dtype=torch.float32)
-                    uid_scores[..., start_idx:end_idx, :] = scores.detach().cpu()
+                        if uid_scores is None:
+                            # event axis is always the second last one: [event, node] or [bin, event, node]
+                            out_shape = (*scores.shape[:-2], total_n, num_targets)
+                            uid_scores = torch.empty(out_shape, dtype=torch.float32)
+                        uid_scores[..., start_idx:end_idx, :] = scores.detach().cpu()
+                    return uid_scores
+
+                # without physics parameters "scores" is a tensor, otherwise a dict: hypothesis -> tensor
+                if hypotheses is None:
+                    uid_scores = score_events(None)
+                else:
+                    uid_scores = {hypothesis_key(h): score_events(h) for h in hypotheses}
 
                 dnn_scores[fold][uid] = {
                     "scores": uid_scores,
@@ -175,6 +241,7 @@ def main(argv: list[str] | None = None) -> int:
         "evaluate_choices",
         "batching",
         "num_threading",
+        "physics_parameter_values",
         description="Evaluate a model checkpoint on the test, training or validation set of its input data.",
         epilog=(
             "example:\n"
@@ -211,6 +278,7 @@ def main(argv: list[str] | None = None) -> int:
             last_activation_fn=args.add_activation,
             events=events,
             batch_size=args.batch_size,
+            physics_parameter_values=args.physics_parameter_values,
         )
 
         torch.save(evaluated_data, path)

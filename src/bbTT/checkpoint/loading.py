@@ -45,7 +45,14 @@ def load_checkpoint(path: pathlib.Path) -> dict[str, Any]:
         available_checkpoints = "\n".join(list(sorted([p.stem for p in path.parent.glob("*.pt")])))
         msg = f"Checkpoint file {path} does not exist.\n Available checkpoints: \n{available_checkpoints}"
         raise FileNotFoundError(msg)
-    return torch.load(path, map_location=CPU_DEVICE, weights_only=True)
+    checkpoint = torch.load(path, map_location=CPU_DEVICE, weights_only=True)
+
+    # checkpoints from before physics parameters (pNN) existed have no such field, these networks were
+    # trained without physics parameters. Not setting it leaves the attribute missing, since from_dict skips it
+    dataset_config = checkpoint.get("full_config", {}).get("dataset_config")
+    if isinstance(dataset_config, dict):
+        dataset_config.setdefault("physics_parameters", {})
+    return checkpoint
 
 
 def rebuild_checkpoint_information(path: str | pathlib.Path) -> tuple[torch.nn.Module, FullConfig]:

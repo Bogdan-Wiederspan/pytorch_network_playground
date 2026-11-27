@@ -33,12 +33,15 @@ class DenseNet(BaseModel):
             "activation_functions": dense_cfg.activation_functions,
             "normalize": dense_cfg.normalize_linear,  # activate weight normalization on linear layer weights
             "output_nodes": int(dense_cfg.nodes),
+            # physics parameters (e.g. kappa lambda) are fed into every dense block, 0 if none are configured
+            "num_physics_parameters": self.num_physics_parameters,
         }
 
         self.input_layer = self.init_input_layer()
+        self.physics_parameter_layer = self.init_physics_parameter_layer()
 
         self.transition_dense_1 = DenseBlock(
-            input_nodes=self.input_layer.ndim,
+            input_nodes=self.input_layer.ndim + self.num_physics_parameters,
             output_nodes=_dense_config["output_nodes"],
             activation_functions=_dense_config["activation_functions"],
             normalize=_dense_config["normalize"],
@@ -54,13 +57,22 @@ class DenseNet(BaseModel):
         self.last_activation_fn = self.init_last_activation_layer()
 
 
-    def forward(self, categorical_inputs: torch.Tensor, continuous_inputs: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        categorical_inputs: torch.Tensor,
+        continuous_inputs: torch.Tensor,
+        physics_parameters: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        # scaled physics parameters are concatenated to the input of the dense part and fed into every dense block
+        physics_parameters = self.scale_physics_parameters(physics_parameters)
         x = self.input_layer(categorical_inputs=categorical_inputs, continuous_inputs=continuous_inputs)
+        if physics_parameters is not None:
+            x = torch.concatenate((x, physics_parameters), dim=1)
         x = self.transition_dense_1(x)
-        x = self.dense_block_1(x)
-        x = self.dense_block_2(x)
-        x = self.dense_block_3(x)
-        x = self.dense_block_4(x)
-        x = self.dense_block_5(x)
+        x = self.dense_block_1(x, physics_parameters)
+        x = self.dense_block_2(x, physics_parameters)
+        x = self.dense_block_3(x, physics_parameters)
+        x = self.dense_block_4(x, physics_parameters)
+        x = self.dense_block_5(x, physics_parameters)
         x = self.last_linear(x)
         return x

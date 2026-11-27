@@ -31,6 +31,10 @@ class BinnedLBNDenseNet(LBNDenseNet):
         self.freeze_edges()  # TODO for now, change when not working with fixed binning
 
     def init_layers(self):
+        if self.has_physics_parameters:
+            raise NotImplementedError(
+                "BinnedLBNDenseNet does not support physics parameters yet, set DataConfig.physics_parameters = {}"
+            )
         # create normal LBN DenseNet
         super().init_layers()
         self.binning_layer = BinningLayer(
