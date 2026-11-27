@@ -178,7 +178,7 @@ def main(argv: list[str] | None = None) -> int:
         description="Evaluate a model checkpoint on the test, training or validation set of its input data.",
         epilog=(
             "example:\n"
-            '    bbtt-evaluate --c_src "${MODELS_DIR}/my_first_run_fold0.pt" --fold 0 -bs 4096 -fp my_first_run'
+            '    bbtt-evaluate -c_src "${MODELS_DIR}/my_first_run_fold0.pt" --fold 0 -bs 4096 -s_dst my_first_run'
         ),
         argv=argv or ["--help"],
     )
@@ -200,8 +200,6 @@ def main(argv: list[str] | None = None) -> int:
     events = io.get_data(full_config.dataset_config, rebuild_cache=False, save_cache=False)
     # evaluate data on each part separate and then flush scores
     for evaluate_on in args.evaluate_on:
-        stem = args.path.stem
-
         path = args.save_dst.with_stem(f"{used_data_hash}_{model_name}_{evaluate_on}").with_suffix(".pt")
 
         evaluated_data = evaluate_model_on_fold(

@@ -123,9 +123,9 @@ class ParserBuilder:
             "--fold",
             "-f",
             dest="fold",
-            default=0,
+            default=[0],
             type=self.comma_separated(int),
-            help="Comma separated list of folds, e.g. '0' or '0,1,2'. Each fold on its respective test data.",
+            help="Comma separated list of folds, e.g. '0' or '0,1,2'. Each fold on its respective test data. (default: 0)",
         )
 
     def add_activation_fn(self):

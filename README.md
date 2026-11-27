@@ -119,7 +119,7 @@ checkpoint are dropped and start fresh.
 
 ### Evaluate your model
 A trained model is saved in a checkpoint.
-To evaluate it on either "test", "training" or "validation" set use `evaluate.py`.
+To evaluate it on either "test", "training" or "validation" set use `bbtt-evaluate`.
 Scores are saved to `${EVALUATION_DIR}/<save_dst>.pt`.
 
 ```bash
@@ -140,7 +140,7 @@ bbtt-export --checkpoint_src my_first_run --fold 0
 A model's forward always returns logits; the heads it offers (`logits`, `probabilities`, and `binned` for binned
 models, see `BaseModel.HEADS`) are mappings of them. `--head` selects which one the exported graph returns
 (default `probabilities`), `--add_activation` appends an extra activation on top, which only makes sense on the
-`logits` head and is logged as warning otherwise. The same `--head` option exists for `evaluate.py`.
+`logits` head and is logged as warning otherwise. The same `--head` option exists for `bbtt-evaluate`.
 
 ### Tensorboard
 All plots created in the training can be looked up with "Tensorboard".
